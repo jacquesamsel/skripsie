@@ -1,5 +1,5 @@
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from torchrl.envs import TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType
+from torchrl.envs import TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv
 from torchrl.envs.utils import step_mdp
 from torchrl.envs.transforms import Compose
 from torchrl.envs.transforms import Transform
@@ -15,33 +15,29 @@ import torch
 import os
 from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter(log_dir=f"runs/torchrl_ppo")
-
-torch.set_num_threads(8)
-
-checkpoint_path = "checkpoints/latest.pt"
-os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-
-device = torch.device("cpu")
-print(f"Using device: {device}")
-
-num_agents = 24
-agents = [f"agent_{i}" for i in range(num_agents)]
+num_envs = 4
+num_agents_per_env = 12
+num_agents = num_envs * num_agents_per_env
+agents = [f"agent_{i}" for i in range(num_agents_per_env)]
 
 
-engine_channel = EngineConfigurationChannel()
-engine_channel.set_configuration_parameters(time_scale=20.0, quality_level=0)
-env = UnityMLAgentsEnv(
-    file_name="linux_build/build_linux.x86_64",
-    no_graphics=True,
-    side_channels=[engine_channel],
-    num_areas=num_agents,
-    group_map=MarlGroupMapType.ALL_IN_ONE_GROUP
-)
+def make_env(worker_id):
+    engine_channel = EngineConfigurationChannel()
+    engine_channel.set_configuration_parameters(time_scale=20.0, quality_level=0)
+    env = UnityMLAgentsEnv(
+        file_name="linux_build/build_linux.x86_64",
+        no_graphics=True,
+        side_channels=[engine_channel],
+        num_areas=num_agents_per_env,
+        group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
+        # each Unity instance needs its own port (base_port 5005 + worker_id)
+        worker_id=worker_id,
+    )
+    return env
 
 
 class StackAgents(Transform):
-    def __init__(self, agents: list[str], lidar_num_tags, obs_keys=None, action_keys=("throttle", "steering")):
+    def __init__(self, base_env, agents: list[str], lidar_num_tags, obs_keys=None, action_keys=("throttle", "steering")):
         if obs_keys is None:
             obs_keys = {
                 "LIDAR1": "lidar",
@@ -50,13 +46,20 @@ class StackAgents(Transform):
             }
         self.agents = agents
         self.obs_keys = obs_keys
-        # not always present (e.g. missing on reset) — stacked opportunistically in _call
-        self.extra_keys = (
-            ("reward", env.reward_spec["agents", "agent_0", "reward"]),
-            ("done", env.done_spec["agents", "agent_0", "done"]),
+        # not always present (e.g. missing on reset) — stacked opportunistically in _call.
+        # Specs of a batched env include the env batch dims, so keep only the
+        # per-agent feature shape here; the batch dims are added back in _call.
+        n_batch = len(base_env.batch_size)
+        specs = (
+            ("reward", base_env.reward_spec["agents", "agent_0", "reward"]),
+            ("done", base_env.done_spec["agents", "agent_0", "done"]),
             # Counter-intuitive, I know...
-            ("terminated", env.done_spec["agents", "agent_0", "terminated"]),
-            ("truncated", env.done_spec["agents", "agent_0", "truncated"])
+            ("terminated", base_env.done_spec["agents", "agent_0", "terminated"]),
+            ("truncated", base_env.done_spec["agents", "agent_0", "truncated"])
+        )
+        self.extra_keys = tuple(
+            (key, spec.shape[n_batch:], spec.dtype, spec.device)
+            for key, spec in specs
         )
         # RayPerceptionSensor emits [T_1..T_n, Miss, Distance] per ray, interleaved ray-by-ray
         self.lidar_num_tags = lidar_num_tags
@@ -92,12 +95,15 @@ class StackAgents(Transform):
             stacked = torch.stack(values, dim=stack_dim)
             tensordict.set(("agents", new), stacked)
 
-        for key, spec in self.extra_keys:
+        batch_size = tensordict.batch_size
+        batch_idx = (slice(None),) * len(batch_size)
+        for key, feature_shape, dtype, device in self.extra_keys:
+            # (*env_batch, n_agents, *feature_shape)
             stacked = torch.zeros(
-                (len(self.agents), *spec.shape), dtype=spec.dtype, device=spec.device)
+                (*batch_size, len(self.agents), *feature_shape), dtype=dtype, device=device)
             for idx, agent in enumerate(self.agents):
                 if ("agents", agent, key) in tensordict.keys(True, True):
-                    stacked[idx, ...] = tensordict["agents", agent, key]
+                    stacked[(*batch_idx, idx)] = tensordict["agents", agent, key]
             tensordict.set(("agents", key), stacked)
         return tensordict
 
@@ -105,12 +111,14 @@ class StackAgents(Transform):
         return self._call(tensordict_reset)
 
     def _inv_call(self, tensordict):
-        # tensordict["action", k] has shape (n_agents,) — stack into (n_agents, n_action_dims)
+        # tensordict["action", k] has shape (*env_batch, n_agents) — stack into
+        # (*env_batch, n_agents, n_action_dims)
         actions = torch.stack(
             [tensordict["action", k] for k in self.action_keys], dim=-1
         )
         for i, agent in enumerate(self.agents):
-            tensordict.set(("agents", agent, "continuous_action"), actions[i])
+            tensordict.set(("agents", agent, "continuous_action"),
+                           actions[..., i, :])
         return tensordict
 
     def transform_observation_spec(self, observation_spec):
@@ -193,182 +201,199 @@ class PrintActions(Transform):
         return tensordict
 
 
-env = TransformedEnv(env, Compose(
-    # PrintActions(),
-    StackAgents(agents, lidar_num_tags=2),
-    ComposeReward(),
-))
+def main():
+    writer = SummaryWriter(log_dir=f"runs/torchrl_ppo")
 
-gamma = 0.99
-lmbda = 0.95
-clip_epsilon = 0.2
-entropy_epsilon = 0.01
-frames_per_batch = 512
-sub_batch_size = 256
+    torch.set_num_threads(16)
 
-model: ActorValueOperator = ActorValueOperator(
-    trunk_tensordict_model,
-    actor,
-    critic,
-).to(device)
+    checkpoint_path = "checkpoints/latest.pt"
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
 
+    device = torch.device("cpu")
+    print(f"Using device: {device}")
 
-optim = torch.optim.Adam(model.parameters(), lr=3e-4)
+    env = ParallelEnv(
+        num_envs, make_env,
+        create_env_kwargs=[{"worker_id": k} for k in range(num_envs)],
+    )
 
-start_iter = 0
-if os.path.exists(checkpoint_path):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model"])
-    optim.load_state_dict(checkpoint["optim"])
-    start_iter = checkpoint["iter"] + 1
-    print(f"Resumed from checkpoint at iteration {start_iter}")
+    env = TransformedEnv(env, Compose(
+        # PrintActions(),
+        StackAgents(env, agents, lidar_num_tags=2),
+        ComposeReward(),
+    ))
 
-tensordict: td.TensorDict = env.reset()
+    gamma = 0.99
+    lmbda = 0.95
+    clip_epsilon = 0.2
+    entropy_epsilon = 0.01
+    frames_per_batch = 512
+    sub_batch_size = 256
 
-gae = GAE(
-    gamma=gamma,
-    lmbda=lmbda,
-    value_network=model.get_value_operator(),
-    average_gae=True
-)
-gae.set_keys(
-    reward=("agents", "reward"),
-    done=("agents", "done"),
-    terminated=("agents", "terminated"),
-)
-loss_module = ClipPPOLoss(
-    actor_network=model.get_policy_operator(),
-    critic_network=model.get_value_operator(),
-    clip_epsilon=clip_epsilon,
-    entropy_bonus=entropy_epsilon > 0,
-    entropy_coeff=entropy_epsilon,
-    critic_coeff=1.0,
-    loss_critic_type="smooth_l1",
-)
-
-loss_module.set_keys(
-    reward=("agents", "reward"),
-    done=("agents", "done"),
-    terminated=("agents", "terminated"),
-)
-
-# viz = LidarAndOccupancyGridVisualisation(
-#     lidar_shape=env.observation_spec["agents", "lidar"].shape,
-#     velocity_shape=torch.Size((num_agents, 2)),
-# )
-# viz.show()
+    model: ActorValueOperator = ActorValueOperator(
+        trunk_tensordict_model,
+        actor,
+        critic,
+    ).to(device)
 
 
-def save_checkpoint(iter_num):
-    torch.save({
-        "model": model.state_dict(),
-        "optim": optim.state_dict(),
-        "iter": iter_num,
-    }, checkpoint_path)
+    optim = torch.optim.Adam(model.parameters(), lr=3e-4)
+
+    start_iter = 0
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model"])
+        optim.load_state_dict(checkpoint["optim"])
+        start_iter = checkpoint["iter"] + 1
+        print(f"Resumed from checkpoint at iteration {start_iter}")
+
+    tensordict: td.TensorDict = env.reset()
+
+    gae = GAE(
+        gamma=gamma,
+        lmbda=lmbda,
+        value_network=model.get_value_operator(),
+        average_gae=True
+    )
+    gae.set_keys(
+        reward=("agents", "reward"),
+        done=("agents", "done"),
+        terminated=("agents", "terminated"),
+    )
+    loss_module = ClipPPOLoss(
+        actor_network=model.get_policy_operator(),
+        critic_network=model.get_value_operator(),
+        clip_epsilon=clip_epsilon,
+        entropy_bonus=entropy_epsilon > 0,
+        entropy_coeff=entropy_epsilon,
+        critic_coeff=1.0,
+        loss_critic_type="smooth_l1",
+    )
+
+    loss_module.set_keys(
+        reward=("agents", "reward"),
+        done=("agents", "done"),
+        terminated=("agents", "terminated"),
+    )
+
+    # viz = LidarAndOccupancyGridVisualisation(
+    #     lidar_shape=env.observation_spec["agents", "lidar"].shape,
+    #     velocity_shape=torch.Size((num_agents, 2)),
+    # )
+    # viz.show()
 
 
-i = start_iter - 1
-try:
-    for i in range(start_iter, 10000):
-        batch = ReplayBuffer(
-            storage=LazyTensorStorage(max_size=frames_per_batch * num_agents),
-            sampler=SamplerWithoutReplacement(),
-        )
-        frames = []
-        with torch.no_grad():
-            print(f"Iteration {i} — collecting {frames_per_batch} frames...")
-            # Run the environment for a number of frames
-            start_time = time.time_ns()
-            forward_time_ns = 0
-            env_time_ns = 0
-            for frame in range(frames_per_batch):
-                per_agent_keys = [("agents", agent) for agent in agents] + \
-                    [("next", "agents", agent) for agent in agents]
+    def save_checkpoint(iter_num):
+        torch.save({
+            "model": model.state_dict(),
+            "optim": optim.state_dict(),
+            "iter": iter_num,
+        }, checkpoint_path)
 
-                t0 = time.time_ns()
-                tensordict = model.get_policy_operator().forward(tensordict.to(device))
-                if device.type != "cpu":
-                    # forward pass is queued async on mps/cuda — force it to
-                    # finish here so the timing isn't attributed to env.step
-                    getattr(torch, device.type).synchronize()
-                t1 = time.time_ns()
-                tensordict = env.step(tensordict.cpu())
-                t2 = time.time_ns()
 
-                forward_time_ns += t1 - t0
-                env_time_ns += t2 - t1
+    i = start_iter - 1
+    try:
+        for i in range(start_iter, 10000):
+            batch = ReplayBuffer(
+                storage=LazyTensorStorage(max_size=frames_per_batch * num_agents),
+                sampler=SamplerWithoutReplacement(),
+            )
+            frames = []
+            with torch.no_grad():
+                print(f"Iteration {i} — collecting {frames_per_batch} frames...")
+                # Run the environment for a number of frames
+                start_time = time.time_ns()
+                forward_time_ns = 0
+                env_time_ns = 0
+                for frame in range(frames_per_batch):
+                    per_agent_keys = [("agents", agent) for agent in agents] + \
+                        [("next", "agents", agent) for agent in agents]
 
-                # if frame % 10 == 0:
-                #     viz.update(lidar=tensordict["agents", "lidar"], velocity=tensordict["agents", "vector"][:, 37:39])
+                    t0 = time.time_ns()
+                    tensordict = model.get_policy_operator().forward(tensordict.to(device))
+                    if device.type != "cpu":
+                        # forward pass is queued async on mps/cuda — force it to
+                        # finish here so the timing isn't attributed to env.step
+                        getattr(torch, device.type).synchronize()
+                    t1 = time.time_ns()
+                    tensordict = env.step(tensordict.cpu())
+                    t2 = time.time_ns()
 
-                frames.append(tensordict.exclude(*per_agent_keys))
-                tensordict = step_mdp(tensordict)
-            total_time_ns = time.time_ns() - start_time
-            print(
-                f"Time taken for {frames_per_batch} frames: {total_time_ns / 1e9:.3f} seconds = {total_time_ns / frames_per_batch/1e6:.3f} ms/frame")
-            print(f"  forward: {forward_time_ns / 1e9:.3f}s ({forward_time_ns / frames_per_batch / 1e6:.3f} ms/frame), "
-                  f"env.step: {env_time_ns / 1e9:.3f}s ({env_time_ns / frames_per_batch / 1e6:.3f} ms/frame)")
-        # (frames_per_batch, num_agents, ...)
-        rollout = torch.stack(frames, dim=0)
+                    forward_time_ns += t1 - t0
+                    env_time_ns += t2 - t1
 
-        grad_norm = None
-        for epoch in range(4):
+                    frames.append(tensordict.exclude(*per_agent_keys))
+                    tensordict = step_mdp(tensordict)
+                total_time_ns = time.time_ns() - start_time
+                print(
+                    f"Time taken for {frames_per_batch} frames: {total_time_ns / 1e9:.3f} seconds = {total_time_ns / frames_per_batch/1e6:.3f} ms/frame")
+                print(f"  forward: {forward_time_ns / 1e9:.3f}s ({forward_time_ns / frames_per_batch / 1e6:.3f} ms/frame), "
+                      f"env.step: {env_time_ns / 1e9:.3f}s ({env_time_ns / frames_per_batch / 1e6:.3f} ms/frame)")
+            # (frames_per_batch, num_agents, ...)
+            rollout = torch.stack(frames, dim=0)
 
-            # (frames_per_batch * num_agents, ...) - i.e. flattened across time and *agents*
-            data_view = gae(rollout.to(device), time_dim=0).reshape(-1)
-            batch.extend(data_view)
+            grad_norm = None
+            for epoch in range(4):
 
-            for sub_batch in range((frames_per_batch * num_agents) // sub_batch_size):
-                subdata = batch.sample(sub_batch_size)
-                loss_vals = loss_module(subdata.to(device))
+                # (frames_per_batch * num_agents, ...) - i.e. flattened across time and *agents*
+                data_view = gae(rollout.to(device), time_dim=0).reshape(-1)
+                batch.extend(data_view)
 
-                loss_val = (loss_vals["loss_objective"]
-                            + loss_vals["loss_critic"]
-                            + loss_vals["loss_entropy"])
+                for sub_batch in range((frames_per_batch * num_agents) // sub_batch_size):
+                    subdata = batch.sample(sub_batch_size)
+                    loss_vals = loss_module(subdata.to(device))
 
-                loss_val.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    loss_module.parameters(), 1.0)
-                optim.step()
-                optim.zero_grad()
+                    loss_val = (loss_vals["loss_objective"]
+                                + loss_vals["loss_critic"]
+                                + loss_vals["loss_entropy"])
 
-        writer.add_scalar("loss/objective",
-                          loss_vals["loss_objective"].item(), i)
-        writer.add_scalar("loss/critic", loss_vals["loss_critic"].item(), i)
-        writer.add_scalar("loss/entropy", loss_vals["loss_entropy"].item(), i)
-        writer.add_scalar("loss/total", loss_val.item(), i)
-        writer.add_scalar("grad_norm", grad_norm.item(), i)
-        writer.add_scalar("rollout/mean_reward",
-                          rollout["agents", "reward"].mean().item(), i)
-        for kind in ("env", "progress", "forward_velocity", "step_penalty", "collision"):
-            writer.add_scalar(
-                f"reward_components/{kind}",
-                rollout["agents", "reward_components", kind].mean().item(), i)
-        writer.add_scalar("rollout/avg_speed",
-                          rollout["agents", "vector"][..., 0].mean().item(), i)
-        writer.add_scalar("rollout/collision_rate",
-                          rollout["agents", "terminated"].float().mean().item(), i)
-        writer.add_scalar("timing/ms_per_frame",
-                          total_time_ns / frames_per_batch / 1e6, i)
-        writer.add_scalar("timing/forward_ms_per_frame",
-                          forward_time_ns / frames_per_batch / 1e6, i)
-        writer.add_scalar("timing/env_ms_per_frame",
-                          env_time_ns / frames_per_batch / 1e6, i)
-        writer.add_scalar("lr", optim.param_groups[0]["lr"], i)
-        writer.add_histogram("actions/throttle",
-                             rollout["action", "throttle"], i)
-        writer.add_histogram("actions/steering",
-                             rollout["action", "steering"], i)
-        v = rollout["agents", "vector"]          # (T, agents, 40)
-        for k in range(v.shape[-1]):
-            writer.add_scalar(f"obs_vector/mean_{k}", v[..., k].mean().item(), i)
-            writer.add_scalar(f"obs_vector/std_{k}", v[..., k].std().item(), i)
+                    loss_val.backward()
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        loss_module.parameters(), 1.0)
+                    optim.step()
+                    optim.zero_grad()
 
-        if i % 50 == 0:
-            save_checkpoint(i)
-except KeyboardInterrupt:
-    print("Interrupted — saving checkpoint before exit")
-finally:
-    save_checkpoint(i)
-    print(f"Checkpoint saved at iteration {i}")
-    env.close()
+            writer.add_scalar("loss/objective",
+                              loss_vals["loss_objective"].item(), i)
+            writer.add_scalar("loss/critic", loss_vals["loss_critic"].item(), i)
+            writer.add_scalar("loss/entropy", loss_vals["loss_entropy"].item(), i)
+            writer.add_scalar("loss/total", loss_val.item(), i)
+            writer.add_scalar("grad_norm", grad_norm.item(), i)
+            writer.add_scalar("rollout/mean_reward",
+                              rollout["agents", "reward"].mean().item(), i)
+            for kind in ("env", "progress", "forward_velocity", "step_penalty", "collision"):
+                writer.add_scalar(
+                    f"reward_components/{kind}",
+                    rollout["agents", "reward_components", kind].mean().item(), i)
+            writer.add_scalar("rollout/avg_speed",
+                              rollout["agents", "vector"][..., 0].mean().item(), i)
+            writer.add_scalar("rollout/collision_rate",
+                              rollout["agents", "terminated"].float().mean().item(), i)
+            writer.add_scalar("timing/ms_per_frame",
+                              total_time_ns / frames_per_batch / 1e6, i)
+            writer.add_scalar("timing/forward_ms_per_frame",
+                              forward_time_ns / frames_per_batch / 1e6, i)
+            writer.add_scalar("timing/env_ms_per_frame",
+                              env_time_ns / frames_per_batch / 1e6, i)
+            writer.add_scalar("lr", optim.param_groups[0]["lr"], i)
+            writer.add_histogram("actions/throttle",
+                                 rollout["action", "throttle"], i)
+            writer.add_histogram("actions/steering",
+                                 rollout["action", "steering"], i)
+            v = rollout["agents", "vector"]          # (T, agents, 40)
+            for k in range(v.shape[-1]):
+                writer.add_scalar(f"obs_vector/mean_{k}", v[..., k].mean().item(), i)
+                writer.add_scalar(f"obs_vector/std_{k}", v[..., k].std().item(), i)
+
+            if i % 50 == 0:
+                save_checkpoint(i)
+    except KeyboardInterrupt:
+        print("Interrupted — saving checkpoint before exit")
+    finally:
+        save_checkpoint(i)
+        print(f"Checkpoint saved at iteration {i}")
+        env.close()
+
+
+if __name__ == "__main__":
+    main()
