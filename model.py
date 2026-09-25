@@ -1,17 +1,18 @@
 import torch
-from tensordict.nn import TensorDictModule
-from torchrl.modules import ActorValueOperator, ProbabilisticActor, TanhNormal, ValueOperator
+from tensordict.nn import TensorDictModule, TensorDictSequential
+from torchrl.modules import ActorValueOperator, ProbabilisticActor, SafeProbabilisticTensorDictSequential, TanhNormal, ValueOperator
 import tensordict as td
+from torchrl.modules.tensordict_module.sequence import SafeSequential
 
 
 # Raw vector obs indices fed to the network (see F1TenthRacing.CollectObservations):
 # 1 steering, 2 throttle, 37 forward velocity (signed, m/s), 38 lateral velocity (m/s)
-VECTOR_FEATURES = [1, 2, 37, 38]
+VECTOR_FEATURES = [1, 2]
 # Per-feature divisor so every input lands roughly in [-1, 1].
 # Steering/throttle are already in [-1, 1]; MAX_SPEED is an estimate — check
 # the logged max of obs_vector idx 37 and adjust.
 MAX_SPEED = 5.0
-VECTOR_SCALE = [1.0, 1.0, MAX_SPEED, MAX_SPEED]
+VECTOR_SCALE = [1.0, 1.0]
 
 
 class TrunkModel(torch.nn.Module):
@@ -32,14 +33,14 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv1d(in_channels=64, out_channels=32, kernel_size=8),
             torch.nn.ReLU(),
-            torch.nn.Conv1d(in_channels=32, out_channels=8, kernel_size=8),
+            torch.nn.Conv1d(in_channels=32, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
         )
 
         lidar_len = 101
         for _ in range(5):
             lidar_len -= 7
-        lidar_out_channels = 8
+        lidar_out_channels = 16
         dense_in = lidar_out_channels * lidar_len + len(VECTOR_FEATURES)
 
         self.dense = torch.nn.Sequential(
@@ -50,8 +51,6 @@ class TrunkModel(torch.nn.Module):
             torch.nn.Linear(256, 128),
             torch.nn.ReLU(),
             torch.nn.Linear(128, 64),
-            torch.nn.ReLU(),
-            torch.nn.Linear(64, 32),
             torch.nn.ReLU()
         )
 
@@ -64,24 +63,26 @@ class TrunkModel(torch.nn.Module):
         # dim so Conv1d always sees (N, 1, L), then restore the batch shape
         lidar_cnn_output: torch.Tensor = self.lidar_network(
             lidar.reshape(-1, 1, lidar_len))
-        lidar_cnn_output = lidar_cnn_output.flatten(
-            1).reshape(*batch_shape, -1)
+        lidar_cnn_output = lidar_cnn_output.reshape(
+            *batch_shape, *lidar_cnn_output.shape[1:])
+        lidar_cnn_output_flat = lidar_cnn_output.flatten(
+            len(batch_shape)).reshape(*batch_shape, -1)
 
         # only steering, throttle and signed forward/lateral velocity of the raw
         # vector obs are fed to the network (normalised) — the rest (position,
         # encoders, progress delta, etc.) is only used on the Python side
         vector_input = vector[..., self.vector_features] / self.vector_scale
-        dense_input = torch.cat([lidar_cnn_output, vector_input], dim=-1)
+        dense_input = torch.cat([lidar_cnn_output_flat, vector_input], dim=-1)
         dense_output: torch.Tensor = self.dense(dense_input)
 
-        return dense_output
+        return dense_output, lidar_cnn_output
 
 
 class ActionModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         # 2 for throttle (loc, scale), 2 for steering (loc, scale)
-        self.head = torch.nn.Linear(32, 4)
+        self.head = torch.nn.Linear(64, 4)
 
     def forward(self, hidden_layer: torch.Tensor):
 
@@ -97,11 +98,26 @@ class ActionModel(torch.nn.Module):
 
         return throttle_loc, throttle_scale, steering_loc, steering_scale
 
+class AuxModel(torch.nn.Module):
+    def __init__(self, lidar_size = 101):
+        super().__init__()
+        self.head = torch.nn.Linear(64, 13)
+
+    def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
+        out: torch.Tensor = self.head(hidden_layer)
+        velocity = out[..., :2] #(..., 2) = [forward_velocity, lateral_velocity]
+        pos_delta = out[..., 2:4] #(..., 2) = [forward_pos_delta, lateral_pos_delta]
+        angular_velocity = out[..., 4] #(..., 1) = [angular_velocity]
+        wheel_slips = out[..., 5:14] #(..., 8) = [wheel_slip_lf_forward, wheel_slip_lf_sideways, ...] lf, rf, lr, rr
+
+        print(lidar_cnn_output.shape)
+
+        return velocity, pos_delta, angular_velocity, wheel_slips
 
 class ValueModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.head = torch.nn.Linear(32, 1)
+        self.head = torch.nn.Linear(64, 1)
 
     def forward(self, hidden_layer: torch.Tensor):
         return self.head(hidden_layer)
@@ -110,7 +126,13 @@ class ValueModel(torch.nn.Module):
 trunk_tensordict_model = TensorDictModule(
     TrunkModel(),
     in_keys=[("agents", "lidar"), ("agents", "vector")],
-    out_keys=["hidden_layer"]
+    out_keys=["hidden_layer", "lidar_cnn_output"]
+)
+
+aux = TensorDictModule(
+    AuxModel(),
+    in_keys=["hidden_layer", "lidar_cnn_output"],
+    out_keys=["velocity", "pos_delta", "angular_velocity", "wheel_slips"]
 )
 
 actor_tensordict_model = TensorDictModule(
@@ -146,3 +168,48 @@ critic = ValueOperator(
     in_keys=["hidden_layer"],
     out_keys=["state_value"]
 )
+
+
+class ActorValueAuxOperator(SafeSequential):
+
+    def __init__(
+        self,
+        common_operator: TensorDictModule,
+        policy_operator: TensorDictModule,
+        value_operator: TensorDictModule,
+        aux_operator: TensorDictModule
+    ):
+        super().__init__(
+            common_operator,
+            policy_operator,
+            value_operator,
+            aux_operator
+        )
+
+    def get_policy_operator(self) -> TensorDictSequential:
+        """Returns a standalone policy operator that maps an observation to an action."""
+        if isinstance(self.module[1], SafeProbabilisticTensorDictSequential):
+            return SafeProbabilisticTensorDictSequential(
+                self.module[0], *self.module[1].module
+            )
+        return SafeSequential(self.module[0], self.module[1])
+
+    def get_value_operator(self) -> TensorDictSequential:
+        """Returns a standalone value network operator that maps an observation to a value estimate."""
+        return SafeSequential(self.module[0], self.module[2])
+    
+    def get_aux_operator(self) -> TensorDictSequential:
+        """Returns a standalone aux network operator that maps an observation to aux outputs."""
+        return SafeSequential(self.module[0], self.module[3])
+
+    def get_policy_head(self) -> TensorDictModule:
+        """Returns the policy head."""
+        return self.module[1]
+
+    def get_value_head(self) -> TensorDictModule:
+        """Returns the value head."""
+        return self.module[2]
+
+    def get_aux_head(self) -> TensorDictModule:
+        """Returns the aux head."""
+        return self.module[3]

@@ -3,12 +3,6 @@ from torchrl.envs import TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, Par
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 
-num_envs = 4
-num_agents_per_env = 12
-num_agents = num_envs * num_agents_per_env
-agents = [f"agent_{i}" for i in range(num_agents_per_env)]
-
-
 def make_env(worker_id: int, num_agents: int):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
@@ -17,7 +11,7 @@ def make_env(worker_id: int, num_agents: int):
         file_name="linux_build/build_linux.x86_64",
         no_graphics=True,
         side_channels=[engine_channel],
-        num_areas=num_agents_per_env,
+        num_areas=num_agents,
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
         # each Unity instance needs its own port (base_port 5005 + worker_id)
         worker_id=worker_id,
@@ -26,6 +20,7 @@ def make_env(worker_id: int, num_agents: int):
 
 
 def make_envs(num_envs: int, num_agents_per_env: int):
+    agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
         create_env_kwargs=[
@@ -47,7 +42,7 @@ class StackAgents(Transform):
         if obs_keys is None:
             obs_keys = {
                 "LIDAR1": "lidar",
-                "VectorSensor_size40": "vector",
+                "VectorSensor_size36": "vector",
                 # "GridSensor-OneHot": "occupancy_grid",
             }
         self.agents = agents
@@ -147,24 +142,12 @@ class StackAgents(Transform):
 
 
 class ComposeReward(Transform):
-    """Composes the per-step reward from raw values reported in the vector
-    obs — F1TenthRacing.cs no longer calls AddReward for progress/speed
-    shaping, it just exposes the raw numbers (unsigned forward speed at
-    index 0, signed forward velocity at index 37, progress delta along the
-    centerline spline at the last index).
-    """
-
-    # Track is 31.34 m long, so progress_weight=0.5 makes a full lap worth ~15.7.
-    # Idling must be clearly worse than driving: with the old weights (velocity
-    # 0.005, collision 1.0) a policy moving at 0.8 m/s and crashing every ~128
-    # steps earned -0.0045/step vs -0.0005/step for standing still, so PPO learnt
-    # to stand still. Now at 0.8 m/s: +0.016 velocity - 0.002 step - ~0.004
-    # expected collision = ~+0.010/step (plus progress) vs -0.002 idle. A crash
-    # also forfeits all future (positive) reward, so collision_penalty (on top of
-    # Unity's -0.05) needn't be huge; it still exceeds the discounted idle cost
-    # (0.002 / (1 - gamma) = 0.2).
-    def __init__(self, progress_weight=0.5, forward_velocity_weight=0.02, step_penalty=0.002,
-                 collision_penalty=0.5):
+    def __init__(self,
+                 progress_weight=1.0,
+                 forward_velocity_weight=0.0,
+                 step_penalty=0.002,
+                 collision_penalty=0.2
+                ):
         super().__init__(
             in_keys=[
                 ("agents", "reward"),
@@ -180,7 +163,7 @@ class ComposeReward(Transform):
 
     def _call(self, tensordict):
         vector = tensordict["agents", "vector"]
-        forward_velocity = vector[..., 37]
+        forward_velocity = vector[..., 33]
         progress_delta = vector[..., -1]
         env_reward = tensordict["agents", "reward"].squeeze(-1)
         terminated = tensordict["agents", "terminated"].squeeze(-1).float()
@@ -193,9 +176,7 @@ class ComposeReward(Transform):
         collision_penalty = -self.collision_penalty * terminated
         shaped = progress_reward + forward_velocity_reward + \
             step_penalty + collision_penalty
-        tensordict["agents", "reward"] = tensordict["agents",
-                                                    "reward"] + shaped.unsqueeze(-1)
-        tensordict["agents", "reward_components", "env"] = env_reward
+        tensordict["agents", "reward"] = shaped.unsqueeze(-1)
         tensordict["agents", "reward_components", "progress"] = progress_reward
         tensordict["agents", "reward_components",
                    "forward_velocity"] = forward_velocity_reward
