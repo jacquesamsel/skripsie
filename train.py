@@ -14,7 +14,43 @@ import os
 from torch.utils.tensorboard import SummaryWriter
 
 
-def main():
+def world_to_local(vector: torch.Tensor, quaternion: torch.Tensor) -> torch.Tensor:
+    """Rotates a world-frame vector into the local frame of a Unity (x, y, z, w) quaternion."""
+    # inverse rotation of a unit quaternion is its conjugate: negate the vector part
+    u = -quaternion[..., :3]
+    w = quaternion[..., 3:]
+    uv = torch.linalg.cross(u, vector, dim=-1)
+    return vector + 2 * w * uv + 2 * torch.linalg.cross(u, uv, dim=-1)
+
+
+def compute_pos_delta(data: td.TensorDict) -> torch.Tensor:
+    """[forward, lateral] displacement over the step, in the car's frame at the start of the step."""
+    world_delta = data["next", "agents", "pos"] - data["agents", "pos"]
+    local_delta = world_to_local(world_delta, data["agents", "orientation_quaternion"])
+    # Unity: +z is forward, +x is right
+    return torch.stack([local_delta[..., 2], local_delta[..., 0]], dim=-1)
+
+
+def train(
+        num_envs = 2,
+        num_agents_per_env = 3,
+        forward_velocity_weight = 1.0,
+        lateral_velocity_weight = 1.0,
+        curvature_weight = torch.tensor([1.0, 1.0, 1.0]),
+        pos_delta_weight = torch.tensor([1.0, 1.0]),
+        wheel_slips_weight = torch.ones(4, 2),
+        yaw_rate_weight = 1.0,
+):
+    # per-element weights broadcast against the target, so tensors let each
+    # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
+    aux_weights = {
+        "velocity_forward": torch.as_tensor(forward_velocity_weight),
+        "velocity_lateral": torch.as_tensor(lateral_velocity_weight),
+        "curvature": torch.as_tensor(curvature_weight),
+        "pos_delta": torch.as_tensor(pos_delta_weight),
+        "wheel_slips": torch.as_tensor(wheel_slips_weight),
+        "yaw_rate": torch.as_tensor(yaw_rate_weight),
+    }
     writer = SummaryWriter(log_dir=f"runs/torchrl_ppo")
 
     torch.set_num_threads(16)
@@ -24,8 +60,6 @@ def main():
 
     device = torch.device("cpu")
     print(f"Using device: {device}")
-    num_envs = 1
-    num_agents_per_env = 1
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
 
     env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env)
@@ -35,7 +69,7 @@ def main():
     clip_epsilon = 0.2
     entropy_epsilon = 0.001
     frames_per_batch = 512
-    sub_batch_size = 128
+    batch_size = 128
 
     model: ActorValueAuxOperator = ActorValueAuxOperator(
         trunk_tensordict_model,
@@ -95,7 +129,7 @@ def main():
     try:
         for i in range(start_iter, 10000):
             rows_per_iter = frames_per_batch * num_envs
-            minibatches_per_epoch = rows_per_iter // sub_batch_size
+            batches_per_epoch = rows_per_iter // batch_size
             batch = ReplayBuffer(
                 storage=LazyTensorStorage(max_size=rows_per_iter),
                 sampler=SamplerWithoutReplacement(),
@@ -135,19 +169,28 @@ def main():
 
             start_gradient_time = time.time_ns()
             data_view = gae(rollout.to(device), time_dim=0).reshape(-1)
-            model.get_aux_operator().forward(data_view.to(device))
+            data_view["agents", "pos_delta"] = compute_pos_delta(data_view)
+            # Unity is y-up, so yaw rate is the angular velocity about y
+            data_view["agents", "yaw_rate"] = data_view["agents", "angular_velocity"][..., 1:2]
             batch.extend(data_view)
 
             for epoch in range(2):
-                for sub_batch in range(minibatches_per_epoch):
-                    subdata = batch.sample(sub_batch_size)
-                    print(subdata)
-                    ppo_loss_vals = loss_module(subdata.to(device))
+                for _ in range(batches_per_epoch):
+                    batch_data = batch.sample(batch_size).to(device)
+                    ppo_loss_vals = loss_module(batch_data)
+                    # recompute with the current weights so gradients flow into the aux head and trunk
+                    model.get_aux_operator()(batch_data)
+
+                    aux_losses = {
+                        key: (weight.to(device) * (batch_data["agents", key] - batch_data["aux", key]) ** 2).mean()
+                        for key, weight in aux_weights.items()
+                    }
 
                     loss_val = (
                         ppo_loss_vals["loss_objective"]
                         + ppo_loss_vals["loss_critic"]
                         + ppo_loss_vals["loss_entropy"]
+                        + sum(aux_losses.values())
                     )
 
                     loss_val.backward()
@@ -163,6 +206,8 @@ def main():
                 "loss/critic", ppo_loss_vals["loss_critic"].item(), i)
             writer.add_scalar(
                 "loss/entropy", ppo_loss_vals["loss_entropy"].item(), i)
+            for key, value in aux_losses.items():
+                writer.add_scalar(f"loss/aux_{key}", value.item(), i)
             writer.add_scalar("loss/total", loss_val.item(), i)
             writer.add_scalar("rollout/mean_reward",
                               rollout["agents", "reward"].mean().item(), i)
@@ -197,4 +242,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    train()

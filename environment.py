@@ -155,11 +155,10 @@ class SplitVectorObservation(Transform):
         ("angular_velocity", 3),
         ("linear_acceleration", 3),
         ("wheel_slips", 8),
-        ("velocity", 2),
+        ("velocity_forward", 1),
+        ("velocity_lateral", 1),
         ("progress", 1),
-        ("curvature_0.5_m", 1),
-        ("curvature_1.0_m", 1),
-        ("curvature_2.0_m", 1),
+        ("curvature", 3),
     )
 
     def __init__(self, vector_key=("agents", "vector")):
@@ -213,7 +212,7 @@ class ComposeReward(Transform):
         super().__init__(
             in_keys=[
                 ("agents", "reward"),
-                ("agents", "velocity"),
+                ("agents", "velocity_forward"),
                 ("agents", "progress"),
                 ("agents", "terminated"),
             ],
@@ -226,7 +225,7 @@ class ComposeReward(Transform):
 
     def _call(self, tensordict):
         # velocity is [forward, lateral] (signed, m/s); see SplitVectorObservation.LAYOUT
-        forward_velocity = tensordict["agents", "velocity"][..., 0]
+        forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
         progress_delta = tensordict["agents", "progress"].squeeze(-1)
         env_reward = tensordict["agents", "reward"].squeeze(-1)
         terminated = tensordict["agents", "terminated"].squeeze(-1).float()
