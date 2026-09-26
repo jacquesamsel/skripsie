@@ -32,6 +32,7 @@ def make_envs(num_envs: int, num_agents_per_env: int):
         Compose(
             # PrintActions(),
             StackAgents(env, agents, lidar_num_tags=2),
+            SplitVectorObservation(),
             ComposeReward(),
         )
     )
@@ -42,7 +43,7 @@ class StackAgents(Transform):
         if obs_keys is None:
             obs_keys = {
                 "LIDAR1": "lidar",
-                "VectorSensor_size36": "vector",
+                "VectorSensor_size37": "vector",
                 # "GridSensor-OneHot": "occupancy_grid",
             }
         self.agents = agents
@@ -141,6 +142,67 @@ class StackAgents(Transform):
         return observation_spec
 
 
+class SplitVectorObservation(Transform):
+    LAYOUT = (
+        ("speed", 1),
+        ("cur_steering_angle", 1),
+        ("cur_throttle", 1),
+        ("pos", 3),
+        ("wheel_ticks", 2),
+        ("wheel_angles", 2),
+        ("orientation_quaternion", 4),
+        ("euler_angles", 3),
+        ("angular_velocity", 3),
+        ("linear_acceleration", 3),
+        ("wheel_slips", 8),
+        ("velocity", 2),
+        ("progress", 1),
+        ("curvature_0.5_m", 1),
+        ("curvature_1.0_m", 1),
+        ("curvature_2.0_m", 1),
+    )
+
+    def __init__(self, vector_key=("agents", "vector")):
+        self.vector_key = tuple(vector_key)
+        out_keys = [("agents", name) for name, _ in self.LAYOUT]
+        super().__init__(in_keys=[self.vector_key], out_keys=out_keys)
+
+    def _split(self, vector):
+        offset = 0
+        for name, size in self.LAYOUT:
+            value = vector[..., offset:offset + size]
+            if name == "wheel_slips":
+                value = value.reshape(*value.shape[:-1], 4, 2)
+            yield name, value
+            offset += size
+
+    def _call(self, tensordict):
+        vector = tensordict[self.vector_key]
+        for name, value in self._split(vector):
+            tensordict.set(("agents", name), value)
+        del tensordict[self.vector_key]
+        return tensordict
+
+    def _reset(self, tensordict, tensordict_reset):
+        return self._call(tensordict_reset)
+
+    def transform_observation_spec(self, observation_spec):
+        vector_spec = observation_spec[self.vector_key]
+        offset = 0
+        for name, size in self.LAYOUT:
+            shape = list(vector_spec.shape[:-1]) + [size]
+            if name == "wheel_slips":
+                shape = shape[:-1] + [4, 2]
+            observation_spec["agents", name] = vector_spec.__class__(
+                shape=torch.Size(shape),
+                dtype=vector_spec.dtype,
+                device=vector_spec.device,
+            )
+            offset += size
+        del observation_spec[self.vector_key]
+        return observation_spec
+
+
 class ComposeReward(Transform):
     def __init__(self,
                  progress_weight=1.0,
@@ -151,7 +213,8 @@ class ComposeReward(Transform):
         super().__init__(
             in_keys=[
                 ("agents", "reward"),
-                ("agents", "vector"),
+                ("agents", "velocity"),
+                ("agents", "progress"),
                 ("agents", "terminated"),
             ],
             out_keys=[("agents", "reward")],
@@ -162,9 +225,9 @@ class ComposeReward(Transform):
         self.collision_penalty = collision_penalty
 
     def _call(self, tensordict):
-        vector = tensordict["agents", "vector"]
-        forward_velocity = vector[..., 33]
-        progress_delta = vector[..., -1]
+        # velocity is [forward, lateral] (signed, m/s); see SplitVectorObservation.LAYOUT
+        forward_velocity = tensordict["agents", "velocity"][..., 0]
+        progress_delta = tensordict["agents", "progress"].squeeze(-1)
         env_reward = tensordict["agents", "reward"].squeeze(-1)
         terminated = tensordict["agents", "terminated"].squeeze(-1).float()
         # on a collision step Unity returns before updating ProgressDelta, so

@@ -4,26 +4,9 @@ from torchrl.modules import ActorValueOperator, ProbabilisticActor, SafeProbabil
 import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
 
-
-# Raw vector obs indices fed to the network (see F1TenthRacing.CollectObservations):
-# 1 steering, 2 throttle, 37 forward velocity (signed, m/s), 38 lateral velocity (m/s)
-VECTOR_FEATURES = [1, 2]
-# Per-feature divisor so every input lands roughly in [-1, 1].
-# Steering/throttle are already in [-1, 1]; MAX_SPEED is an estimate — check
-# the logged max of obs_vector idx 37 and adjust.
-MAX_SPEED = 5.0
-VECTOR_SCALE = [1.0, 1.0]
-
-
 class TrunkModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-
-        self.register_buffer("vector_features", torch.tensor(
-            VECTOR_FEATURES, dtype=torch.long), persistent=False)
-        self.register_buffer("vector_scale", torch.tensor(
-            VECTOR_SCALE, dtype=torch.float32), persistent=False)
-
         self.lidar_network = torch.nn.Sequential(
             torch.nn.Conv1d(in_channels=1, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
@@ -41,7 +24,7 @@ class TrunkModel(torch.nn.Module):
         for _ in range(5):
             lidar_len -= 7
         lidar_out_channels = 16
-        dense_in = lidar_out_channels * lidar_len + len(VECTOR_FEATURES)
+        dense_in = lidar_out_channels * lidar_len + 2
 
         self.dense = torch.nn.Sequential(
             torch.nn.Linear(dense_in, 128),
@@ -54,7 +37,7 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU()
         )
 
-    def forward(self, lidar: torch.Tensor, vector: torch.Tensor):
+    def forward(self, lidar: torch.Tensor, cur_steering: torch.Tensor, cur_throttle: torch.Tensor):
         # lidar block is [T_1..T_n, Miss, Distance] -> Distance is always the last channel
         lidar = lidar[..., -1, :]
         *batch_shape, lidar_len = lidar.shape
@@ -68,11 +51,8 @@ class TrunkModel(torch.nn.Module):
         lidar_cnn_output_flat = lidar_cnn_output.flatten(
             len(batch_shape)).reshape(*batch_shape, -1)
 
-        # only steering, throttle and signed forward/lateral velocity of the raw
-        # vector obs are fed to the network (normalised) — the rest (position,
-        # encoders, progress delta, etc.) is only used on the Python side
-        vector_input = vector[..., self.vector_features] / self.vector_scale
-        dense_input = torch.cat([lidar_cnn_output_flat, vector_input], dim=-1)
+        # only prev steering, throttle in input
+        dense_input = torch.cat([lidar_cnn_output_flat, cur_steering, cur_throttle], dim=-1)
         dense_output: torch.Tensor = self.dense(dense_input)
 
         return dense_output, lidar_cnn_output
@@ -101,7 +81,7 @@ class ActionModel(torch.nn.Module):
 class AuxModel(torch.nn.Module):
     def __init__(self, lidar_size = 101):
         super().__init__()
-        self.head = torch.nn.Linear(64, 13)
+        self.head = torch.nn.Linear(64, 17)
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
@@ -109,10 +89,9 @@ class AuxModel(torch.nn.Module):
         pos_delta = out[..., 2:4] #(..., 2) = [forward_pos_delta, lateral_pos_delta]
         angular_velocity = out[..., 4] #(..., 1) = [angular_velocity]
         wheel_slips = out[..., 5:14] #(..., 8) = [wheel_slip_lf_forward, wheel_slip_lf_sideways, ...] lf, rf, lr, rr
+        curvature = out[..., 14:17] #(..., 3) = [curvature_0.5_m, curvature_1.0_m, curvature_2.0_m]
 
-        print(lidar_cnn_output.shape)
-
-        return velocity, pos_delta, angular_velocity, wheel_slips
+        return velocity, pos_delta, angular_velocity, wheel_slips, curvature
 
 class ValueModel(torch.nn.Module):
     def __init__(self):
@@ -125,14 +104,14 @@ class ValueModel(torch.nn.Module):
 
 trunk_tensordict_model = TensorDictModule(
     TrunkModel(),
-    in_keys=[("agents", "lidar"), ("agents", "vector")],
+    in_keys=[("agents", "lidar"), ("agents", "cur_steering_angle"), ("agents", "cur_throttle")],
     out_keys=["hidden_layer", "lidar_cnn_output"]
 )
 
 aux = TensorDictModule(
     AuxModel(),
     in_keys=["hidden_layer", "lidar_cnn_output"],
-    out_keys=["velocity", "pos_delta", "angular_velocity", "wheel_slips"]
+    out_keys=["velocity", "pos_delta", "angular_velocity", "wheel_slips", "curvature"]
 )
 
 actor_tensordict_model = TensorDictModule(

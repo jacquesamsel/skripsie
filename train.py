@@ -171,7 +171,7 @@ def main():
                     f"reward_components/{kind}",
                     rollout["agents", "reward_components", kind].mean().item(), i)
             writer.add_scalar("rollout/avg_speed",
-                              rollout["agents", "vector"][..., 0].mean().item(), i)
+                              rollout["agents", "speed"][..., 0].mean().item(), i)
             writer.add_scalar("rollout/collision_rate",
                               rollout["agents", "terminated"].float().mean().item(), i)
             writer.add_scalar("timing/ms_per_frame",
