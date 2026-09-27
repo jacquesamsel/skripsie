@@ -7,6 +7,7 @@ from torchrl.modules.tensordict_module.sequence import SafeSequential
 class TrunkModel(torch.nn.Module):
     def __init__(self, num_stacked_lidar_frames: int = 4):
         super().__init__()
+        self.num_stacked_lidar_frames = num_stacked_lidar_frames
         self.lidar_network = torch.nn.Sequential(
             torch.nn.Conv1d(in_channels=num_stacked_lidar_frames, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
@@ -37,21 +38,26 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU()
         )
 
-    def forward(self, lidar: torch.Tensor, cur_steering: torch.Tensor, cur_throttle: torch.Tensor):
+    def forward(self, lidar: torch.Tensor, cur_steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
         # lidar is (..., n_stacked_frames, L) of distances (see StackLidar)
-        *batch_shape, n_frames, lidar_len = lidar.shape
+        *batch_shape, n_frames, n_tags, lidar_len = lidar.shape
+        if n_frames != self.num_stacked_lidar_frames:
+            raise ValueError(f"Expected {self.num_stacked_lidar_frames} stacked lidar frames, got {n_frames}")
+        n_tags -= 2 # remove the miss, dist 'tags'
+        
+        lidar_dist_only = lidar[..., -1, :] # (..., n_stacked_frames, L) of distances only
 
         # flatten all leading batch dims (agents, time, envs, ...) into one
         # dim so Conv1d always sees (N, n_frames, L), then restore the batch shape
         lidar_cnn_output: torch.Tensor = self.lidar_network(
-            lidar.reshape(-1, n_frames, lidar_len))
+            lidar_dist_only.reshape(-1, n_frames, lidar_len))
         lidar_cnn_output = lidar_cnn_output.reshape(
             *batch_shape, *lidar_cnn_output.shape[1:])
         lidar_cnn_output_flat = lidar_cnn_output.flatten(
             len(batch_shape)).reshape(*batch_shape, -1)
 
         # only prev steering, throttle in input
-        dense_input = torch.cat([lidar_cnn_output_flat, cur_steering, cur_throttle], dim=-1)
+        dense_input = torch.cat([lidar_cnn_output_flat, cur_steering_angle, cur_throttle], dim=-1)
         dense_output: torch.Tensor = self.dense(dense_input)
 
         return dense_output, lidar_cnn_output

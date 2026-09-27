@@ -33,16 +33,16 @@ def compute_pos_delta(data: td.TensorDict) -> torch.Tensor:
 
 
 def train(
-        num_envs=2,
-        num_agents_per_env=3,
-        forward_velocity_weight=1.0,
-        lateral_velocity_weight=1.0,
-        curvature_weight=torch.tensor([1.0, 1.0, 1.0]),
-        pos_delta_weight=torch.tensor([1.0, 1.0]),
-        wheel_slips_weight=torch.ones(4, 2),
-        yaw_rate_weight=1.0,
-        num_stacked_lidar_frames=4,
-        name: str = "torchrl_ppo"
+        forward_velocity_weight: float,
+        lateral_velocity_weight: float,
+        curvature_weight: torch.Tensor,
+        pos_delta_weight: torch.Tensor,
+        wheel_slips_weight: torch.Tensor,
+        yaw_rate_weight: float,
+        num_stacked_lidar_frames: int,
+        num_envs: int,
+        num_agents_per_env: int,
+        name: str
 ):
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
@@ -56,7 +56,7 @@ def train(
     }
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
-    torch.set_num_threads(2)
+    torch.set_num_threads(8)
 
     checkpoint_path = f"checkpoints/{name}.pt"
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
@@ -94,10 +94,11 @@ def train(
         gamma=gamma,
         lmbda=lmbda,
         value_network=model.get_value_operator(),
-        average_gae=True
+        average_gae=True,
+        deactivate_vmap=True
     )
     gae.set_keys(
-        reward=("agents", "reward"),
+        reward=("reward"),
         done=("agents", "done"),
         terminated=("agents", "terminated"),
     )
@@ -113,7 +114,7 @@ def train(
     )
 
     loss_module.set_keys(
-        reward=("agents", "reward"),
+        reward="reward",
         done=("agents", "done"),
         terminated=("agents", "terminated"),
     )
@@ -158,7 +159,7 @@ def train(
                     env_time_ns += t2 - t1
 
                     frames.append(tensordict.exclude(*per_agent_keys))
-                    tensordict = step_mdp(tensordict)
+                    tensordict = step_mdp(tensordict, done_keys=env.done_keys)
                 total_time_ns = time.time_ns() - start_time
                 print(
                     f"Time taken for {frames_per_batch} frames: {total_time_ns / 1e9:.3f} seconds = {total_time_ns / frames_per_batch/1e6:.3f} ms/frame")
@@ -212,11 +213,11 @@ def train(
                 writer.add_scalar(f"loss/aux_{key}", value.item(), i)
             writer.add_scalar("loss/total", loss_val.item(), i)
             writer.add_scalar("rollout/mean_reward",
-                              rollout["agents", "reward"].mean().item(), i)
-            for kind in ("progress", "forward_velocity", "step_penalty", "collision"):
-                writer.add_scalar(
-                    f"reward_components/{kind}",
-                    rollout["agents", "reward_components", kind].mean().item(), i)
+                              rollout["next", "reward"].mean().item(), i)
+            # for kind in ("progress", "forward_velocity", "step_penalty", "collision"):
+            #     writer.add_scalar(
+            #         f"reward_components/{kind}",
+            #         rollout["agents", "reward_components", kind].mean().item(), i)
             writer.add_scalar("rollout/avg_speed",
                               rollout["agents", "speed"][..., 0].mean().item(), i)
             writer.add_scalar("rollout/collision_rate",
@@ -245,8 +246,8 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=6,
-        num_agents_per_env=12,
+        num_envs=8,
+        num_agents_per_env=16,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weight=torch.tensor([0.0, 0.0, 0.0]),

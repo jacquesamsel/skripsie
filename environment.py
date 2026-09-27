@@ -42,7 +42,11 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             *[
                 Stack(in_keys=[
                     ("agents", agent, key) for agent in agents
-                ], out_key=("agents", key), dim=-2)
+                ],
+                    out_key=("agents", key),
+                    dim=-2,
+                    del_keys=key not in ['done', 'terminated', 'truncated'] # don't delete the keys when necessary for unity env
+                )
                 for key in [
                     "LIDAR1",
                     "VectorSensor_size37",
@@ -65,8 +69,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             ExcludeTransform(
                 ("agents", "LIDAR1"),
                 *[("agents", agent, "reward") for agent in agents],
-                *[("agents", agent,  "group_reward") for agent in agents],
-                *[(agents, agent)]
+                *[("agents", agent,  "group_reward") for agent in agents]
             ),
             SplitVector(
                 layout=[
@@ -80,7 +83,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                     (("agents", "euler_angles"), torch.Size([3])),
                     (("agents", "angular_velocity"), torch.Size([3])),
                     (("agents", "linear_acceleration"), torch.Size([3])),
-                    (("agents", "wheel_slips"), torch.Size([8])),
+                    (("agents", "wheel_slips"), torch.Size([4, 2])), # [FL_fw, FL_lat, ...]
                     (("agents", "velocity_forward"), torch.Size([1])),
                     (("agents", "velocity_lateral"), torch.Size([1])),
                     (("agents", "progress"), torch.Size([1])),
@@ -105,7 +108,8 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                       dim=-2,
                       in_keys=[("agents", "lidar")],
                       out_keys=[("agents", "stacked_lidar")],
-                      done_key=("agents", "done")
+                      done_key=("agents", "done"),
+                      reset_key=("agents", "_reset")
                       ),
         )
     )
@@ -163,7 +167,7 @@ class ComposeReward(Transform):
                 ("agents", "progress"),
                 ("agents", "terminated"),
             ],
-            out_keys=[("agents", "reward")],
+            out_keys=[("reward",)],
         )
         self.progress_weight = progress_weight
         self.forward_velocity_weight = forward_velocity_weight
@@ -181,13 +185,13 @@ class ComposeReward(Transform):
         collision_penalty = -self.collision_penalty * terminated
         shaped = progress_reward + forward_velocity_reward + \
             step_penalty + collision_penalty
-        tensordict["agents", "reward"] = shaped.unsqueeze(-1)
+        tensordict["reward"] = shaped.unsqueeze(-1)
         return tensordict
 
     def transform_output_spec(self, output_spec):
         output_spec = output_spec.clone()
         obs = output_spec["full_observation_spec",
                           "agents", "velocity_forward"]
-        output_spec["full_reward_spec", "agents", "reward"] = Unbounded(
+        output_spec["full_reward_spec", "reward"] = Unbounded(
             shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
         return output_spec
