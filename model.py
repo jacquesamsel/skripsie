@@ -5,10 +5,10 @@ import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
 
 class TrunkModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, num_stacked_lidar_frames: int = 4):
         super().__init__()
         self.lidar_network = torch.nn.Sequential(
-            torch.nn.Conv1d(in_channels=1, out_channels=16, kernel_size=8),
+            torch.nn.Conv1d(in_channels=num_stacked_lidar_frames, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
             torch.nn.Conv1d(in_channels=16, out_channels=32, kernel_size=8),
             torch.nn.ReLU(),
@@ -38,14 +38,13 @@ class TrunkModel(torch.nn.Module):
         )
 
     def forward(self, lidar: torch.Tensor, cur_steering: torch.Tensor, cur_throttle: torch.Tensor):
-        # lidar block is [T_1..T_n, Miss, Distance] -> Distance is always the last channel
-        lidar = lidar[..., -1, :]
-        *batch_shape, lidar_len = lidar.shape
+        # lidar is (..., n_stacked_frames, L) of distances (see StackLidar)
+        *batch_shape, n_frames, lidar_len = lidar.shape
 
         # flatten all leading batch dims (agents, time, envs, ...) into one
-        # dim so Conv1d always sees (N, 1, L), then restore the batch shape
+        # dim so Conv1d always sees (N, n_frames, L), then restore the batch shape
         lidar_cnn_output: torch.Tensor = self.lidar_network(
-            lidar.reshape(-1, 1, lidar_len))
+            lidar.reshape(-1, n_frames, lidar_len))
         lidar_cnn_output = lidar_cnn_output.reshape(
             *batch_shape, *lidar_cnn_output.shape[1:])
         lidar_cnn_output_flat = lidar_cnn_output.flatten(
@@ -102,54 +101,6 @@ class ValueModel(torch.nn.Module):
     def forward(self, hidden_layer: torch.Tensor):
         return self.head(hidden_layer)
 
-
-trunk_tensordict_model = TensorDictModule(
-    TrunkModel(),
-    in_keys=[("agents", "lidar"), ("agents", "cur_steering_angle"), ("agents", "cur_throttle")],
-    out_keys=["hidden_layer", "lidar_cnn_output"]
-)
-
-aux = TensorDictModule(
-    AuxModel(),
-    in_keys=["hidden_layer", "lidar_cnn_output"],
-    out_keys=[("aux", "velocity_forward"), ("aux", "velocity_lateral"), ("aux", "pos_delta"), ("aux", "yaw_rate"), ("aux", "wheel_slips"), ("aux", "curvature")]
-)
-
-actor_tensordict_model = TensorDictModule(
-    ActionModel(),
-    in_keys=["hidden_layer"],
-    out_keys=[
-        ("params", "throttle", "loc"),
-        ("params", "throttle", "scale"),
-        ("params", "steering", "loc"),
-        ("params", "steering", "scale"),
-    ]
-)
-
-actor = ProbabilisticActor(
-    actor_tensordict_model,
-    in_keys=["params"],
-    distribution_class=td.nn.CompositeDistribution,
-    return_log_prob=True,
-    distribution_kwargs={
-        "distribution_map": {
-            "throttle": lambda loc, scale: TanhNormal(loc, scale, event_dims=0, tanh_loc=True),
-            "steering": lambda loc, scale: TanhNormal(loc, scale, event_dims=0, tanh_loc=True),
-        },
-        "name_map": {
-            "throttle": ("action", "throttle"),
-            "steering": ("action", "steering")
-        }
-    }
-)
-
-critic = ValueOperator(
-    ValueModel(),
-    in_keys=["hidden_layer"],
-    out_keys=["state_value"]
-)
-
-
 class ActorValueAuxOperator(SafeSequential):
 
     def __init__(
@@ -193,3 +144,59 @@ class ActorValueAuxOperator(SafeSequential):
     def get_aux_head(self) -> TensorDictModule:
         """Returns the aux head."""
         return self.module[3]
+
+
+def make_model(num_stacked_lidar_frames: int = 4):
+
+    trunk_tensordict_model = TensorDictModule(
+        TrunkModel(num_stacked_lidar_frames=num_stacked_lidar_frames),
+        in_keys=[("agents", "lidar"), ("agents", "cur_steering_angle"), ("agents", "cur_throttle")],
+        out_keys=["hidden_layer", "lidar_cnn_output"]
+    )
+
+    aux = TensorDictModule(
+        AuxModel(),
+        in_keys=["hidden_layer", "lidar_cnn_output"],
+        out_keys=[("aux", "velocity_forward"), ("aux", "velocity_lateral"), ("aux", "pos_delta"), ("aux", "yaw_rate"), ("aux", "wheel_slips"), ("aux", "curvature")]
+    )
+
+    actor_tensordict_model = TensorDictModule(
+        ActionModel(),
+        in_keys=["hidden_layer"],
+        out_keys=[
+            ("params", "throttle", "loc"),
+            ("params", "throttle", "scale"),
+            ("params", "steering", "loc"),
+            ("params", "steering", "scale"),
+        ]
+    )
+
+    actor = ProbabilisticActor(
+        actor_tensordict_model,
+        in_keys=["params"],
+        distribution_class=td.nn.CompositeDistribution,
+        return_log_prob=True,
+        distribution_kwargs={
+            "distribution_map": {
+                "throttle": lambda loc, scale: TanhNormal(loc, scale, event_dims=0, tanh_loc=True),
+                "steering": lambda loc, scale: TanhNormal(loc, scale, event_dims=0, tanh_loc=True),
+            },
+            "name_map": {
+                "throttle": ("action", "throttle"),
+                "steering": ("action", "steering")
+            }
+        }
+    )
+
+    critic = ValueOperator(
+        ValueModel(),
+        in_keys=["hidden_layer"],
+        out_keys=["state_value"]
+    )
+
+    return ActorValueAuxOperator(
+        trunk_tensordict_model,
+        actor,
+        critic,
+        aux,
+    )
