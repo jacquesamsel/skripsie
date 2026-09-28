@@ -36,8 +36,8 @@ def compute_pos_delta(data: td.TensorDict) -> torch.Tensor:
 def train(
         forward_velocity_weight: float,
         lateral_velocity_weight: float,
-        curvature_weight: torch.Tensor,
-        pos_delta_weight: torch.Tensor,
+        curvature_weights: torch.Tensor,
+        pos_delta_weights: torch.Tensor,
         wheel_slips_weight: torch.Tensor,
         yaw_rate_weight: float,
         num_stacked_lidar_frames: int,
@@ -52,8 +52,8 @@ def train(
     aux_weights = {
         "velocity_forward": torch.as_tensor(forward_velocity_weight),
         "velocity_lateral": torch.as_tensor(lateral_velocity_weight),
-        "curvature": torch.as_tensor(curvature_weight),
-        "pos_delta": torch.as_tensor(pos_delta_weight),
+        "curvature": torch.as_tensor(curvature_weights),
+        "pos_delta": torch.as_tensor(pos_delta_weights),
         "wheel_slips": torch.as_tensor(wheel_slips_weight),
         "yaw_rate": torch.as_tensor(yaw_rate_weight),
     }
@@ -252,8 +252,8 @@ if __name__ == "__main__":
         num_agents_per_env=8,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
-        curvature_weight=torch.tensor([0.0, 0.0, 0.0]),
-        pos_delta_weight=torch.tensor([0.0, 0.0]),
+        curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
+        pos_delta_weights=torch.tensor([0.0, 0.0]),
         wheel_slips_weight=torch.zeros(4, 2),
         yaw_rate_weight=0.0,
         num_stacked_lidar_frames=4,
