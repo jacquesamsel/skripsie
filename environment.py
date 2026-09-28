@@ -11,11 +11,11 @@ from tensordict import is_tensor_collection
 import os
 
 
-def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set()):
+def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set(), time_scale=20.0, quality_level=0):
     os.sched_setaffinity(0, set(range(os.cpu_count())) - cpu_anti_affinity)
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
-        time_scale=20.0, quality_level=0)
+        time_scale=time_scale, quality_level=quality_level)
     env = UnityMLAgentsEnv(
         file_name="linux_build/build_linux.x86_64",
         no_graphics=True,
@@ -28,12 +28,18 @@ def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set(
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 4):
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 4, cpu_anti_affinity: set[int] = set(), time_scale: float = 20.0, quality_level: int = 0):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
         create_env_kwargs=[
-            {"worker_id": k, "num_agents": num_agents_per_env} for k in range(num_envs)],
+            {
+                "worker_id": k,
+                "num_agents": num_agents_per_env,
+                "cpu_anti_affinity": cpu_anti_affinity,
+                "time_scale": time_scale,
+                "quality_level": quality_level
+            } for k in range(num_envs)],
     )
 
     LIDAR_NUM_TAGS = 2
@@ -196,7 +202,8 @@ class ComposeReward(Transform):
     def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
         forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
         progress_delta = tensordict["agents", "progress"].squeeze(-1)
-        crashed = (tensordict["agents", "unity_reward"].squeeze(-1) < 0).float()
+        crashed = (
+            tensordict["agents", "unity_reward"].squeeze(-1) < 0).float()
         progress_reward = progress_delta * \
             self.progress_weight * (1.0 - crashed)
         forward_velocity_reward = forward_velocity * self.forward_velocity_weight

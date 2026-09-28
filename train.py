@@ -45,7 +45,7 @@ def train(
         num_agents_per_env: int,
         name: str
 ):
-    torch.set_num_threads(8)
+    torch.set_num_threads(16)
 
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
@@ -64,18 +64,9 @@ def train(
 
     device = torch.device("cpu")
     print(f"Using device: {device}")
-    agents = [f"agent_{i}" for i in range(num_agents_per_env)]
 
     env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env,
                     num_stacked_frames=num_stacked_lidar_frames)
-
-    # Confine this process's compute threads to a single L3 cache domain
-    # (cpus 0-3,64-67 share one 16MB L3 on this Threadripper) and keep the
-    # Unity/ParallelEnv worker subprocesses off of it (see make_env in
-    # environment.py). Without this, the scheduler tends to co-locate this
-    # process's threads near its own noisy children and the gradient step
-    # gets ~3x slower even though the workers are otherwise idle.
-    os.sched_setaffinity(0, {0, 1, 2, 3, 64, 65, 66, 67})
 
     gamma = 0.99
     lmbda = 0.95
@@ -153,7 +144,7 @@ def train(
             steps = []
 
             rollout_start = time.perf_counter_ns()
-            with torch.no_grad():
+            with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
                 for frame in range(frames_per_rollout):
                     tensordict = env.step(
                         model.get_policy_operator()(tensordict))
@@ -166,37 +157,52 @@ def train(
             print(f"Rollout size: {rollout.bytes()} bytes")
             gae_start = time.perf_counter_ns()
             with torch.no_grad():
-                # needs time_dim=1, see below
+                # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
                 rollout = gae(rollout)
 
             save_rollout_buffer_start = time.perf_counter_ns()
 
             rollout_buffer.empty()
-            rollout_buffer.extend(rollout.reshape(-1))   # size = num_envs * T
+            # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
+            rollout_buffer.extend(rollout.reshape(-1))
 
             epochs_start = time.perf_counter_ns()
 
+            grad_norms = []
             for epochs in range(4):  # epochs
                 for minibatch in rollout_buffer:
                     optim.zero_grad()
                     loss = loss_module(minibatch)
                     (
-                        loss["entropy"] + loss["loss_critic"] +
+                        loss["loss_entropy"] + loss["loss_critic"] +
                         loss["loss_objective"]
                     ).mean().backward()
+                    # returns the total norm from before clipping
+                    grad_norms.append(torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), 1.0).item())
                     optim.step()
 
             end_time = time.perf_counter_ns()
 
-            writer.add_scalar("time/rollout_ms",
-                              (gae_start-rollout_start)/1e9, i)
-            writer.add_scalar(
-                "time/gae_ms", (save_rollout_buffer_start-gae_start)/1e9, i)
-            writer.add_scalar("time/save_rollout_buffer_ms",
-                              (epochs_start-save_rollout_buffer_start)/1e9, i)
-            writer.add_scalar("time/epochs_ms", (end_time-epochs_start)/1e9, i)
+            timings = {
+                "rollout": (gae_start-rollout_start)/1e9,
+                "gae": (save_rollout_buffer_start-gae_start)/1e9,
+                "save_rollout_buffer": (epochs_start-save_rollout_buffer_start)/1e9,
+                "epochs": (end_time-epochs_start)/1e9,
+            }
+            timings["total"] = end_time/1e9 - rollout_start/1e9
 
-            writer.add_scalar("loss/total", (loss["loss_entropy"] + loss["loss_critic"] + loss["loss_objective"]).mean().item(), i)
+            print(f"Timing (iteration {i}):")
+            for stage, seconds in timings.items():
+                print(f"  {stage:<20}{seconds:8.3f} s"
+                      f"{seconds * 1e3 / frames_per_rollout:9.2f} ms/frame")
+
+            for stage, seconds in timings.items():
+                if stage != "total":
+                    writer.add_scalar(f"time/{stage}", seconds, i)
+
+            writer.add_scalar(
+                "loss/total", (loss["loss_entropy"] + loss["loss_critic"] + loss["loss_objective"]).mean().item(), i)
             writer.add_scalar(
                 "loss/entropy", loss["entropy"].mean().item(), i)
             writer.add_scalar(
@@ -206,23 +212,29 @@ def train(
             writer.add_scalar(
                 "loss/mean_ratio", loss["mean_ratio"].mean().item(), i)
             writer.add_scalar(
-                "loss/mean_ratio", loss["clip_fraction"].mean().item(), i)
+                "loss/clip_fraction", loss["clip_fraction"].mean().item(), i)
             writer.add_scalar(
-                "loss/mean_ratio", loss["kl_approx"].mean().item(), i)
+                "loss/kl_approx", loss["kl_approx"].mean().item(), i)
             writer.add_scalar(
-                "loss/mean_ratio", loss["max_ratio"].mean().item(), i)
+                "loss/max_ratio", loss["max_ratio"].mean().item(), i)
+            # pre-clip norms over all minibatches of this iteration
             writer.add_scalar(
-                "loss/mean_ratio", loss["mean_ratio"].mean().item(), i)
-            writer.add_scalar("loss/entropy", loss["entropy"].mean().item(), i)
+                "grad_norm/mean", sum(grad_norms) / len(grad_norms), i)
+            writer.add_scalar("grad_norm/max", max(grad_norms), i)
 
             writer.add_scalar(
                 "reward/mean", rollout["next", "agents", "reward"].mean().item(), i)
             writer.add_scalar("reward/mean_forward_velocity",
                               rollout["agents", "velocity_forward"].mean().item(), i)
-            writer.add_scalar("reward/progess",
+            writer.add_scalar("reward/progress",
                               rollout["agents", "progress"].mean().item(), i)
             writer.add_scalar("reward/collision_rate",
                               rollout["agents", "terminated"].float().mean().item(), i)
+
+            # every sampled action of this rollout (all steps, envs and agents)
+            for action_name in ("throttle", "steering"):
+                writer.add_histogram(
+                    f"action/{action_name}", rollout["action", action_name].flatten(), i)
 
             if i % 10 == 0:
                 save_checkpoint(i)
@@ -236,8 +248,8 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=1,
-        num_agents_per_env=16,
+        num_envs=8,
+        num_agents_per_env=8,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weight=torch.tensor([0.0, 0.0, 0.0]),
