@@ -7,6 +7,7 @@ from torchrl.data import Bounded, Unbounded, UnboundedContinuous
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
+from tensordict import is_tensor_collection
 import os
 
 
@@ -61,6 +62,9 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                       out_key=("agents", key), dim=-2, del_keys=True)
                 for key in ["terminated", "truncated"]
             ],
+            # Unity's own reward is only used as the crash signal (see ComposeReward)
+            StackIfPresent(in_keys=[("agents", a, "reward") for a in agents],
+                           out_key=("agents", "unity_reward"), dim=-2, del_keys=True),
             RenameTransform(in_keys=[("agents", "VectorSensor_size37")], out_keys=[
                             ("agents", "vector")]),
             # de-interleave the lidar tensor so that it can be processed by Conv1d
@@ -75,7 +79,6 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             ),
             ExcludeTransform(
                 ("agents", "LIDAR1"),
-                *[("agents", agent, "reward") for agent in agents],
                 *[("agents", agent, "group_reward") for agent in agents],
                 # *[("agents", agent, "terminated") for agent in agents],
                 # *[("agents", agent, "done") for agent in agents],
@@ -109,6 +112,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                 step_penalty=0.002,
                 collision_penalty=0.2
             ),
+            ExcludeTransform(("agents", "unity_reward")),
             # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
             UnsqueezeTransform(
                 dim=-2,
@@ -122,7 +126,9 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                       done_key=("agents", "done"),
                       reset_key=("agents", "_reset")
                       ),
-            PackActions(agents=agents)
+            PackActions(agents=agents),
+            # Must stay last: declares the "agents" group as batched over the agents
+            AgentBatch(num_agents_per_env),
         )
     )
 
@@ -166,6 +172,7 @@ class SplitVector(Transform):
 
 
 class ComposeReward(Transform):
+    """Shaped per-agent reward. A car has crashed when Unity's own reward for it is negative."""
 
     def __init__(
             self,
@@ -177,9 +184,9 @@ class ComposeReward(Transform):
             in_keys=[
                 ("agents", "velocity_forward"),
                 ("agents", "progress"),
-                ("agents", "terminated"),
+                ("agents", "unity_reward"),
             ],
-            out_keys=[("reward",)],
+            out_keys=[("agents", "reward")],
         )
         self.progress_weight = progress_weight
         self.forward_velocity_weight = forward_velocity_weight
@@ -189,24 +196,102 @@ class ComposeReward(Transform):
     def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
         forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
         progress_delta = tensordict["agents", "progress"].squeeze(-1)
-        terminated = tensordict["agents", "terminated"].squeeze(-1).float()
+        crashed = (tensordict["agents", "unity_reward"].squeeze(-1) < 0).float()
         progress_reward = progress_delta * \
-            self.progress_weight * (1.0 - terminated)
+            self.progress_weight * (1.0 - crashed)
         forward_velocity_reward = forward_velocity * self.forward_velocity_weight
         step_penalty = torch.full((), -self.step_penalty)
-        collision_penalty = -self.collision_penalty * terminated
+        collision_penalty = -self.collision_penalty * crashed
         shaped = progress_reward + forward_velocity_reward + \
             step_penalty + collision_penalty
-        tensordict["reward"] = shaped.unsqueeze(-1)
+        tensordict["agents", "reward"] = shaped.unsqueeze(-1)
         return tensordict
 
     def transform_output_spec(self, output_spec):
         output_spec = output_spec.clone()
         obs = output_spec["full_observation_spec",
                           "agents", "velocity_forward"]
-        output_spec["full_reward_spec", "reward"] = Unbounded(
+        output_spec["full_reward_spec", "agents", "reward"] = Unbounded(
             shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
         return output_spec
+
+
+class StackIfPresent(Stack):
+    """Stack that leaves the reset output alone when none of its keys are there.
+
+    Unity's reset output has no reward, and a plain Stack would call torch.stack([]) on it.
+    """
+
+    def _reset(self, tensordict, tensordict_reset):
+        if all(tensordict_reset.get(key, None) is None for key in self.in_keys):
+            return tensordict_reset
+        return super()._reset(tensordict, tensordict_reset)
+
+
+class AgentBatch(Transform):
+    """Makes the whole env batched over agents: env batch size [N] -> [N, num_agents].
+
+    Must be the last transform in the Compose. Every entry the transforms before it produce
+    has the agent dim right after the env dim, so from the outside every tensor (observations,
+    reward, done, and the policy's actions/values/log-probs) shares the batch [N, num_agents].
+    Inverses run in reverse order, so its inverse runs first and hands the transforms before it
+    (and the wrapped ParallelEnv) plain [N]-batched data again.
+    """
+    enable_inv_on_reset = True
+
+    def __init__(self, num_agents: int):
+        super().__init__()
+        self.num_agents = num_agents
+
+    def transform_env_batch_size(self, batch_size):
+        return torch.Size([*batch_size, self.num_agents])
+
+    @staticmethod
+    def _set_batch_size(tensordict, batch_size):
+        """Sets the batch size of a tensordict and every tensordict nested in it (in place)."""
+        grow = len(batch_size) > len(tensordict.batch_size)
+        if not grow:  # a parent can't be larger than its children, so shrink top-down
+            tensordict.batch_size = batch_size
+        for key in list(tensordict.keys()):
+            child = tensordict.get(key)
+            if is_tensor_collection(child):
+                AgentBatch._set_batch_size(child, batch_size)
+        if grow:  # ... and grow bottom-up
+            tensordict.batch_size = batch_size
+        return tensordict
+
+    def _call(self, next_tensordict):
+        return self._set_batch_size(
+            next_tensordict, torch.Size([*next_tensordict.batch_size, self.num_agents]))
+
+    def _reset(self, tensordict, tensordict_reset):
+        return self._call(tensordict_reset)
+
+    def _inv_call(self, tensordict):
+        return self._set_batch_size(
+            tensordict.copy(), torch.Size(tensordict.batch_size[:-1]))
+
+    def _label_spec(self, spec):
+        spec.shape = (*spec.shape, self.num_agents)
+        return spec
+
+    def transform_observation_spec(self, observation_spec):
+        return self._label_spec(observation_spec)
+
+    def transform_reward_spec(self, reward_spec):
+        return self._label_spec(reward_spec)
+
+    def transform_done_spec(self, done_spec):
+        return self._label_spec(done_spec)
+
+    def transform_output_spec(self, output_spec):
+        output_spec = super().transform_output_spec(output_spec)
+        return self._label_spec(output_spec)
+
+    def transform_input_spec(self, input_spec):
+        self._label_spec(input_spec["full_action_spec"])
+        self._label_spec(input_spec["full_state_spec"])
+        return self._label_spec(input_spec)
 
 
 class PackActions(Transform):

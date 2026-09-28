@@ -105,11 +105,10 @@ def train(
         value_network=model.get_value_operator(),
         average_gae=True,
         deactivate_vmap=True,
-        # GAE expects time dimension to be 1, but our rollout is [num_envs, T, num_agents, ...]
-        time_dim=1,
+        time_dim=0,  # the rollout is stacked along the first dimension, so time_dim=0
     )
     gae.set_keys(
-        reward=("reward"),
+        reward=("agents", "reward"),
         done=("agents", "done"),
         terminated=("agents", "terminated"),
     )
@@ -124,7 +123,7 @@ def train(
     )
 
     loss_module.set_keys(
-        reward="reward",
+        reward=("agents", "reward"),
         done=("agents", "done"),
         terminated=("agents", "terminated"),
     )
@@ -152,30 +151,78 @@ def train(
         for i in itertools.count(start=start_iter):
             # Collect the rollout
             steps = []
-            for frame in range(frames_per_rollout):
-                tensordict = env.step(model.get_policy_operator()(tensordict))
-                print(tensordict)
-                steps.append(tensordict)
-                tensordict = step_mdp(tensordict)
 
-            # [num_envs, T, num_agents, ...]
-            rollout = torch.stack(steps, dim=1)
+            rollout_start = time.perf_counter_ns()
+            with torch.no_grad():
+                for frame in range(frames_per_rollout):
+                    tensordict = env.step(
+                        model.get_policy_operator()(tensordict))
+                    steps.append(tensordict)
+                    tensordict = env.step_mdp(tensordict)
+
+            stack_rollout_start = time.perf_counter_ns()
+            # [T, num_envs, num_agents, ...]
+            rollout = torch.stack(steps, dim=0)
+            print(f"Rollout size: {rollout.bytes()} bytes")
+            gae_start = time.perf_counter_ns()
             with torch.no_grad():
                 # needs time_dim=1, see below
                 rollout = gae(rollout)
 
+            save_rollout_buffer_start = time.perf_counter_ns()
+
             rollout_buffer.empty()
             rollout_buffer.extend(rollout.reshape(-1))   # size = num_envs * T
 
-            # Compute loss and update model
-            loss = loss_module(rollout_buffer)
+            epochs_start = time.perf_counter_ns()
 
             for epochs in range(4):  # epochs
                 for minibatch in rollout_buffer:
                     optim.zero_grad()
                     loss = loss_module(minibatch)
-                    loss["loss"].mean().backward()
+                    (
+                        loss["entropy"] + loss["loss_critic"] +
+                        loss["loss_objective"]
+                    ).mean().backward()
                     optim.step()
+
+            end_time = time.perf_counter_ns()
+
+            writer.add_scalar("time/rollout_ms",
+                              (gae_start-rollout_start)/1e9, i)
+            writer.add_scalar(
+                "time/gae_ms", (save_rollout_buffer_start-gae_start)/1e9, i)
+            writer.add_scalar("time/save_rollout_buffer_ms",
+                              (epochs_start-save_rollout_buffer_start)/1e9, i)
+            writer.add_scalar("time/epochs_ms", (end_time-epochs_start)/1e9, i)
+
+            writer.add_scalar("loss/total", (loss["loss_entropy"] + loss["loss_critic"] + loss["loss_objective"]).mean().item(), i)
+            writer.add_scalar(
+                "loss/entropy", loss["entropy"].mean().item(), i)
+            writer.add_scalar(
+                "loss/actor", loss["loss_objective"].mean().item(), i)
+            writer.add_scalar(
+                "loss/critic", loss["loss_critic"].mean().item(), i)
+            writer.add_scalar(
+                "loss/mean_ratio", loss["mean_ratio"].mean().item(), i)
+            writer.add_scalar(
+                "loss/mean_ratio", loss["clip_fraction"].mean().item(), i)
+            writer.add_scalar(
+                "loss/mean_ratio", loss["kl_approx"].mean().item(), i)
+            writer.add_scalar(
+                "loss/mean_ratio", loss["max_ratio"].mean().item(), i)
+            writer.add_scalar(
+                "loss/mean_ratio", loss["mean_ratio"].mean().item(), i)
+            writer.add_scalar("loss/entropy", loss["entropy"].mean().item(), i)
+
+            writer.add_scalar(
+                "reward/mean", rollout["next", "agents", "reward"].mean().item(), i)
+            writer.add_scalar("reward/mean_forward_velocity",
+                              rollout["agents", "velocity_forward"].mean().item(), i)
+            writer.add_scalar("reward/progess",
+                              rollout["agents", "progress"].mean().item(), i)
+            writer.add_scalar("reward/collision_rate",
+                              rollout["agents", "terminated"].float().mean().item(), i)
 
             if i % 10 == 0:
                 save_checkpoint(i)
@@ -189,7 +236,7 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=8,
+        num_envs=1,
         num_agents_per_env=16,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
