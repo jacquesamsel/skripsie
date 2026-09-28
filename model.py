@@ -13,16 +13,14 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv1d(in_channels=16, out_channels=32, kernel_size=8),
             torch.nn.ReLU(),
-            torch.nn.Conv1d(in_channels=32, out_channels=64, kernel_size=8),
-            torch.nn.ReLU(),
-            torch.nn.Conv1d(in_channels=64, out_channels=32, kernel_size=8),
+            torch.nn.Conv1d(in_channels=32, out_channels=32, kernel_size=8),
             torch.nn.ReLU(),
             torch.nn.Conv1d(in_channels=32, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
         )
 
         lidar_len = 101
-        for _ in range(5):
+        for _ in range(4):
             lidar_len -= 7
         lidar_out_channels = 16
         dense_in = lidar_out_channels * lidar_len + 2
@@ -122,6 +120,10 @@ class ActorValueAuxOperator(SafeSequential):
             value_operator,
             aux_operator
         )
+
+    def get_trunk_operator(self) -> TensorDictModule:
+        """Returns the shared trunk alone, mapping an observation to (hidden_layer, lidar_cnn_output)."""
+        return self.module[0]
 
     def get_policy_operator(self) -> TensorDictSequential:
         """Returns a standalone policy operator that maps an observation to an action."""

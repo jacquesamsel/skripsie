@@ -1,17 +1,18 @@
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from torchrl.envs import set_exploration_type
-from torchrl.envs.utils import ExplorationType, step_mdp
-from torchrl.objectives import ClipPPOLoss
-from torchrl.objectives.value import GAE
-import tensordict as td
-from torchrl.modules import ActorValueOperator
-from torchrl.data import ReplayBuffer, LazyTensorStorage, SamplerWithoutReplacement
-from environment import make_envs
-from model import ActorValueAuxOperator, make_model
-import time
-import torch
-import os
 from torch.utils.tensorboard import SummaryWriter
+import time
+from model import ActorValueAuxOperator, make_model
+from environment import make_envs
+from torchrl.data import ReplayBuffer, LazyTensorStorage, SamplerWithoutReplacement
+from torchrl.modules import ActorValueOperator
+import tensordict as td
+from torchrl.objectives.value import GAE
+from torchrl.objectives import ClipPPOLoss
+from torchrl.envs.utils import ExplorationType, step_mdp
+from torchrl.envs import set_exploration_type
+from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
+import os
+import torch
+import itertools
 
 
 def world_to_local(vector: torch.Tensor, quaternion: torch.Tensor) -> torch.Tensor:
@@ -44,6 +45,8 @@ def train(
         num_agents_per_env: int,
         name: str
 ):
+    torch.set_num_threads(8)
+
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
     aux_weights = {
@@ -56,8 +59,6 @@ def train(
     }
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
-    torch.set_num_threads(8)
-
     checkpoint_path = f"checkpoints/{name}.pt"
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
 
@@ -68,15 +69,23 @@ def train(
     env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env,
                     num_stacked_frames=num_stacked_lidar_frames)
 
+    # Confine this process's compute threads to a single L3 cache domain
+    # (cpus 0-3,64-67 share one 16MB L3 on this Threadripper) and keep the
+    # Unity/ParallelEnv worker subprocesses off of it (see make_env in
+    # environment.py). Without this, the scheduler tends to co-locate this
+    # process's threads near its own noisy children and the gradient step
+    # gets ~3x slower even though the workers are otherwise idle.
+    os.sched_setaffinity(0, {0, 1, 2, 3, 64, 65, 66, 67})
+
     gamma = 0.99
     lmbda = 0.95
     clip_epsilon = 0.2
     entropy_epsilon = 0.001
-    frames_per_batch = 512
+    frames_per_rollout = 512
     batch_size = 128
 
     model: ActorValueAuxOperator = make_model(
-        num_stacked_lidar_frames=num_stacked_lidar_frames).to(device)
+        num_stacked_lidar_frames=num_stacked_lidar_frames)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -95,7 +104,9 @@ def train(
         lmbda=lmbda,
         value_network=model.get_value_operator(),
         average_gae=True,
-        deactivate_vmap=True
+        deactivate_vmap=True,
+        # GAE expects time dimension to be 1, but our rollout is [num_envs, T, num_agents, ...]
+        time_dim=1,
     )
     gae.set_keys(
         reward=("reward"),
@@ -109,7 +120,6 @@ def train(
         entropy_bonus=entropy_epsilon > 0,
         entropy_coeff=entropy_epsilon,
         critic_coeff=1.0,
-        normalize_advantage=True,
         loss_critic_type="smooth_l1",
     )
 
@@ -128,111 +138,44 @@ def train(
 
     i = start_iter - 1
     try:
-        for i in range(start_iter, 10000):
-            rows_per_iter = frames_per_batch * num_envs
-            batches_per_epoch = rows_per_iter // batch_size
-            batch = ReplayBuffer(
-                storage=LazyTensorStorage(max_size=rows_per_iter),
-                sampler=SamplerWithoutReplacement(),
-            )
-            frames = []
-            with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
-                print(
-                    f"Iteration {i} — collecting {frames_per_batch} frames..."
-                )
-                # Run the environment for a number of frames
-                start_time = time.time_ns()
-                forward_time_ns = 0
-                env_time_ns = 0
-                for frame in range(frames_per_batch):
-                    per_agent_keys = [("agents", agent) for agent in agents] + \
-                        [("next", "agents", agent) for agent in agents]
+        # to prevent reallocation each iteration
+        rollout_buffer = ReplayBuffer(
+            storage=LazyTensorStorage(
+                max_size=frames_per_rollout*num_envs*num_agents_per_env,
+                device=device,
+            ),
+            sampler=SamplerWithoutReplacement(),
+            batch_size=batch_size
+        )
 
-                    t0 = time.time_ns()
-                    tensordict = model.get_policy_operator().forward(tensordict.to(device))
+        # infinite loop until interrupted
+        for i in itertools.count(start=start_iter):
+            # Collect the rollout
+            steps = []
+            for frame in range(frames_per_rollout):
+                tensordict = env.step(model.get_policy_operator()(tensordict))
+                print(tensordict)
+                steps.append(tensordict)
+                tensordict = step_mdp(tensordict)
 
-                    t1 = time.time_ns()
-                    tensordict = env.step(tensordict.cpu())
-                    t2 = time.time_ns()
+            # [num_envs, T, num_agents, ...]
+            rollout = torch.stack(steps, dim=1)
+            with torch.no_grad():
+                # needs time_dim=1, see below
+                rollout = gae(rollout)
 
-                    forward_time_ns += t1 - t0
-                    env_time_ns += t2 - t1
+            rollout_buffer.empty()
+            rollout_buffer.extend(rollout.reshape(-1))   # size = num_envs * T
 
-                    frames.append(tensordict.exclude(*per_agent_keys))
-                    tensordict = step_mdp(tensordict, done_keys=env.done_keys)
-                total_time_ns = time.time_ns() - start_time
-                print(
-                    f"Time taken for {frames_per_batch} frames: {total_time_ns / 1e9:.3f} seconds = {total_time_ns / frames_per_batch/1e6:.3f} ms/frame")
-                print(f"  forward: {forward_time_ns / 1e9:.3f}s ({forward_time_ns / frames_per_batch / 1e6:.3f} ms/frame), "
-                      f"env.step: {env_time_ns / 1e9:.3f}s ({env_time_ns / frames_per_batch / 1e6:.3f} ms/frame)")
+            # Compute loss and update model
+            loss = loss_module(rollout_buffer)
 
-            rollout = torch.stack(frames, dim=0)
-
-            start_gradient_time = time.time_ns()
-            data_view = gae(rollout.to(device), time_dim=0).reshape(-1)
-            data_view["agents", "pos_delta"] = compute_pos_delta(data_view)
-            # Unity is y-up, so yaw rate is the angular velocity about y
-            data_view["agents", "yaw_rate"] = data_view["agents",
-                                                        "angular_velocity"][..., 1:2]
-            batch.extend(data_view)
-
-            for epoch in range(2):
-                for _ in range(batches_per_epoch):
-                    batch_data = batch.sample(batch_size).to(device)
-                    ppo_loss_vals = loss_module(batch_data)
-                    # recompute with the current weights so gradients flow into the aux head and trunk
-                    model.get_aux_operator().forward(batch_data)
-
-                    aux_losses: dict[str, torch.Tensor] = {
-                        key: (weight.to(
-                            device) * (batch_data["agents", key] - batch_data["aux", key]) ** 2).mean()
-                        for key, weight in aux_weights.items()
-                    }
-
-                    loss_val: torch.Tensor = (
-                        ppo_loss_vals["loss_objective"]
-                        + ppo_loss_vals["loss_critic"]
-                        + ppo_loss_vals["loss_entropy"]
-                        + sum(aux_losses.values())
-                    )
-
-                    loss_val.backward()
-                    optim.step()
+            for epochs in range(4):  # epochs
+                for minibatch in rollout_buffer:
                     optim.zero_grad()
-
-            gradient_time_ns = time.time_ns() - start_gradient_time
-            print(
-                f"Time taken for gradient step: {gradient_time_ns / 1e9:.3f} seconds = {gradient_time_ns / frames_per_batch/1e6:.3f} ms/frame")
-            writer.add_scalar("loss/objective",
-                              ppo_loss_vals["loss_objective"].item(), i)
-            writer.add_scalar(
-                "loss/critic", ppo_loss_vals["loss_critic"].item(), i)
-            writer.add_scalar(
-                "loss/entropy", ppo_loss_vals["loss_entropy"].item(), i)
-            for key, value in aux_losses.items():
-                writer.add_scalar(f"loss/aux_{key}", value.item(), i)
-            writer.add_scalar("loss/total", loss_val.item(), i)
-            writer.add_scalar("rollout/mean_reward",
-                              rollout["next", "reward"].mean().item(), i)
-            # for kind in ("progress", "forward_velocity", "step_penalty", "collision"):
-            #     writer.add_scalar(
-            #         f"reward_components/{kind}",
-            #         rollout["agents", "reward_components", kind].mean().item(), i)
-            writer.add_scalar("rollout/avg_speed",
-                              rollout["agents", "speed"][..., 0].mean().item(), i)
-            writer.add_scalar("rollout/collision_rate",
-                              rollout["agents", "terminated"].float().mean().item(), i)
-            writer.add_scalar("timing/ms_per_frame",
-                              total_time_ns / frames_per_batch / 1e6, i)
-            writer.add_scalar("timing/forward_ms_per_frame",
-                              forward_time_ns / frames_per_batch / 1e6, i)
-            writer.add_scalar("timing/env_ms_per_frame",
-                              env_time_ns / frames_per_batch / 1e6, i)
-            writer.add_scalar("lr", optim.param_groups[0]["lr"], i)
-            writer.add_histogram("actions/throttle",
-                                 rollout["action", "throttle"], i)
-            writer.add_histogram("actions/steering",
-                                 rollout["action", "steering"], i)
+                    loss = loss_module(minibatch)
+                    loss["loss"].mean().backward()
+                    optim.step()
 
             if i % 10 == 0:
                 save_checkpoint(i)

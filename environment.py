@@ -3,13 +3,15 @@ from typing import Sequence
 
 from torchrl.envs.transforms import Transform, Stack, UnaryTransform, ExcludeTransform, RenameTransform, UnsqueezeTransform
 from torchrl.envs import CatFrames, TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv, Compose
-from torchrl.data import Unbounded, UnboundedContinuous
+from torchrl.data import Bounded, Unbounded, UnboundedContinuous
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
+import os
 
 
-def make_env(worker_id: int, num_agents: int):
+def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set()):
+    os.sched_setaffinity(0, set(range(os.cpu_count())) - cpu_anti_affinity)
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
         time_scale=20.0, quality_level=0)
@@ -36,27 +38,32 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]
 
+    done_stack = Stack(
+        in_keys=[("agents", a, "done") for a in agents],
+        out_key=("agents", "done"), dim=-2, del_keys=True,
+        in_key_inv=("agents", "_reset"),
+        out_keys_inv=[("agents", a, "_reset") for a in agents],
+    )
+    # also run the unstack on reset, not just on step
+    done_stack.enable_inv_on_reset = True
+
     return TransformedEnv(
         env,
         Compose(
             *[
-                Stack(in_keys=[
-                    ("agents", agent, key) for agent in agents
-                ],
-                    out_key=("agents", key),
-                    dim=-2,
-                    del_keys=key not in ['done', 'terminated', 'truncated'] # don't delete the keys when necessary for unity env
-                )
-                for key in [
-                    "LIDAR1",
-                    "VectorSensor_size37",
-                    "done",
-                    "terminated",
-                    "truncated"
-                ]
+                Stack(in_keys=[("agents", a, key) for a in agents],
+                      out_key=("agents", key), dim=-2, del_keys=True)
+                for key in ["LIDAR1", "VectorSensor_size37"]
+            ],
+            done_stack,  # also unstacks the "_reset" flag per agent on reset
+            *[
+                Stack(in_keys=[("agents", a, key) for a in agents],
+                      out_key=("agents", key), dim=-2, del_keys=True)
+                for key in ["terminated", "truncated"]
             ],
             RenameTransform(in_keys=[("agents", "VectorSensor_size37")], out_keys=[
                             ("agents", "vector")]),
+            # de-interleave the lidar tensor so that it can be processed by Conv1d
             UnaryTransform(
                 in_keys=[("agents", "LIDAR1")],
                 out_keys=[("agents", "lidar")],
@@ -69,7 +76,10 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             ExcludeTransform(
                 ("agents", "LIDAR1"),
                 *[("agents", agent, "reward") for agent in agents],
-                *[("agents", agent,  "group_reward") for agent in agents]
+                *[("agents", agent, "group_reward") for agent in agents],
+                # *[("agents", agent, "terminated") for agent in agents],
+                # *[("agents", agent, "done") for agent in agents],
+                # *[("agents", agent, "truncated") for agent in agents],
             ),
             SplitVector(
                 layout=[
@@ -83,7 +93,8 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                     (("agents", "euler_angles"), torch.Size([3])),
                     (("agents", "angular_velocity"), torch.Size([3])),
                     (("agents", "linear_acceleration"), torch.Size([3])),
-                    (("agents", "wheel_slips"), torch.Size([4, 2])), # [FL_fw, FL_lat, ...]
+                    (("agents", "wheel_slips"), torch.Size(
+                        [4, 2])),  # [FL_fw, FL_lat, ...]
                     (("agents", "velocity_forward"), torch.Size([1])),
                     (("agents", "velocity_lateral"), torch.Size([1])),
                     (("agents", "progress"), torch.Size([1])),
@@ -111,6 +122,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                       done_key=("agents", "done"),
                       reset_key=("agents", "_reset")
                       ),
+            PackActions(agents=agents)
         )
     )
 
@@ -195,3 +207,32 @@ class ComposeReward(Transform):
         output_spec["full_reward_spec", "reward"] = Unbounded(
             shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
         return output_spec
+
+
+class PackActions(Transform):
+    """Policy throttle/steering [.., N] -> per-agent ("agents", a, "continuous_action") [.., 2]."""
+
+    def __init__(self, agents: list[str]):
+        super().__init__()
+        self.agents = agents
+
+    def _inv_call(self, tensordict):
+        packed = torch.stack(
+            [tensordict["action", "throttle"], tensordict["action", "steering"]], dim=-1)  # [.., N, 2]
+        tensordict = tensordict.copy()
+        for i, agent in enumerate(self.agents):
+            tensordict.set(
+                ("agents", agent, "continuous_action"), packed[..., i, :])
+        return tensordict
+
+    def transform_input_spec(self, input_spec):
+        action_spec = input_spec["full_action_spec"]
+        ref = action_spec["agents", self.agents[0], "continuous_action"]
+        shape = (*ref.shape[:-1], len(self.agents))
+        low, high = ref.space.low, ref.space.high
+        del action_spec["agents"]
+        action_spec["action", "throttle"] = Bounded(
+            low=float(low[..., 0].min()), high=float(high[..., 0].max()), shape=shape, dtype=ref.dtype)
+        action_spec["action", "steering"] = Bounded(
+            low=float(low[..., 1].min()), high=float(high[..., 1].max()), shape=shape, dtype=ref.dtype)
+        return input_spec
