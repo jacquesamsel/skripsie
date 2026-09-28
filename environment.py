@@ -8,11 +8,9 @@ import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
 from tensordict import is_tensor_collection
-import os
 
 
-def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set(), time_scale=20.0, quality_level=0):
-    os.sched_setaffinity(0, set(range(os.cpu_count())) - cpu_anti_affinity)
+def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
         time_scale=time_scale, quality_level=quality_level)
@@ -28,7 +26,7 @@ def make_env(worker_id: int, num_agents: int, cpu_anti_affinity: set[int] = set(
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 4, cpu_anti_affinity: set[int] = set(), time_scale: float = 20.0, quality_level: int = 0):
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 4, time_scale: float = 20.0, quality_level: int = 0):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
@@ -36,7 +34,6 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             {
                 "worker_id": k,
                 "num_agents": num_agents_per_env,
-                "cpu_anti_affinity": cpu_anti_affinity,
                 "time_scale": time_scale,
                 "quality_level": quality_level
             } for k in range(num_envs)],
