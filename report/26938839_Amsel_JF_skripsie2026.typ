@@ -86,6 +86,7 @@
   [$Re$], [The set of real numbers],
   [$EE[X]$], [Expected value of random variable $X$],
   [$"Var"(X)$], [Variance of random variable $X$],
+  [$rho_0 (s)$], [Initial state distribution],
 )
 
 #pagebreak()
@@ -103,7 +104,61 @@ are described. A short summary of the report can also be given.
 = Background
 
 == Markov Decision Processes (MDPs)
-A Markov Decision Process (MDP) is a mathematical framework for modelling sequential decision making problems where the environment is fully observable and the next state depends only on the current state $s_t$ and the action taken $a_t$. An MDP is defined by a tuple $(cal(S), cal(A), P, R, gamma)$, where $cal(S)$ is the state space, $cal(A)$ is the action space, $P(s_t, a_t, s_(t+1)) -> [0, 1]$ is the transition probability function, $R(a_t, s_(t+1)) -> Re$ is the reward function, and $gamma in [0, 1]$ is the discount factor. 
+A Markov Decision Process (MDP) is a mathematical framework for modelling sequential decision making problems where the environment is fully observable and the next state depends only on the current state $s_t$ and the action taken $a_t$. This makes the current state a _sufficient summary_ of the past: an agent loses nothing by ignoring the history.
+
+#let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
+#let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
+#let r-node(pos, body) = node(pos, body, shape: fletcher.shapes.diamond, inset: 5pt)
+
+
+The initial state $s_0$ is
+drawn from $rho_0$. At each step, the agent samples an action $a_t$
+(square) from its policy $pi$ given the state $s_t$ (circle). The successor
+state $s_(t+1)$ is drawn from $P(dot | s_t, a_t)$, so it depends only on the
+current state and action (the Markov property). The reward $r_t$ (diamond)
+depends on the action $a_t$ and the successor state $s_(t+1)$.
+
+
+#figure(
+  diagram(
+    node-stroke: 1pt,
+    spacing: (3em, 2.5em),
+
+    // Initial state distribution
+    edge((-1, 0), (0, 0), "-|>", $rho_0$),
+
+    // Nodes
+    s-node((0, 0), $s_0$),
+    a-node((1, 1), $a_0$),
+    s-node((2, 0), $s_1$),
+    r-node((2, 1), $r_0$),
+    a-node((3, 1), $a_1$),
+    s-node((4, 0), $s_2$),
+    r-node((4, 1), $r_1$),
+    node((5, 0), $dots$, stroke: none),
+
+    // Step 0
+    edge((0, 0), (1, 1), "-|>", $pi(s_0)$, label-side: left, label-pos: 0.6, label-sep: 0.1em),
+    edge((0, 0), (2, 0), "-|>", $P$),
+    edge((1, 1), (2, 0), "-|>"),
+    edge((1, 1), (2, 1), "-|>"),
+    edge((2, 0), (2, 1), "-|>"),
+
+    // Step 1
+    edge((2, 0), (3, 1), "-|>", $pi(s_1)$, label-side: left, label-pos: 0.6, label-sep: 0.1em),
+    edge((2, 0), (4, 0), "-|>", $P$),
+    edge((3, 1), (4, 0), "-|>"),
+    edge((3, 1), (4, 1), "-|>"),
+    edge((4, 0), (4, 1), "-|>"),
+
+    edge((4, 0), (5, 0), "-|>"),
+  ),
+  caption: [
+    The first two steps of a trajectory in an MDP.
+  ],
+)
+
+An MDP is defined by a tuple $(cal(S), cal(A), cal(P), R, gamma)$, where $cal(S)$ is the state space, $cal(A)$ is the action space, $P(s_t, a_t, s_(t+1)) -> [0, 1]$ is the transition probability function, $R(a_t, s_(t+1)) -> Re$ is the reward function, and $gamma in [0, 1]$ is the discount factor.
 
 
 The objective of an agent interacting with an MDP is to learn a policy $pi(s) -> Delta(cal(A))$ that maximises the expected discounted return $EE[R_t]$, where $R_t = sum_(i=t)^T gamma^(i-t) dot r_i$ is the discounted return at time $t$, and $T$ is the time step at which the episode terminates.
