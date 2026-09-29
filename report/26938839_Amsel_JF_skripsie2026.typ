@@ -75,7 +75,7 @@
   [$pi_theta (a_t | o_t)$],
   [Probability density for action $a_t$ given observation $o_t$ and policy parameters $theta$],
 
-  [$Delta (X)$], [Set of all probability distributions over variable X],
+  [$Delta_cal(Y) (X)$], [Set of all probability distributions over variable X with support $cal(Y)$],
   [$V^pi (s) = EE_pi [R_t | S_t = s]$], [Value function for policy $pi$ at state $s$],
   [$Q^pi (s, a) = EE_pi [R_t | S_t = s, A_t = a]$ ],
   [Action-value function for policy $pi$ at state $s$ and action $a$],
@@ -83,6 +83,9 @@
   [$hat(X)$], [Estimator for random variable $X$],
   [$hat(x)$], [Sample estimate of random variable $X$],
   [$A^pi (s, a) = Q^pi (s, a) - V^pi (s)$], [Advantage function for policy $pi$ at state $s$ and action $a$],
+  [$Re$], [The set of real numbers],
+  [$EE[X]$], [Expected value of random variable $X$],
+  [$"Var"(X)$], [Variance of random variable $X$],
 )
 
 #pagebreak()
@@ -97,22 +100,59 @@
 where the background to the project and the project aims
 are described. A short summary of the report can also be given.
 
-= Reinforcement Learning
-Reinforcement learning is a subfield of machine learning, where a policy $pi(s in S) -> P(A)$ is learned through an agent's interactions with an environment. The policy takes as input the state, and outputs a distribution over the actions $A$. When the agent interacts with the environemnt it does so by performing an action $a in A$. The environment responds by updating its state from $s_t in S$ to $s_(t+1) in S$, and emitting a reward $R_t in Re$, which may depend on the action performed and the successor state $s_(t+1)$.
+= Background
+
+== Markov Decision Processes (MDPs)
+A Markov Decision Process (MDP) is a mathematical framework for modelling sequential decision making problems where the environment is fully observable and the next state depends only on the current state $s_t$ and the action taken $a_t$. An MDP is defined by a tuple $(cal(S), cal(A), P, R, gamma)$, where $cal(S)$ is the state space, $cal(A)$ is the action space, $P(s_t, a_t, s_(t+1)) -> [0, 1]$ is the transition probability function, $R(a_t, s_(t+1)) -> Re$ is the reward function, and $gamma in [0, 1]$ is the discount factor. 
+
+
+The objective of an agent interacting with an MDP is to learn a policy $pi(s) -> Delta(cal(A))$ that maximises the expected discounted return $EE[R_t]$, where $R_t = sum_(i=t)^T gamma^(i-t) dot r_i$ is the discounted return at time $t$, and $T$ is the time step at which the episode terminates.
+
+== Reinforcement Learning
+Reinforcement learning is a subfield of machine learning, where a policy $pi$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[R_t]$. The policy takes as input the observation of the environment $o_t in cal(O)$, and outputs a distribution over actions $cal(A)$. When the agent interacts with the environmnet, it does so by performing an action $a_t ~ pi(o_t)$. The environment responds by updating its state from $s_t in cal(S)$ to $s_(t+1) in cal(S)$, and emitting a scalar reward $r_t in Re$, which may depend on the action $a_t$ performed and the successor state $s_(t+1)$.
+
+#v(2em)
+
+#let party(pos, body) = node(pos, strong(body), stroke: 1pt, corner-radius: 3pt)
+#let step(pos, body) = node(pos, body, stroke: 0.5pt, fill: white)
+#let msg(from, to, label) = edge(from, to, "-|>", label, label-angle: auto)
+#let lifeline(x, end) = edge((x, 0), (x, end), stroke: (paint: gray, dash: "dashed"), layer: -1)
 
 #figure(
-  caption: "Flow diagram of an MDP",
   diagram(
-    node-stroke: 1pt,
-    edge((-2, 0), "r", "-|>", [Start], label-pos: 0, label-side: center),
-    node((-1, 0), $s_t$, radius: 3em),
-    edge([Sample $pi(s_t)$], "-|>"),
-    node((1, 0), $a_t$, radius: 3em),
-    edge([Perform $a_t$], "-|>"),
-    node((3, 0), [$r_t$ and $s_(t+1)$], radius: 3em),
-    edge((3, 0), (-1, 0), "-|>", bend: -40deg),
+    spacing: (8em, 1.8em),
+    node-inset: 6pt,
+
+    // Participants and lifelines
+    party((0, 0), [Agent]),
+    party((1, 0), [Environment]),
+    lifeline(0, 6),
+    lifeline(1, 6),
+
+    edge((-0.5, 2), (-0.5, 3), layer: -1, "-|>", $t$),
+
+    // Local computations
+    step((1, 1), $s_0 ~ rho_0$),
+    step((0, 2), $a_0 ~ pi(dot | s_0)$),
+    step((1, 3), $s_1 ~ P(dot | s_0, a_0)$),
+    step((0, 4), $a_1 ~ pi(dot | s_1)$),
+    step((1, 5), $s_2 ~ P(dot | s_1, a_1)$),
+    node((0, 6), $dots.v$, fill: white),
+    node((1, 6), $dots.v$, fill: white),
+
+    // Messages
+    msg((1, 1), (0, 2), $o_0$),
+    msg((0, 2), (1, 3), $a_0$),
+    msg((1, 3), (0, 4), $r_0, o_1$),
+    msg((0, 4), (1, 5), $a_1$),
+    msg((1, 5), (0, 6), $r_1, o_2$),
   ),
+  caption: [
+    Interaction between the agent and the environment over time.
+  ],
 )
+
+Note that this is distinct from the classical formulation where the agent directly observes the state $s_t$. In our case, the environment is said to be _partially observable_, and the agent must learn a policy that maps from observations to actions (compared to the classical mapping of states to actions). The information available in the state $s_t$ that is not available in the observation $o_t$ is called privledged information.
 
 == REINFORCE
 
