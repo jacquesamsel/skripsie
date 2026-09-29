@@ -26,7 +26,7 @@ def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 4, time_scale: float = 20.0, quality_level: int = 0):
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float = 20.0, quality_level: int = 0):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
@@ -83,9 +83,6 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             ExcludeTransform(
                 ("agents", "LIDAR1"),
                 *[("agents", agent, "group_reward") for agent in agents],
-                # *[("agents", agent, "terminated") for agent in agents],
-                # *[("agents", agent, "done") for agent in agents],
-                # *[("agents", agent, "truncated") for agent in agents],
             ),
             SplitVector(
                 layout=[
@@ -118,12 +115,12 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
             ExcludeTransform(("agents", "unity_reward")),
             # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
             UnsqueezeTransform(
-                dim=-2,
+                dim=-3,
                 in_keys=[("agents", "lidar")],
                 out_keys=[("agents", "lidar")]
             ),
             CatFrames(N=num_stacked_frames,
-                      dim=-2,
+                      dim=-3,
                       in_keys=[("agents", "lidar")],
                       out_keys=[("agents", "stacked_lidar")],
                       done_key=("agents", "done"),

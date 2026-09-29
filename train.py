@@ -1,3 +1,5 @@
+from typing import Literal
+
 from torch.utils.tensorboard import SummaryWriter
 import time
 from model import ActorValueAuxOperator, make_model
@@ -41,6 +43,10 @@ def train(
         wheel_slips_weight: torch.Tensor,
         yaw_rate_weight: float,
         num_stacked_lidar_frames: int,
+        n_rays: int,
+        lidar_conv: Literal["conv1d", "conv2d"],
+        ray_kernel: int,
+        ray_stride: int,
         num_envs: int,
         num_agents_per_env: int,
         name: str
@@ -76,7 +82,11 @@ def train(
     batch_size = 128
 
     model: ActorValueAuxOperator = make_model(
-        num_stacked_lidar_frames=num_stacked_lidar_frames)
+        num_stacked_lidar_frames=num_stacked_lidar_frames,
+        n_rays=n_rays,
+        lidar_conv=lidar_conv,
+        ray_kernel=ray_kernel,
+        ray_stride=ray_stride)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -256,6 +266,10 @@ if __name__ == "__main__":
         pos_delta_weights=torch.tensor([0.0, 0.0]),
         wheel_slips_weight=torch.zeros(4, 2),
         yaw_rate_weight=0.0,
-        num_stacked_lidar_frames=4,
-        name="no_aux"
+        num_stacked_lidar_frames=13,
+        n_rays=101,
+        lidar_conv="conv1d",
+        ray_kernel=8,
+        ray_stride=1,
+        name="test"
     )
