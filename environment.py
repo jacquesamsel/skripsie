@@ -8,6 +8,7 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import tensordict as td
 from tensordict import is_tensor_collection
 import platform
+import random
 
 
 def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
@@ -22,6 +23,8 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
         # each Unity instance needs its own port (base_port 5005 + worker_id)
         worker_id=worker_id,
+
+        seed=random.randint(0, 2**32 - 1),
     )
     return env
 
