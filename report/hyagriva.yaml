@@ -1,0 +1,24 @@
+# models perform worse when prior knowledge masked
+prior-knowledge-masked:
+  type: Article
+  title: "Investigating Human Priors for Playing Video Games"
+  author: ["Dubey, Rachit", "Agrawal, Pulkit", "Pathak, Deepak", "Griffiths, Thomas L.", "Efros, Alexei A."]
+  date: 2018-02-28
+  serial-number:
+    arxiv: "1802.10217"
+  url: "https://arxiv.org/abs/1802.10217"
+
+# UNREAL-style auxiliary *losses* underperform reward-channel intrinsic motivation (RND) on sparse-reward Atari
+sparse-rewards-auxiliary-tasks:
+  type: Thesis
+  title: "Dealing with Sparse Rewards in Reinforcement Learning"
+  author: ["Hare, Joshua"]
+  date: 2019-09-11
+  organization: "University of Sheffield"
+  serial-number:
+    arxiv: "1910.09281"
+  url: "https://arxiv.org/abs/1910.09281"
+
+
+# https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
+# https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
