@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Literal
 
 from torch.utils.tensorboard import SummaryWriter
@@ -79,7 +80,7 @@ def train(
     clip_epsilon = 0.2
     entropy_epsilon = 0.001
     frames_per_rollout = 512
-    batch_size = 128
+    batch_size = 512
 
     model_config = dict(
         num_stacked_lidar_frames=num_stacked_lidar_frames,
@@ -186,19 +187,31 @@ def train(
 
             epochs_start = time.perf_counter_ns()
 
+            loss_logs = []
             grad_norms = []
             for epochs in range(4):  # epochs
                 for minibatch in rollout_buffer:
                     optim.zero_grad()
-                    loss = loss_module(minibatch)
-                    (
+                    loss: td.TensorDict = loss_module(minibatch)
+
+                    total_loss = (
                         loss["loss_entropy"] + loss["loss_critic"] +
                         loss["loss_objective"]
-                    ).mean().backward()
-                    # returns the total norm from before clipping
-                    grad_norms.append(torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), 1.0).item())
+                    ).mean()
+                    total_loss.backward()
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), 1.0).item()
                     optim.step()
+
+                    # log the stuff
+                    loss_logs.append(loss.detach().apply(
+                        lambda x: x.float().mean(), batch_size=[]))
+                    loss_logs[-1]["total_loss"] = total_loss.detach().float()
+                    grad_norms.append(grad_norm)
+
+            # average the per-minibatch logs over the whole iteration
+            avg_loss = torch.stack(loss_logs).apply(
+                lambda x: x.float().mean(dim=0), batch_size=[])
 
             end_time = time.perf_counter_ns()
 
@@ -219,22 +232,20 @@ def train(
                 if stage != "total":
                     writer.add_scalar(f"time/{stage}", seconds, i)
 
+            writer.add_scalar("loss/total", avg_loss["total_loss"].item(), i)
+            writer.add_scalar("loss/entropy", avg_loss["entropy"].item(), i)
             writer.add_scalar(
-                "loss/total", (loss["loss_entropy"] + loss["loss_critic"] + loss["loss_objective"]).mean().item(), i)
+                "loss/actor", avg_loss["loss_objective"].item(), i)
             writer.add_scalar(
-                "loss/entropy", loss["entropy"].mean().item(), i)
+                "loss/critic", avg_loss["loss_critic"].item(), i)
             writer.add_scalar(
-                "loss/actor", loss["loss_objective"].mean().item(), i)
+                "loss/mean_ratio", avg_loss["mean_ratio"].item(), i)
             writer.add_scalar(
-                "loss/critic", loss["loss_critic"].mean().item(), i)
+                "loss/clip_fraction", avg_loss["clip_fraction"].item(), i)
             writer.add_scalar(
-                "loss/mean_ratio", loss["mean_ratio"].mean().item(), i)
+                "loss/kl_approx", avg_loss["kl_approx"].item(), i)
             writer.add_scalar(
-                "loss/clip_fraction", loss["clip_fraction"].mean().item(), i)
-            writer.add_scalar(
-                "loss/kl_approx", loss["kl_approx"].mean().item(), i)
-            writer.add_scalar(
-                "loss/max_ratio", loss["max_ratio"].mean().item(), i)
+                "loss/max_ratio", avg_loss["max_ratio"].item(), i)
             # pre-clip norms over all minibatches of this iteration
             writer.add_scalar(
                 "grad_norm/mean", sum(grad_norms) / len(grad_norms), i)
