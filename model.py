@@ -84,7 +84,6 @@ class TrunkModel(torch.nn.Module):
     def forward(self, lidar: torch.Tensor, cur_steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
         # lidar is (..., n_stacked_frames, L) of distances (see StackLidar)
         *batch_shape, n_frames, n_tags, n_rays = lidar.shape
-        print(lidar.shape)
         if n_frames != self.num_stacked_lidar_frames:
             raise ValueError(
                 f"Expected {self.num_stacked_lidar_frames} stacked lidar frames, got {n_frames}")

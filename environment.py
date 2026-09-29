@@ -10,7 +10,7 @@ from tensordict import is_tensor_collection
 import platform
 
 
-def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
+def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
         time_scale=time_scale, quality_level=quality_level)
@@ -26,7 +26,7 @@ def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float = 20.0, quality_level: int = 0):
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float, quality_level: int = 0):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,

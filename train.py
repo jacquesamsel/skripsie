@@ -51,7 +51,7 @@ def train(
         num_agents_per_env: int,
         name: str
 ):
-    torch.set_num_threads(16)
+    torch.set_num_threads(32)
 
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
@@ -72,7 +72,7 @@ def train(
     print(f"Using device: {device}")
 
     env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env,
-                    num_stacked_frames=num_stacked_lidar_frames)
+                    num_stacked_frames=num_stacked_lidar_frames, time_scale=20.0)
 
     gamma = 0.99
     lmbda = 0.95
@@ -81,18 +81,25 @@ def train(
     frames_per_rollout = 512
     batch_size = 128
 
-    model: ActorValueAuxOperator = make_model(
+    model_config = dict(
         num_stacked_lidar_frames=num_stacked_lidar_frames,
         n_rays=n_rays,
         lidar_conv=lidar_conv,
         ray_kernel=ray_kernel,
-        ray_stride=ray_stride)
+        ray_stride=ray_stride,
+    )
+    model: ActorValueAuxOperator = make_model(**model_config)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     start_iter = 0
     if os.path.exists(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        if checkpoint["model_config"] != model_config:
+            raise ValueError(
+                f"Checkpoint was trained with a different model_config.\n"
+                f"  checkpoint: {checkpoint['model_config']}\n"
+                f"  requested:  {model_config}")
         model.load_state_dict(checkpoint["model"])
         optim.load_state_dict(checkpoint["optim"])
         start_iter = checkpoint["iter"] + 1
@@ -132,6 +139,7 @@ def train(
     def save_checkpoint(iter_num):
         torch.save({
             "model": model.state_dict(),
+            "model_config": model_config,
             "optim": optim.state_dict(),
             "iter": iter_num,
         }, checkpoint_path)
@@ -258,8 +266,8 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=8,
-        num_agents_per_env=8,
+        num_envs=4,
+        num_agents_per_env=4,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
