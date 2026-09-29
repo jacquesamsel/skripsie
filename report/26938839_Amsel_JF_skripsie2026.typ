@@ -55,20 +55,34 @@
 
 = Notation & acronyms
 #table(
-  columns: (1fr, 2fr),
+  columns: (1.5fr, 2fr),
   gutter: 8pt,
   stroke: none,
   [$gamma$], [Discount rate],
+  [$lambda$], [GAE discount rate],
   [$r_t$], [Reward received at time $t$],
-  [$R_t = sum_(i=t)^T gamma^(i-t) dot r_t$], [Discounted return at time $t$],
-  [$S$], [State space],
+  [$R_t = sum_(i=t)^T gamma^(i-t) dot r_i$], [Discounted return at time $t$],
+  [$cal(S)$], [State space],
   [$S_t$], [Random variable for state at time $t$],
-  [$O_t$], [Agent's observation at time $t$],
-  [$A$], [Action space],
-  [$a_t$], [Observed action taken at time $t$],
+  [$s_t$], [State at time $t$],
+  [$cal(O)$], [Observation space],
+  [$O_t$], [Random variable for agent's observation at time $t$],
+  [$o_t$], [Agent's observation at time $t$],
+  [$cal(A)$], [Action space],
   [$A_t$], [Random variable for action taken at time $t$],
-  [$pi_theta (O_t) -> "dist"(A)$], [Policy given parameters $theta$],
-  [],
+  [$a_t$], [Observed action taken at time $t$],
+  [$pi_theta$], [Policy given parameters $theta$],
+  [$pi_theta (a_t | o_t)$],
+  [Probability density for action $a_t$ given observation $o_t$ and policy parameters $theta$],
+
+  [$Delta (X)$], [Set of all probability distributions over variable X],
+  [$V^pi (s) = EE_pi [R_t | S_t = s]$], [Value function for policy $pi$ at state $s$],
+  [$Q^pi (s, a) = EE_pi [R_t | S_t = s, A_t = a]$ ],
+  [Action-value function for policy $pi$ at state $s$ and action $a$],
+
+  [$hat(X)$], [Estimator for random variable $X$],
+  [$hat(x)$], [Sample estimate of random variable $X$],
+  [$A^pi (s, a) = Q^pi (s, a) - V^pi (s)$], [Advantage function for policy $pi$ at state $s$ and action $a$],
 )
 
 #pagebreak()
@@ -157,7 +171,7 @@ Auxiliary learning is the practice of augmenting the loss function with heads fo
 
 The loss function can then be written as
 $
-  L_"total" = L_"policy" (A_t, R_t) - L_"aux" (S_t, hat(S_t))
+  L_"total" = L_"policy" (A_t, R_t) + L_"aux" (S_t, hat(S_t))
 $
 
 Then, during a gradient update step, the parameters $theta$ are updated using information from both loss heads.
