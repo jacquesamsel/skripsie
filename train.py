@@ -285,7 +285,7 @@ if __name__ == "__main__":
         pos_delta_weights=torch.tensor([0.0, 0.0]),
         wheel_slips_weight=torch.zeros(4, 2),
         yaw_rate_weight=0.0,
-        num_stacked_lidar_frames=13,
+        num_stacked_lidar_frames=50,
         n_rays=101,
         lidar_conv="conv1d",
         ray_kernel=8,
