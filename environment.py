@@ -1,5 +1,4 @@
 from functools import reduce
-from typing import Sequence
 
 from torchrl.envs.transforms import Transform, Stack, UnaryTransform, ExcludeTransform, RenameTransform, UnsqueezeTransform
 from torchrl.envs import CatFrames, TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv, Compose
@@ -8,6 +7,7 @@ import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
 from tensordict import is_tensor_collection
+import platform
 
 
 def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
@@ -15,8 +15,8 @@ def make_env(worker_id: int, num_agents: int, time_scale=20.0, quality_level=0):
     engine_channel.set_configuration_parameters(
         time_scale=time_scale, quality_level=quality_level)
     env = UnityMLAgentsEnv(
-        file_name="linux_build/build_linux.x86_64",
-        no_graphics=True,
+        file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
+        no_graphics=platform.system() != "Darwin",
         side_channels=[engine_channel],
         num_areas=num_agents,
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
@@ -37,7 +37,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int = 
                 "time_scale": time_scale,
                 "quality_level": quality_level
             } for k in range(num_envs)],
-    )
+    ) if num_envs > 1 else make_env(0, num_agents_per_env, time_scale, quality_level)
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]
