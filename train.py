@@ -50,7 +50,9 @@ def train(
         ray_stride: int,
         num_envs: int,
         num_agents_per_env: int,
-        name: str
+        name: str,
+        time_kernel: int | None = None,
+        time_stride: int | None = None,
 ):
     torch.set_num_threads(32)
 
@@ -88,6 +90,8 @@ def train(
         lidar_conv=lidar_conv,
         ray_kernel=ray_kernel,
         ray_stride=ray_stride,
+        time_kernel=time_kernel,
+        time_stride=time_stride,
     )
     model: ActorValueAuxOperator = make_model(**model_config)
 
@@ -277,8 +281,8 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=4,
-        num_agents_per_env=4,
+        num_envs=1,
+        num_agents_per_env=1,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
@@ -288,6 +292,8 @@ if __name__ == "__main__":
         num_stacked_lidar_frames=50,
         n_rays=101,
         lidar_conv="conv1d",
+        time_kernel=8,
+        time_stride=2,
         ray_kernel=8,
         ray_stride=1,
         name="test"
