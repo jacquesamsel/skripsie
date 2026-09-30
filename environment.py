@@ -15,6 +15,8 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
         time_scale=time_scale, quality_level=quality_level)
+    seed = random.randint(0, 1000)
+    print("Seed", seed)
     env = UnityMLAgentsEnv(
         file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
         no_graphics=platform.system() != "Darwin",
@@ -24,7 +26,7 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
         # each Unity instance needs its own port (base_port 5005 + worker_id)
         worker_id=worker_id,
 
-        seed=random.randint(0, 2**32 - 1),
+        seed=seed
     )
     return env
 
