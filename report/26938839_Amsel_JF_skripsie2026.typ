@@ -1,6 +1,7 @@
 #set text(size: 12pt)
 #set page(margin: 2.5cm)
 #import "@preview/latex-lookalike:0.1.1": style-outline
+#import "@preview/cetz:0.5.2"
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
 
 #show: style-outline
@@ -301,6 +302,50 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
     node((0, 0), "Value head", height: 30pt, width: 70pt, name: <Value>),
     node((0, 0.75), "Auxiliary head", height: 30pt, width: 70pt, name: <Aux>),
   ),
+)
+
+= Track generation
+
+#figure(
+  caption: "Track generation",
+  cetz.canvas({
+    import cetz.draw: *
+    circle((0, 0), radius: 4)
+    // dots: roughly trace the guide circle for 3/4 of a revolution, with a
+    // little radial jitter so it reads as a walk rather than a perfect ring
+    let n = 8
+    let sweep = 270deg
+    let jitter = (0, 0.3, -0.2, 0.4, -0.3, 0.2, -1.5, 0.1)
+    let dots = range(n).map(idx => {
+      let angle = sweep * (idx / (n - 1))
+      let r = 4 + jitter.at(idx)
+      (r * calc.cos(angle), r * calc.sin(angle))
+    })
+
+    for idx in range(n) {
+      if idx != 0 {
+        line(dots.at(idx - 1), dots.at(idx))
+      }
+    }
+    for idx in range(n) {
+      circle(dots.at(idx), radius: 8pt, fill: black)
+      content(dots.at(idx))[#text(size: 12pt, fill: white)[#(idx + 1)]]
+    }
+
+    let last_point = dots.at(n - 1)
+    let second_last_point = dots.at(n - 2)
+
+    let last_point_tanget_of_circle = last_point.at(0) / last_point.at(1)
+
+    // Draw tangent from last point
+    let tangent_length = 4
+
+    let tangent_end = (last_point.at(0) + tangent_length, last_point.at(1) + tangent_length * last_point_tanget_of_circle)
+
+    line(last_point, tangent_end)
+
+    
+  }),
 )
 
 = Conclusions and recommendations
