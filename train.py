@@ -126,8 +126,8 @@ def train(
         terminated=("agents", "terminated"),
     )
     loss_module = ClipPPOLoss(
-        actor_network=model.get_policy_operator(),
-        critic_network=model.get_value_operator(),
+        actor_network=model.get_policy_head(),
+        critic_network=model.get_value_head(),
         clip_epsilon=clip_epsilon,
         entropy_bonus=entropy_epsilon > 0,
         entropy_coeff=entropy_epsilon,
@@ -183,8 +183,6 @@ def train(
                 # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
                 rollout = gae(rollout)
 
-            aux_head_start = time.perf_counter_ns()
-
             save_rollout_buffer_start = time.perf_counter_ns()
 
             rollout_buffer.empty()
@@ -200,8 +198,10 @@ def train(
                     optim.zero_grad()
                     loss: td.TensorDict = loss_module(minibatch)
 
+                    minibatch = model.get_trunk_operator()(minibatch)
+
                     # compute the auxiliary losses and add them to the rollout
-                    minibatch = model.get_aux_operator()(minibatch)
+                    minibatch = model.get_aux_head()(minibatch)
 
                     aux_losses = td.TensorDict(dict(
                         velocity_forward=smooth_l1_loss(
@@ -244,8 +244,7 @@ def train(
             timings = {
                 "rollout": (stack_rollout_start-rollout_start)/1e9,
                 "stack_rollout": (gae_start-stack_rollout_start)/1e9,
-                "gae": (aux_head_start-gae_start)/1e9,
-                "aux_head": (save_rollout_buffer_start-aux_head_start)/1e9,
+                "gae": (save_rollout_buffer_start-gae_start)/1e9,
                 "save_rollout_buffer": (epochs_start-save_rollout_buffer_start)/1e9,
                 "epochs": (end_time-epochs_start)/1e9,
             }
@@ -311,7 +310,7 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=4,
+        num_envs=8,
         num_agents_per_env=4,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
