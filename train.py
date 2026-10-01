@@ -12,6 +12,7 @@ from torchrl.objectives.value import GAE
 from torchrl.objectives import ClipPPOLoss
 from torchrl.envs.utils import ExplorationType, step_mdp
 from torchrl.envs import set_exploration_type
+from torch.nn.functional import smooth_l1_loss
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import os
 import torch
@@ -58,14 +59,13 @@ def train(
 
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
-    aux_weights = {
-        "velocity_forward": torch.as_tensor(forward_velocity_weight),
-        "velocity_lateral": torch.as_tensor(lateral_velocity_weight),
-        "curvature": torch.as_tensor(curvature_weights),
-        "pos_delta": torch.as_tensor(pos_delta_weights),
-        "wheel_slips": torch.as_tensor(wheel_slips_weight),
-        "yaw_rate": torch.as_tensor(yaw_rate_weight),
-    }
+    aux_weights = dict(
+        velocity_forward=torch.as_tensor([forward_velocity_weight]),
+        velocity_lateral=torch.as_tensor([lateral_velocity_weight]),
+        curvature=curvature_weights,
+        wheel_slips=wheel_slips_weight,
+    )
+
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
     checkpoint_path = f"checkpoints/{name}.pt"
@@ -183,6 +183,8 @@ def train(
                 # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
                 rollout = gae(rollout)
 
+            aux_head_start = time.perf_counter_ns()
+
             save_rollout_buffer_start = time.perf_counter_ns()
 
             rollout_buffer.empty()
@@ -198,9 +200,27 @@ def train(
                     optim.zero_grad()
                     loss: td.TensorDict = loss_module(minibatch)
 
+                    # compute the auxiliary losses and add them to the rollout
+                    minibatch = model.get_aux_operator()(minibatch)
+
+                    aux_losses = td.TensorDict(dict(
+                        velocity_forward=smooth_l1_loss(
+                            minibatch["aux", "velocity_forward"], minibatch["agents", "velocity_forward"]),
+                        velocity_lateral=smooth_l1_loss(
+                            minibatch["aux", "velocity_lateral"], minibatch["agents", "velocity_lateral"]),
+                        curvature=smooth_l1_loss(
+                            minibatch["aux", "curvature"], minibatch["agents", "curvature"]),
+                        wheel_slips=smooth_l1_loss(
+                            minibatch["aux", "wheel_slips"], minibatch["agents", "wheel_slips"]),
+                    ))
+
                     total_loss = (
+                        # PPO loss
                         loss["loss_entropy"] + loss["loss_critic"] +
-                        loss["loss_objective"]
+                        loss["loss_objective"]  # + \
+                        # auxiliary losses
+                        + sum((aux_weights[k] * aux_losses[k].mean(0)).sum()
+                              for k in aux_weights)
                     ).mean()
                     total_loss.backward()
                     grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -211,6 +231,8 @@ def train(
                     loss_logs.append(loss.detach().apply(
                         lambda x: x.float().mean(), batch_size=[]))
                     loss_logs[-1]["total_loss"] = total_loss.detach().float()
+                    for x in aux_losses.keys():
+                        loss_logs[-1][f"aux_{x}"] = aux_losses[x].mean().detach().float()
                     grad_norms.append(grad_norm)
 
             # average the per-minibatch logs over the whole iteration
@@ -220,8 +242,10 @@ def train(
             end_time = time.perf_counter_ns()
 
             timings = {
-                "rollout": (gae_start-rollout_start)/1e9,
-                "gae": (save_rollout_buffer_start-gae_start)/1e9,
+                "rollout": (stack_rollout_start-rollout_start)/1e9,
+                "stack_rollout": (gae_start-stack_rollout_start)/1e9,
+                "gae": (aux_head_start-gae_start)/1e9,
+                "aux_head": (save_rollout_buffer_start-aux_head_start)/1e9,
                 "save_rollout_buffer": (epochs_start-save_rollout_buffer_start)/1e9,
                 "epochs": (end_time-epochs_start)/1e9,
             }
@@ -250,6 +274,12 @@ def train(
                 "loss/kl_approx", avg_loss["kl_approx"].item(), i)
             writer.add_scalar(
                 "loss/max_ratio", avg_loss["max_ratio"].item(), i)
+
+            # log the aux losses
+            for key, value in loss_logs[-1].items():
+                if key.startswith("aux_"):
+                    writer.add_scalar(f"loss/aux/{key[4:]}", value, i)
+
             # pre-clip norms over all minibatches of this iteration
             writer.add_scalar(
                 "grad_norm/mean", sum(grad_norms) / len(grad_norms), i)
@@ -281,20 +311,20 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=1,
-        num_agents_per_env=1,
+        num_envs=4,
+        num_agents_per_env=4,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
         pos_delta_weights=torch.tensor([0.0, 0.0]),
         wheel_slips_weight=torch.zeros(4, 2),
         yaw_rate_weight=0.0,
-        num_stacked_lidar_frames=50,
+        num_stacked_lidar_frames=50,  # 50Hz
         n_rays=101,
-        lidar_conv="conv1d",
+        lidar_conv="conv2d",
         time_kernel=8,
         time_stride=2,
         ray_kernel=8,
         ray_stride=1,
-        name="test"
+        name="conv2d"
     )

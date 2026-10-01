@@ -47,6 +47,10 @@ class TrunkModel(torch.nn.Module):
             torch.nn.Conv1d(in_channels=32, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
         ) if lidar_conv == "conv1d" else torch.nn.Sequential(
+            # only this layer has kernel height > 1, so it's the only one that
+            # mixes across time; it sees a local, strided window of raw frames
+            # (time_kernel, time_stride) rather than all of them at once like
+            # the conv1d branch's channel-folding does
             torch.nn.Conv2d(
                 in_channels=1,
                 out_channels=16,
@@ -54,6 +58,10 @@ class TrunkModel(torch.nn.Module):
                 stride=(time_stride, ray_stride)
             ),
             torch.nn.ReLU(),
+            # collapse time to 1 now, before it's repeated through 3 more
+            # kernel_size=(1, k) convs that can't mix across time anyway (height
+            # 1) and would otherwise redo the same per-slice work ~20x over
+            torch.nn.AdaptiveAvgPool2d((1, None)),
             torch.nn.Conv2d(in_channels=16, out_channels=32,
                             kernel_size=(1, 8)),
             torch.nn.ReLU(),
