@@ -11,6 +11,37 @@ import platform
 import random
 
 
+class CatFramesResetOnDone(CatFrames):
+    """CatFrames, but also clears an agent's frame stack the instant its
+    `done` flag fires on an ordinary step.
+
+    Unity resets a crashed agent/area internally and keeps every other agent
+    in the same worker running, so env.reset() is only ever called after a
+    whole-process crash -- CatFrames' own `_reset()` hook (which clears the
+    buffer) never fires on a normal per-agent episode boundary without this.
+    """
+
+    def _call(self, next_tensordict, _reset=None):
+        next_tensordict = super()._call(next_tensordict, _reset=_reset)
+        if _reset is None:
+            done = next_tensordict.get(self.done_key).squeeze(-1)
+            if done.any():
+                # CatFrames' own partial-reset path assumes `_reset` collapses
+                # exactly one leading dim (num_envs). Ours collapses two
+                # (num_envs *and* num_agents), which its dim-shift formula
+                # gets wrong, so we fill the done slots ourselves instead of
+                # delegating to super()._call(_reset=...).
+                for in_key, out_key in zip(self.in_keys, self.out_keys):
+                    buffer = getattr(self, f"_cat_buffers_{in_key}")
+                    data = next_tensordict.get(in_key)
+                    data_reset = data[done]
+                    shape = [1] * data_reset.ndim
+                    shape[self.dim] = self.N
+                    buffer[done] = data_reset.repeat(shape)
+                    next_tensordict.set(out_key, buffer.clone())
+        return next_tensordict
+
+
 def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
@@ -124,7 +155,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 in_keys=[("agents", "lidar")],
                 out_keys=[("agents", "lidar")]
             ),
-            CatFrames(N=num_stacked_frames,
+            CatFramesResetOnDone(N=num_stacked_frames,
                       dim=-3,
                       in_keys=[("agents", "lidar")],
                       out_keys=[("agents", "stacked_lidar")],
