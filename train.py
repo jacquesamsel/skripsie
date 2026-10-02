@@ -77,12 +77,12 @@ def train(
     env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env,
                     num_stacked_frames=num_stacked_lidar_frames, time_scale=20.0)
 
-    gamma = 0.99
+    gamma = 0.999
     lmbda = 0.95
     clip_epsilon = 0.2
-    entropy_epsilon = 0.0005
+    entropy_epsilon = 0.01
     frames_per_rollout = 512
-    batch_size = 512
+    batch_size = 2048
 
     model_config = dict(
         num_stacked_lidar_frames=num_stacked_lidar_frames,
