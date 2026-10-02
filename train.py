@@ -80,7 +80,7 @@ def train(
     gamma = 0.99
     lmbda = 0.95
     clip_epsilon = 0.2
-    entropy_epsilon = 0.001
+    entropy_epsilon = 0.0005
     frames_per_rollout = 512
     batch_size = 512
 

@@ -143,7 +143,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 delete_vector=True
             ),
             ComposeReward(
-                progress_weight=1.0,
+                progress_weight=10.0,
                 forward_velocity_weight=0.0,
                 step_penalty=0.0,
                 collision_penalty=1.0
