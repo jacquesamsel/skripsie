@@ -145,8 +145,8 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
             ComposeReward(
                 progress_weight=1.0,
                 forward_velocity_weight=0.0,
-                step_penalty=0.002,
-                collision_penalty=0.2
+                step_penalty=0.0,
+                collision_penalty=1.0
             ),
             ExcludeTransform(("agents", "unity_reward")),
             # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
