@@ -55,7 +55,7 @@ def train(
         time_kernel: int | None = None,
         time_stride: int | None = None,
 ):
-    torch.set_num_threads(32)
+    torch.set_num_threads(16)
 
     # per-element weights broadcast against the target, so tensors let each
     # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
@@ -117,7 +117,7 @@ def train(
         lmbda=lmbda,
         value_network=model.get_value_operator(),
         average_gae=True,
-        deactivate_vmap=True,
+        deactivate_vmap=False,
         time_dim=0,  # the rollout is stacked along the first dimension, so time_dim=0
     )
     gae.set_keys(
