@@ -63,7 +63,7 @@
   [$lambda$], [GAE discount rate],
   [$r_t$], [Reward received at time $t$],
   [$G_t = sum_(i=t)^T gamma^(i-t) dot r_i$], [Discounted return at time $t$],
-  [$cal(S)$], [State space],
+  [$cal(S)$], [Set of all states],
   [$S_t$], [Random variable for state at time $t$],
   [$s_t$], [State at time $t$],
   [$cal(O)$], [Observation space],
@@ -105,49 +105,56 @@ are described. A short summary of the report can also be given.
 = Background
 
 == Markov Decision Processes (MDPs)
-A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the agent observes the current state of its environment, $s_t in cal(S)$, and chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current state, it returns a actions the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be random, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | s_t)$ to mean the action is sampled from the policy. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
+A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment - its observation is $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
 
+Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
 
-Once the agent in state $s_t$ takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$ and emitting a reward to the agent, $r_t in RR$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken and the *successor* state: $r_t = R(a_t, s_(t+1))$
+Once the agent takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$, emitting a reward to the agent, $r_t in RR$, and a new observation $o_(t+1) in cal(O)$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken, and both the current state and the successor state: $r_t = R(s_(t), a_t, s_(t+1))$. Note that the reward depends on the true state, not on the agent's observation of it.
 
-The agent may experience a "life" within the same MDP many times over, and each time it does so, is called an _episode_. An episode starts with the agent in some initial state $s_0$ drawn from the initial state distribution $rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected return over the course of an episode. Specifically it learns to maximuse the expected _discounted return_, $EE_pi [G_0]$, where
+The agent may experience a "life" within the same MDP many times over, and each time it does so is called an _episode_. An episode starts with the environment in some initial state $s_0$ drawn from the initial state distribution $rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected _discounted return_, $EE_pi [G_0]$, where
 
 $ G_t = sum_(i=t)^T gamma^(i-t) r_i $
 
-is the discounted return from time step $t$, and $T$ is the time step at
-which the episode terminates. The policy that achieves this maximum is called
-the _optimal policy_, $pi^*$. The discount factor $gamma in [0, 1]$ controls
-how much the agent values future rewards relative to immediate ones. The
-return can be thought of as a weighted sum of all future rewards, in which a
-reward received $k$ steps from now is worth only $gamma^k$ times as much as
-the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent
-short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes
-almost as much as immediate ones.
+is the discounted return from time step $t$, $T$ is the time step at which the episode terminates, and the expectation is taken over all trajectories that can arise from $rho_0$, the environment's dynamics, and the policy $pi$. The policy that achieves this maximum is called the _optimal policy_, $pi^*$.
 
-Formally, An MDP is defined by a tuple $(cal(S), cal(A), cal(P), R, gamma)$, where
+The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones. The _effective time horizon_ of the agent is defined as $1/(1-gamma)$. Since the discount weights sum to $sum_(k=0)^infinity gamma^k = 1/(1-gamma)$, this is roughly the number of steps into the future the agent considers when choosing its actions; rewards much further away than this contribute little to the return. For example, $gamma = 0.99$ gives an effective horizon of $100$ steps, while $gamma = 0.9$ gives only $10$. Note that the effective horizon is distinct from the episode length $T$, and is undefined for $gamma = 1$, in which case all rewards up to $T$ are weighted equally.
 
-- *$cal(S)$* is the state space, which is the set of all possible states the environment can be in. A state $s_t in cal(S)$ is a _complete_ description of the environment at time $t$. Later, we will consider the case where the agent does not have access to the full state of the environment, but only a partial observation of it, $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the agent must learn a policy $pi$ that maps from observations to actions (compared to the classical mapping of states to actions).
+Formally, a POMDP is defined by a tuple $(cal(S), cal(A), cal(O), cal(P), cal(Z), R, rho_0, gamma)$, where
+
+- *$cal(S)$* is the state space, which is the set of all possible states the environment can be in.
 
 - *$cal(A)$* is the action space, which is the set of all possible actions the agent can take. An action $a_t in cal(A)$ is a decision made by the agent at time $t$ that (may) affect the environment.
 
-- *$cal(P): cal(S) times cal(A) times cal(S) -> [0, 1]$* is he transition probability function $cal(P)$ defines the probability of transitioning to a successor state $s_(t+1)$ given the current state $s_t$ and action $a_t$, formally $s_(t+1) ~ P(dot | s_t, a_t)$
+- *$cal(O)$* is the observation space, which is the set of all possible observations the agent can receive.
 
-- *$R: cal(A) times cal(S) -> RR$* is he reward function $R$ defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(a_t, s_(t+1))$
+- *$cal(P): cal(S) times cal(A) -> Delta(cal(S))$* is the transition function, which defines the probability of transitioning to a successor state $s_(t+1)$ given the current state $s_t$ and action $a_t$, formally $s_(t+1) ~ cal(P)(dot | s_t, a_t)$.
 
-- *$gamma in [0, 1]$* is the discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
+- *$cal(Z): cal(S) -> Delta(cal(O))$* is the observation function, which defines the probability of the agent receiving observation $o_t$ when the environment is in state $s_t$, formally $o_t ~ cal(Z)(dot | s_t)$.
+
+- *$R: cal(A) times cal(S) -> RR$* is the reward function, which defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(a_t, s_(t+1))$.
+
+- *$rho_0 in Delta(cal(S))$* is the initial state distribution, formally $s_0 ~ rho_0$.
+
+- *$gamma in [0, 1]$* is the discount factor described above.
+
+Transitions satisfy the _Markov property_: the successor state depends only on the current state and action, and not on the rest of the history,
+
+$ P(s_(t+1) | s_t, a_t, s_(t-1), a_(t-1), dots, s_0, a_0) = P(s_(t+1) | s_t, a_t). $
+
+This property holds for the states, but generally not for the observations: a single observation $o_t$ does not, in general, contain enough information to predict $o_(t+1)$.
 
 #let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
+#let o-node(pos, body) = node(
+  pos,
+  body,
+  shape: circle,
+  radius: 1.1em,
+  stroke: (thickness: 1pt, dash: "dashed"),
+)
 #let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
 #let r-node(pos, body) = node(pos, body, shape: fletcher.shapes.diamond, inset: 5pt)
 
-
-The initial state $s_0$ is
-drawn from the initial state distribution $rho_0$. @mdp_trajectory illustates how, at each step, the agent samples an action $a_t$
-(square) from its policy $pi$ given the state $s_t$ (circle). The successor
-state $s_(t+1)$ is drawn from the transition probability function $cal(P)(dot | s_t, a_t)$, so it depends only on the
-current state and action (the Markov property). The reward $r_t$ (diamond)
-depends on the action $a_t$ and the successor state $s_(t+1)$.
-
+@mdp_trajectory illustrates how, at each step, the agent receives an observation $o_t$ (dashed circle) of the state $s_t$ (circle), and samples an action $a_t$ (square) from its policy $pi$ given that observation. The successor state $s_(t+1)$ is drawn from $cal(P)(dot | s_t, a_t)$, so it depends only on the current state and action (the Markov property). The reward $r_t$ (diamond) depends on the action $a_t$ and the successor state $s_(t+1)$.
 
 #figure(
   diagram(
@@ -159,37 +166,42 @@ depends on the action $a_t$ and the successor state $s_(t+1)$.
 
     // Nodes
     s-node((0, 0), $s_0$),
-    a-node((1, 1), $a_0$),
+    o-node((0, 1), $o_0$),
+    a-node((0, 2), $a_0$),
+    r-node((1, 2), $r_0$),
     s-node((2, 0), $s_1$),
-    r-node((2, 1), $r_0$),
-    a-node((3, 1), $a_1$),
+    o-node((2, 1), $o_1$),
+    a-node((2, 2), $a_1$),
+    r-node((3, 2), $r_1$),
     s-node((4, 0), $s_2$),
-    r-node((4, 1), $r_1$),
+    o-node((4, 1), $o_2$),
     node((5, 0), $dots$, stroke: none),
 
     // Step 0
-    edge((0, 0), (1, 1), "-|>", $pi(s_0)$, label-side: left, label-pos: 0.6, label-sep: 0.1em),
-    edge((0, 0), (2, 0), "-|>", $P$),
-    edge((1, 1), (2, 0), "-|>"),
-    edge((1, 1), (2, 1), "-|>"),
-    edge((2, 0), (2, 1), "-|>"),
+    edge((0, 0), (0, 1), "-|>", $cal(Z)$),
+    edge((0, 1), (0, 2), "-|>", $pi$),
+    edge((0, 0), (2, 0), "-|>", $cal(P)$),
+    edge((0, 2), (2, 0), "-|>"),
+    edge((0, 2), (1, 2), "-|>"),
+    edge((2, 0), (1, 2), "-|>"),
 
     // Step 1
-    edge((2, 0), (3, 1), "-|>", $pi(s_1)$, label-side: left, label-pos: 0.6, label-sep: 0.1em),
-    edge((2, 0), (4, 0), "-|>", $P$),
-    edge((3, 1), (4, 0), "-|>"),
-    edge((3, 1), (4, 1), "-|>"),
-    edge((4, 0), (4, 1), "-|>"),
+    edge((2, 0), (2, 1), "-|>", $cal(Z)$),
+    edge((2, 1), (2, 2), "-|>", $pi$),
+    edge((2, 0), (4, 0), "-|>", $cal(P)$),
+    edge((2, 2), (4, 0), "-|>"),
+    edge((2, 2), (3, 2), "-|>"),
+    edge((4, 0), (3, 2), "-|>"),
 
+    // Step 2
+    edge((4, 0), (4, 1), "-|>", $cal(Z)$),
     edge((4, 0), (5, 0), "-|>"),
   ),
   caption: [
-    The first two steps of a trajectory in an MDP.
+    The first two steps of a trajectory in a partially observable MDP.
   ],
 ) <mdp_trajectory>
 
-
-The objective of an agent interacting with an MDP is to learn a policy $pi(s) -> Delta(cal(A))$ that maximises the expected discounted return $EE[G_t]$, where $G_t = sum_(i=t)^T gamma^(i-t) dot r_i$ is the discounted return at time $t$, and $T$ is the time step at which the episode terminates.
 
 == Reinforcement Learning (RL)
 Reinforcement learning is a subfield of machine learning, where a policy $pi$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[R_t]$. The policy takes as input the observation of the environment $o_t in cal(O)$, and outputs a distribution over actions $cal(A)$. When the agent interacts with the environmnet, it does so by performing an action $a_t ~ pi(o_t)$. The environment responds by updating its state from $s_t in cal(S)$ to $s_(t+1) in cal(S)$, and emitting a scalar reward $r_t in Re$, which may depend on the action $a_t$ performed and the successor state $s_(t+1)$.

@@ -1,8 +1,35 @@
+bellman1957:
+  type: article
+  title: A Markovian Decision Process
+  author: Bellman, Richard
+  date: 1957
+  page-range: 679-684
+  parent:
+    type: periodical
+    title: Journal of Mathematics and Mechanics
+    volume: 6
+    issue: 5
+
+sutton2018:
+  type: book
+  title: "Reinforcement Learning: An Introduction"
+  author: ["Sutton, Richard S.", "Barto, Andrew G."]
+  date: 2018
+  edition: 2
+  publisher: MIT Press
+
 # models perform worse when prior knowledge masked
 prior-knowledge-masked:
   type: Article
   title: "Investigating Human Priors for Playing Video Games"
-  author: ["Dubey, Rachit", "Agrawal, Pulkit", "Pathak, Deepak", "Griffiths, Thomas L.", "Efros, Alexei A."]
+  author:
+    [
+      "Dubey, Rachit",
+      "Agrawal, Pulkit",
+      "Pathak, Deepak",
+      "Griffiths, Thomas L.",
+      "Efros, Alexei A.",
+    ]
   date: 2018-02-28
   serial-number:
     arxiv: "1802.10217"
@@ -18,7 +45,6 @@ sparse-rewards-auxiliary-tasks:
   serial-number:
     arxiv: "1910.09281"
   url: "https://arxiv.org/abs/1910.09281"
-
 
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
