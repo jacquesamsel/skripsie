@@ -62,7 +62,7 @@
   [$gamma$], [Discount rate],
   [$lambda$], [GAE discount rate],
   [$r_t$], [Reward received at time $t$],
-  [$R_t = sum_(i=t)^T gamma^(i-t) dot r_i$], [Discounted return at time $t$],
+  [$G_t = sum_(i=t)^T gamma^(i-t) dot r_i$], [Discounted return at time $t$],
   [$cal(S)$], [State space],
   [$S_t$], [Random variable for state at time $t$],
   [$s_t$], [State at time $t$],
@@ -84,7 +84,7 @@
   [$hat(X)$], [Estimator for random variable $X$],
   [$hat(x)$], [Sample estimate of random variable $X$],
   [$A^pi (s, a) = Q^pi (s, a) - V^pi (s)$], [Advantage function for policy $pi$ at state $s$ and action $a$],
-  [$Re$], [The set of real numbers],
+  [$RR$], [The set of real numbers],
   [$EE[X]$], [Expected value of random variable $X$],
   [$"Var"(X)$], [Variance of random variable $X$],
   [$rho_0 (s)$], [Initial state distribution],
@@ -105,7 +105,36 @@ are described. A short summary of the report can also be given.
 = Background
 
 == Markov Decision Processes (MDPs)
-A Markov Decision Process (MDP) is a mathematical framework for modelling sequential decision making problems where the environment is fully observable and the next state depends only on the current state $s_t$ and the action taken $a_t$. This makes the current state a _sufficient summary_ of the past: an agent loses nothing by ignoring the history.
+A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the agent observes the current state of its environment, $s_t in cal(S)$, and chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current state, it returns a actions the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be random, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | s_t)$ to mean the action is sampled from the policy. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
+
+
+Once the agent in state $s_t$ takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$ and emitting a reward to the agent, $r_t in RR$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken and the *successor* state: $r_t = R(a_t, s_(t+1))$
+
+The agent may experience a "life" within the same MDP many times over, and each time it does so, is called an _episode_. An episode starts with the agent in some initial state $s_0$ drawn from the initial state distribution $rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected return over the course of an episode. Specifically it learns to maximuse the expected _discounted return_, $EE_pi [G_0]$, where
+
+$ G_t = sum_(i=t)^T gamma^(i-t) r_i $
+
+is the discounted return from time step $t$, and $T$ is the time step at
+which the episode terminates. The policy that achieves this maximum is called
+the _optimal policy_, $pi^*$. The discount factor $gamma in [0, 1]$ controls
+how much the agent values future rewards relative to immediate ones. The
+return can be thought of as a weighted sum of all future rewards, in which a
+reward received $k$ steps from now is worth only $gamma^k$ times as much as
+the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent
+short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes
+almost as much as immediate ones.
+
+Formally, An MDP is defined by a tuple $(cal(S), cal(A), cal(P), R, gamma)$, where
+
+- *$cal(S)$* is the state space, which is the set of all possible states the environment can be in. A state $s_t in cal(S)$ is a _complete_ description of the environment at time $t$. Later, we will consider the case where the agent does not have access to the full state of the environment, but only a partial observation of it, $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the agent must learn a policy $pi$ that maps from observations to actions (compared to the classical mapping of states to actions).
+
+- *$cal(A)$* is the action space, which is the set of all possible actions the agent can take. An action $a_t in cal(A)$ is a decision made by the agent at time $t$ that (may) affect the environment.
+
+- *$cal(P): cal(S) times cal(A) times cal(S) -> [0, 1]$* is he transition probability function $cal(P)$ defines the probability of transitioning to a successor state $s_(t+1)$ given the current state $s_t$ and action $a_t$, formally $s_(t+1) ~ P(dot | s_t, a_t)$
+
+- *$R: cal(A) times cal(S) -> RR$* is he reward function $R$ defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(a_t, s_(t+1))$
+
+- *$gamma in [0, 1]$* is the discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
 
 #let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
 #let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
@@ -113,9 +142,9 @@ A Markov Decision Process (MDP) is a mathematical framework for modelling sequen
 
 
 The initial state $s_0$ is
-drawn from $rho_0$. At each step, the agent samples an action $a_t$
+drawn from the initial state distribution $rho_0$. @mdp_trajectory illustates how, at each step, the agent samples an action $a_t$
 (square) from its policy $pi$ given the state $s_t$ (circle). The successor
-state $s_(t+1)$ is drawn from $P(dot | s_t, a_t)$, so it depends only on the
+state $s_(t+1)$ is drawn from the transition probability function $cal(P)(dot | s_t, a_t)$, so it depends only on the
 current state and action (the Markov property). The reward $r_t$ (diamond)
 depends on the action $a_t$ and the successor state $s_(t+1)$.
 
@@ -157,14 +186,12 @@ depends on the action $a_t$ and the successor state $s_(t+1)$.
   caption: [
     The first two steps of a trajectory in an MDP.
   ],
-)
-
-An MDP is defined by a tuple $(cal(S), cal(A), cal(P), R, gamma)$, where $cal(S)$ is the state space, $cal(A)$ is the action space, $P(s_t, a_t, s_(t+1)) -> [0, 1]$ is the transition probability function, $R(a_t, s_(t+1)) -> Re$ is the reward function, and $gamma in [0, 1]$ is the discount factor.
+) <mdp_trajectory>
 
 
-The objective of an agent interacting with an MDP is to learn a policy $pi(s) -> Delta(cal(A))$ that maximises the expected discounted return $EE[R_t]$, where $R_t = sum_(i=t)^T gamma^(i-t) dot r_i$ is the discounted return at time $t$, and $T$ is the time step at which the episode terminates.
+The objective of an agent interacting with an MDP is to learn a policy $pi(s) -> Delta(cal(A))$ that maximises the expected discounted return $EE[G_t]$, where $G_t = sum_(i=t)^T gamma^(i-t) dot r_i$ is the discounted return at time $t$, and $T$ is the time step at which the episode terminates.
 
-== Reinforcement Learning
+== Reinforcement Learning (RL)
 Reinforcement learning is a subfield of machine learning, where a policy $pi$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[R_t]$. The policy takes as input the observation of the environment $o_t in cal(O)$, and outputs a distribution over actions $cal(A)$. When the agent interacts with the environmnet, it does so by performing an action $a_t ~ pi(o_t)$. The environment responds by updating its state from $s_t in cal(S)$ to $s_(t+1) in cal(S)$, and emitting a scalar reward $r_t in Re$, which may depend on the action $a_t$ performed and the successor state $s_(t+1)$.
 
 #v(2em)
@@ -279,32 +306,13 @@ $
 == 2nd formulation (auxiliary rewards)
 Auxiliary learning can also be formulated as an additional task the agent receives rewards for performing (well). This formulation has the drawback that gradient information is discarded.
 
-= Our model
+= The environment
 
-#figure(
-  caption: "Simplified model",
-  diagram(
-    node-stroke: 1pt,
-    node((-2.75, -0.5), "Lidar", name: <Lidar>),
-    node((-2.75, 0), "Cur steering angle", name: <Steering>),
-    node((-2.75, 0.5), "Cur throttle angle", name: <Throttle>),
+== F1Tenth Gym
 
-    edge(<Lidar>, <Trunk>, "-|>"),
-    edge(<Steering>, <Trunk>, "-|>"),
-    edge(<Throttle>, <Trunk>, "-|>"),
-    node((-1.25, -0.), "Trunk", height: 30pt, width: 60pt, name: <Trunk>),
+== AutoDrive, Unity, and MLAgents
 
-    edge(<Trunk>, <Policy>, "-|>"),
-    edge(<Trunk>, <Value>, "-|>"),
-    edge(<Trunk>, <Aux>, "-|>"),
-
-    node((0, -0.75), "Policy", height: 30pt, width: 70pt, name: <Policy>),
-    node((0, 0), "Value head", height: 30pt, width: 70pt, name: <Value>),
-    node((0, 0.75), "Auxiliary head", height: 30pt, width: 70pt, name: <Aux>),
-  ),
-)
-
-= Track generation
+=== Track generation
 
 #figure(
   caption: "Track generation",
@@ -340,13 +348,43 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
     // Draw tangent from last point
     let tangent_length = 4
 
-    let tangent_end = (last_point.at(0) + tangent_length, last_point.at(1) + tangent_length * last_point_tanget_of_circle)
+    let tangent_end = (
+      last_point.at(0) + tangent_length,
+      last_point.at(1) + tangent_length * last_point_tanget_of_circle,
+    )
 
     line(last_point, tangent_end)
-
-    
   }),
 )
+
+= The model
+
+#figure(
+  caption: "Simplified model",
+  diagram(
+    node-stroke: 1pt,
+    node((-2.75, -0.5), "Lidar", name: <Lidar>),
+    node((-2.75, 0), "Cur steering angle", name: <Steering>),
+    node((-2.75, 0.5), "Cur throttle angle", name: <Throttle>),
+
+    edge(<Lidar>, <Trunk>, "-|>"),
+    edge(<Steering>, <Trunk>, "-|>"),
+    edge(<Throttle>, <Trunk>, "-|>"),
+    node((-1.25, -0.), "Trunk", height: 30pt, width: 60pt, name: <Trunk>),
+
+    edge(<Trunk>, <Policy>, "-|>"),
+    edge(<Trunk>, <Value>, "-|>"),
+    edge(<Trunk>, <Aux>, "-|>"),
+
+    node((0, -0.75), "Policy", height: 30pt, width: 70pt, name: <Policy>),
+    node((0, 0), "Value head", height: 30pt, width: 70pt, name: <Value>),
+    node((0, 0.75), "Auxiliary head", height: 30pt, width: 70pt, name: <Aux>),
+  ),
+)
+
+= Results
+
+== Training curves
 
 = Conclusions and recommendations
 #pagebreak()
