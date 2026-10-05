@@ -1,12 +1,123 @@
-#set text(size: 12pt)
-#set page(margin: 2.5cm)
-#import "@preview/latex-lookalike:0.1.1": style-outline
 #import "@preview/cetz:0.5.2"
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
-#show heading.where(level: 1): set block(above: 4em, below: 1em)
-#show heading.where(level: 1): set text(size: 24pt, weight: "bold")
 
-#show: style-outline
+// ============================================================
+// Styling after the Stellenbosch University thesis class
+// (stb-thesis.cls + imports.tex), see su_latex_template/.
+// ============================================================
+
+// Colours from imports.tex
+#let oracle-colour = rgb("#8B8589") // running header text
+#let rule-colour = rgb("#DCDCDC") // rule below the running header
+#let link-colour = rgb("#666666") // gray!80!black for cites and URLs
+
+// --- Fonts and text: 12pt Latin Modern Roman -----------------
+#set text(font: "New Computer Modern", size: 12pt, lang: "en", region: "ZA")
+#show math.equation: set text(font: "New Computer Modern Math")
+#show raw: set text(font: "DejaVu Sans Mono", size: 10pt)
+
+// --- Paragraphs: justified, \onehalfspacing, \parindent, \parskip=0
+// The title page itself stays centred and unindented, so justification
+// and the paragraph indent are switched on where the front matter starts.
+#set par(leading: 1.05em, spacing: 1.05em)
+
+// --- Page: \usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
+// with the fancyhdr header (centred running mark + rule) and the
+// page number in the bottom-right corner.
+#set page(
+  paper: "a4",
+  margin: (left: 2.5cm, right: 2.5cm, top: 2.5cm, bottom: 2.5cm),
+  number-align: right + bottom,
+  header: context {
+    let this-page = here().page()
+    let seen = query(heading).filter(h => h.location().page() <= this-page)
+    // \fancypagestyle{plain}: no header on chapter-opening pages
+    if seen.any(h => h.level == 1 and h.location().page() == this-page) { return }
+    let marks = seen.filter(h => h.level <= 2)
+    if marks.len() == 0 { return }
+    let mark = marks.last()
+    let number = if mark.numbering != none {
+      numbering(mark.numbering, ..counter(heading).at(mark.location())) + " "
+    } else { "" }
+    set par(justify: false, leading: 0.65em, first-line-indent: 0pt)
+    set align(center)
+    text(fill: oracle-colour)[#number#smallcaps(mark.body)]
+    v(-0.4em)
+    line(length: 100%, stroke: 0.1pt + rule-colour)
+  },
+)
+
+// --- Headings: \titleformat from imports.tex -----------------
+// Chapters: right-aligned "Chapter N" in small caps, a rule, the title
+// centred in \Huge small caps, and a second rule.
+#show heading.where(level: 1): it => {
+  counter(figure.where(kind: image)).update(0)
+  counter(figure.where(kind: table)).update(0)
+  counter(figure.where(kind: raw)).update(0)
+  pagebreak(weak: true)
+  set par(justify: false, leading: 0.6em, first-line-indent: 0pt)
+  set text(weight: "regular")
+  block(above: 30pt, below: 10pt, width: 100%, sticky: true)[
+    // #if it.numbering != none [
+    //   #align(right, text(size: 20pt, smallcaps[Chapter #counter(heading).display("1")]))
+    //   #v(3pt)
+    // ]
+    //#line(length: 100%, stroke: 0.4pt)
+    #v(1.5em)
+    #let count_text = if it.numbering != none {
+      numbering(it.numbering, ..counter(heading).at(it.location())) + " "
+    } else { "" }
+    #align(center, text(size: 25pt, count_text + smallcaps(it.body)))
+    #v(1.5em)
+    //#line(length: 100%, stroke: 0.4pt)
+  ]
+}
+
+// Sections, subsections and subsubsections: ragged-right small caps,
+// the number followed by \quad.
+#let stb-heading(size, above, below) = it => {
+  set par(justify: false, leading: 0.6em, first-line-indent: 0pt)
+  set text(size: size, weight: "regular")
+  block(above: above, below: below, width: 100%, sticky: true)[
+    #smallcaps[
+      #if it.numbering != none [
+        #counter(heading).display(it.numbering)#h(1em)
+      ]
+      #it.body
+    ]
+  ]
+}
+#show heading.where(level: 2): stb-heading(17pt, 1.8em, 1em)
+#show heading.where(level: 3): stb-heading(14pt, 1.6em, 0.8em)
+#show heading.where(level: 4): stb-heading(12pt, 1.4em, 0.7em)
+
+// --- Title page: \LARGE, no bold (stb-titlepage.sty) ---------
+#show title: set text(size: 20pt, weight: "regular")
+
+// --- Figures and tables: numbered per chapter, captions at
+// \small with a bold label (caption package: small, bf, rm).
+#set figure(numbering: n => numbering("1.1", counter(heading).get().first(), n), gap: 8pt)
+#show figure: set block(above: 1.8em, below: 1.8em)
+#show figure.caption: it => context {
+  set text(size: 11pt)
+  set par(justify: false, leading: 0.65em, first-line-indent: 0pt)
+  pad(x: 1.5em)[
+    #align(center)[
+      #strong[#it.supplement~#it.counter.display(it.numbering)#it.separator]#it.body
+    ]
+  ]
+}
+
+// --- Lists: \labelitemi is $\divideontimes$ ------------------
+#set list(marker: text(size: 9pt, sym.circle.stroked.small), indent: 1em)
+#set enum(indent: 1em)
+
+// --- Table of contents: tocdepth = 3 (up to subsubsections) --
+#set outline(depth: 4)
+
+// --- Hyperlinks: black internal links, gray!80!black cites/URLs
+#show link: set text(fill: link-colour)
+#show cite: set text(fill: link-colour)
 
 #align(center + horizon)[
   #title("Auxiliary learning for autonomous racing")
@@ -39,6 +150,7 @@
 #pagebreak()
 #set page(numbering: "i")
 #counter(page).update(1)
+#set par(justify: true, first-line-indent: (amount: 1.5em, all: false))
 
 = Acknowledgements
 
@@ -100,16 +212,14 @@
 #set heading(numbering: "1.")
 
 = Introduction
-
-where the background to the project and the project aims
-are described. A short summary of the report can also be given.
+Autonomous racing is a challenging problem in robotics and artificial intelligence, requiring the development of algorithms that can make real-time decisions in complex and dynamic environments. The goal is to create an autonomous agent capable of navigating a race track at high speeds while avoiding obstacles and (in some cases) competing against other agents. However, traditional reinforcement learning (RL) methods often struggle to learn effective policies in such environments due to the high-dimensional state and action spaces, as well as the sparse and delayed rewards. Auxiliary learning has emerged as a promising approach to address these challenges by providing additional learning signals that can improve the agent's performance and sample efficiency.
 
 = Background
 
 == Markov Decision Processes (MDPs)
 A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment - its observation is $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
 
-Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
+Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957 and @kaelbling1998, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
 
 Once the agent takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$, emitting a reward to the agent, $r_t in RR$, and a new observation $o_(t+1) in cal(O)$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken, and both the current state and the successor state: $r_t = R(s_(t), a_t, s_(t+1))$. Note that the reward depends on the true state, not on the agent's observation of it.
 
@@ -156,65 +266,6 @@ This property holds for the states, but generally not for the observations: a si
 #let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
 #let r-node(pos, body) = node(pos, body, shape: fletcher.shapes.diamond, inset: 5pt)
 
-@mdp_trajectory illustrates how, at each step, the agent receives an observation $o_t$ (dashed circle) of the state $s_t$ (circle), and samples an action $a_t$ (square) from its policy $pi$ given that observation. The successor state $s_(t+1)$ is drawn from $cal(P)(dot | s_t, a_t)$, so it depends only on the current state and action (the Markov property). The reward $r_t$ (diamond) depends on the action $a_t$ and the successor state $s_(t+1)$.
-
-#figure(
-  diagram(
-    node-stroke: 1pt,
-    spacing: (4em, 2.5em),
-
-    // Initial state distribution
-    edge((-1, 0), (0, 0), "-|>", $rho_0$),
-
-    // Nodes
-    s-node((0, 0), $s_0$),
-    o-node((0, 1), $o_0$),
-    a-node((0, 2), $a_0$),
-    r-node((0.75, 2), $r_0$),
-    s-node((2, 0), $s_1$),
-    o-node((2, 1), $o_1$),
-    a-node((2, 2), $a_1$),
-    r-node((3, 2), $r_1$),
-    s-node((4, 0), $s_2$),
-    o-node((4, 1), $o_2$),
-    node((5, 0), $dots$, stroke: none),
-
-    // Step 0
-    edge((0, 0), (0, 1), "-|>", $cal(Z)(dot|s_0)$),
-    edge((0, 1), (0, 2), "-|>", $pi(dot|o_0)$),
-    edge((0, 0), (2, 0), "-|>", $cal(P)(dot|s_0, a_0)$, label-side: right, label-pos: 0.6),
-    edge((0, 2), (2, 0), "-|>"),
-    edge((0, 2), (0.75, 2), "-|>"),
-    edge((2, 0), (0.75, 2), "-|>"),
-
-    // Step 1
-    edge((2, 0), (2, 1), "-|>", $cal(Z)(dot|s_0)$, label-side: left),
-    edge((2, 1), (2, 2), "-|>", $pi(dot|o_1)$),
-    edge((2, 0), (4, 0), "-|>", $cal(P)(dot|s_1, a_1)$, label-side: right, label-pos: 0.6),
-    edge((2, 2), (4, 0), "-|>"),
-    edge((2, 2), (3, 2), "-|>"),
-    edge((4, 0), (3, 2), "-|>"),
-
-    // Step 2
-    edge((4, 0), (4, 1), "-|>", $cal(Z)$, label-side: left),
-    edge((4, 0), (5, 0), "-|>"),
-  ),
-  caption: [
-    The first two steps of a trajectory in a partially observable MDP.
-  ],
-) <mdp_trajectory>
-
-
-=== Value functions
-In an MDP, 
-
-== Reinforcement Learning (RL)
-Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[G_t]$ by varying the parameters $theta$ of the policy. This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
-
-RL is distinct from supervised learning in that the agent does not know the correct or optimal action to take at any given time, and must learn this through trial and error. 
-
-#v(2em)
-
 #let party(pos, body) = node(pos, strong(body), stroke: 1pt, corner-radius: 3pt)
 #let step(pos, body) = node(pos, body, stroke: 0.5pt, fill: white)
 #let msg(from, to, label) = edge(from, to, "-|>", label, label-angle: auto)
@@ -222,7 +273,7 @@ RL is distinct from supervised learning in that the agent does not know the corr
 
 #figure(
   diagram(
-    spacing: (8em, 1.8em),
+    spacing: (15em, 2.5em),
     node-inset: 6pt,
 
     // Participants and lifelines
@@ -231,7 +282,7 @@ RL is distinct from supervised learning in that the agent does not know the corr
     lifeline(0, 6),
     lifeline(1, 6),
 
-    edge((-0.5, 2), (-0.5, 3), layer: -1, "-|>", $t$),
+    edge((-0.3, 2), (-0.3, 3), layer: -1, "-|>", $t$),
 
     // Local computations
     step((1, 1), $s_0 ~ rho_0$),
@@ -243,30 +294,50 @@ RL is distinct from supervised learning in that the agent does not know the corr
     node((1, 6), $dots.v$, fill: white),
 
     // Messages
-    msg((1, 1), (0, 2), $o_0$),
+    msg((1, 1), (0, 2), $o_0 = cal(Z)(s_0)$),
     msg((0, 2), (1, 3), $a_0$),
-    msg((1, 3), (0, 4), $r_0, o_1$),
+    msg((1, 3), (0, 4), $r_0 = R(s_0, a_0, s_1), o_1 = cal(Z)(s_1)$),
     msg((0, 4), (1, 5), $a_1$),
-    msg((1, 5), (0, 6), $r_1, o_2$),
+    msg((1, 5), (0, 6), $r_1 = R(s_1, a_1, s_2), o_2 = cal(Z)(s_2)$),
   ),
   caption: [
-    Interaction between the agent and the environment over time.
+    Interaction between the agent and the environment over time ($t$).
   ],
 )
 
+
+=== Value functions
+// TODO: finish
+
+== Reinforcement Learning (RL)
+Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[G_t]$ by varying the parameters $theta$ of the policy (i.e. finding the optimal policy $pi^*$). This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+
+RL is distinct from supervised learning in that during training, the optimal or correct action is not known - the agent must explore the environment and learn from the consequences of its actions. It is also distinct from classical unsupervised learning methods in that there is a clear objective (maximising expected return) and feedback (rewards) to guide the learning process.
+
+There exist two primary classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as they are more suitable for continuous action spaces and can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
+
+== Policy gradient methods
+
+Policy gradient methods are a class of RL algorithms that learn a parameterised policy $pi_theta$ directly by optimising the expected return $EE[G_t]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, a_0, r_0, s_1, a_1, r_1, dots, s_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory under the policy $pi_theta$, the expected return must be maximised with respect to the policy parameters $theta$:
+$
+  J(theta) = EE_(tau~pi_theta) [G_0] = EE_(tau~pi_theta) [sum_(t=0)^T gamma^t r_t]
+$
+
+Using the _log-derivative_ trick, the gradient of the expected return with respect to the policy parameters $theta$ can be calculated as follows:
+
+$
+$
+
+
 == REINFORCE
 
-The REINFORCE algorithm for policy learning was introduced in \_\_\_ at NeurIPS by \_\_\_. It is one of the simplest policy gradient methods. The central idea is
-1. $pi_theta (s) <- "initial policy"$
-2. $s_0 <- "initial state"$
-3. $t <- 0$
-4. $a_t <- "SAMPLE" [pi_theta (s_t)]$
-5. Perform action $a_t$
-6. Environment emits reward $r_t$ and updates to state $s_(t+1)$
-7. If the episode is not over, increment t and return to step 4, else continue
-8. Calculate the discounted returns $R_i = sum_(k=i)^T gamma^(k-i) dot r_k$
-9. Minimise the loss $L(theta) = - 1/T sum_(t=0)^T log(P_(pi_theta (s_t))(a_t)) dot R_t$ using Stochastic Gradient Descent (SGD) varying parameters $theta$.
-10. Return to step 2
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods. The algorithm works by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to compute an estimate of the policy gradient, which is then used to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+
+The loss,
+$
+  L = -1/T sum_(t=0)^T log(pi_theta (a_t | o_t)) dot G_t
+$
+where $T$ is the length of the trajectory, $G_T$ is the observed discounted return from time step $t$, and $pi_theta (a_t | o_t)$ is the probability of taking action $a_t$ given observation $o_t$ under the current policy parameters $theta$, is minimised using gradient descent after each episode. Intuitively, the loss function encourages the policy to increase the probability of actions that lead to higher returns, and decrease the probability of actions that lead to lower returns.
 
 == Proximal Policy Optimization (PPO)
 PPO is a modern algorithm for policy learning introduced in \_\_\_ at ICML by \_\_\_. It is a more advanced policy gradient method than REINFORCE. It improves upon REINFORCE by using a surrogate loss function which prevents large and destructive policy updates and by approximating the value function, reducing the variance of the policy gradient estimate.

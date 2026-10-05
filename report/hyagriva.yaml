@@ -18,6 +18,33 @@ sutton2018:
   edition: 2
   publisher: MIT Press
 
+kaelbling1998:
+  type: article
+  title: Planning and acting in partially observable stochastic domains
+  author: ["Kaelbling, Leslie Pack", "Littman, Michael L.", "Cassandra, Anthony R."]
+  date: 1998
+  page-range: 99-134
+  parent:
+    type: periodical
+    title: Artificial Intelligence
+    volume: 101
+    issue: 1-2
+
+williams1992:
+  type: article
+  title: Simple statistical gradient-following algorithms for connectionist reinforcement learning
+  author: Williams, Ronald J.
+  date: 1992-05-01
+  page-range: 229-256
+  parent:
+    type: periodical
+    title: Machine Learning
+    volume: 8
+    issue: 3
+  serial-number:
+    doi: "10.1007/BF00992696"
+  url: "https://doi.org/10.1007/BF00992696"
+
 # models perform worse when prior knowledge masked
 prior-knowledge-masked:
   type: Article
