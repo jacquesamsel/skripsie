@@ -202,12 +202,6 @@ if __name__ == "__main__":
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
         width=1280,
         height=720,
-        # Profiler burst, written straight to a local file -- no live Editor connection
-        # needed, so this can't hit the transport-overflow crash. Skip `warmupTicks`
-        # physics ticks (let the communicator connect and Unity warm up), then capture
-        # the next `captureTicks`. Load the result in the Editor via
-        # Window > Analysis > Profiler > (dropdown next to Record) > Load Profile.
-        additional_args=["-profileCapture", "/tmp/infer_burst", "100", "200"],
     )
     tensordict = env.reset()
 
