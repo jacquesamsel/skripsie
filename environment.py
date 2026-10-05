@@ -93,7 +93,7 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
                            "-job-worker-count", str(job_worker_count)]
     env = UnityMLAgentsEnv(
         file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
-        no_graphics=True,
+        no_graphics=platform.system() != "Darwin",
         side_channels=[engine_channel],
         num_areas=num_agents,
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
