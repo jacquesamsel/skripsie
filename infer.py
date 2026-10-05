@@ -198,7 +198,7 @@ if __name__ == "__main__":
     env = make_envs(
         num_envs=num_envs,
         num_agents_per_env=num_agents_per_env,
-        time_scale=20.0,
+        time_scale=1.0,
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
         width=1280,
         height=720,
