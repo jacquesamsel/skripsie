@@ -3,6 +3,8 @@
 #import "@preview/latex-lookalike:0.1.1": style-outline
 #import "@preview/cetz:0.5.2"
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
+#show heading.where(level: 1): set block(above: 4em, below: 1em)
+#show heading.where(level: 1): set text(size: 24pt, weight: "bold")
 
 #show: style-outline
 
@@ -111,13 +113,13 @@ Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How
 
 Once the agent takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$, emitting a reward to the agent, $r_t in RR$, and a new observation $o_(t+1) in cal(O)$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken, and both the current state and the successor state: $r_t = R(s_(t), a_t, s_(t+1))$. Note that the reward depends on the true state, not on the agent's observation of it.
 
-The agent may experience a "life" within the same MDP many times over, and each time it does so is called an _episode_. An episode starts with the environment in some initial state $s_0$ drawn from the initial state distribution $rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected _discounted return_, $EE_pi [G_0]$, where
+The agent may experience a "life" within the same MDP many times over, and each time it does so is called an _episode_. An episode starts with the environment in some initial state $s_0 ~ rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected _discounted return_, $EE_pi [G_0]$, where
 
 $ G_t = sum_(i=t)^T gamma^(i-t) r_i $
 
 is the discounted return from time step $t$, $T$ is the time step at which the episode terminates, and the expectation is taken over all trajectories that can arise from $rho_0$, the environment's dynamics, and the policy $pi$. The policy that achieves this maximum is called the _optimal policy_, $pi^*$.
 
-The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones. The _effective time horizon_ of the agent is defined as $1/(1-gamma)$. Since the discount weights sum to $sum_(k=0)^infinity gamma^k = 1/(1-gamma)$, this is roughly the number of steps into the future the agent considers when choosing its actions; rewards much further away than this contribute little to the return. For example, $gamma = 0.99$ gives an effective horizon of $100$ steps, while $gamma = 0.9$ gives only $10$. Note that the effective horizon is distinct from the episode length $T$, and is undefined for $gamma = 1$, in which case all rewards up to $T$ are weighted equally.
+The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
 
 Formally, a POMDP is defined by a tuple $(cal(S), cal(A), cal(O), cal(P), cal(Z), R, rho_0, gamma)$, where
 
@@ -131,7 +133,7 @@ Formally, a POMDP is defined by a tuple $(cal(S), cal(A), cal(O), cal(P), cal(Z)
 
 - *$cal(Z): cal(S) -> Delta(cal(O))$* is the observation function, which defines the probability of the agent receiving observation $o_t$ when the environment is in state $s_t$, formally $o_t ~ cal(Z)(dot | s_t)$.
 
-- *$R: cal(A) times cal(S) -> RR$* is the reward function, which defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(a_t, s_(t+1))$.
+- *$R: cal(S) times cal(A) times cal(S) -> RR$* is the reward function, which defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(s_t, a_t, s_(t+1))$.
 
 - *$rho_0 in Delta(cal(S))$* is the initial state distribution, formally $s_0 ~ rho_0$.
 
@@ -159,7 +161,7 @@ This property holds for the states, but generally not for the observations: a si
 #figure(
   diagram(
     node-stroke: 1pt,
-    spacing: (3em, 2.5em),
+    spacing: (4em, 2.5em),
 
     // Initial state distribution
     edge((-1, 0), (0, 0), "-|>", $rho_0$),
@@ -168,7 +170,7 @@ This property holds for the states, but generally not for the observations: a si
     s-node((0, 0), $s_0$),
     o-node((0, 1), $o_0$),
     a-node((0, 2), $a_0$),
-    r-node((1, 2), $r_0$),
+    r-node((0.75, 2), $r_0$),
     s-node((2, 0), $s_1$),
     o-node((2, 1), $o_1$),
     a-node((2, 2), $a_1$),
@@ -178,23 +180,23 @@ This property holds for the states, but generally not for the observations: a si
     node((5, 0), $dots$, stroke: none),
 
     // Step 0
-    edge((0, 0), (0, 1), "-|>", $cal(Z)$),
-    edge((0, 1), (0, 2), "-|>", $pi$),
-    edge((0, 0), (2, 0), "-|>", $cal(P)$),
+    edge((0, 0), (0, 1), "-|>", $cal(Z)(dot|s_0)$),
+    edge((0, 1), (0, 2), "-|>", $pi(dot|o_0)$),
+    edge((0, 0), (2, 0), "-|>", $cal(P)(dot|s_0, a_0)$, label-side: right, label-pos: 0.6),
     edge((0, 2), (2, 0), "-|>"),
-    edge((0, 2), (1, 2), "-|>"),
-    edge((2, 0), (1, 2), "-|>"),
+    edge((0, 2), (0.75, 2), "-|>"),
+    edge((2, 0), (0.75, 2), "-|>"),
 
     // Step 1
-    edge((2, 0), (2, 1), "-|>", $cal(Z)$),
-    edge((2, 1), (2, 2), "-|>", $pi$),
-    edge((2, 0), (4, 0), "-|>", $cal(P)$),
+    edge((2, 0), (2, 1), "-|>", $cal(Z)(dot|s_0)$, label-side: left),
+    edge((2, 1), (2, 2), "-|>", $pi(dot|o_1)$),
+    edge((2, 0), (4, 0), "-|>", $cal(P)(dot|s_1, a_1)$, label-side: right, label-pos: 0.6),
     edge((2, 2), (4, 0), "-|>"),
     edge((2, 2), (3, 2), "-|>"),
     edge((4, 0), (3, 2), "-|>"),
 
     // Step 2
-    edge((4, 0), (4, 1), "-|>", $cal(Z)$),
+    edge((4, 0), (4, 1), "-|>", $cal(Z)$, label-side: left),
     edge((4, 0), (5, 0), "-|>"),
   ),
   caption: [
@@ -203,8 +205,13 @@ This property holds for the states, but generally not for the observations: a si
 ) <mdp_trajectory>
 
 
+=== Value functions
+In an MDP, 
+
 == Reinforcement Learning (RL)
-Reinforcement learning is a subfield of machine learning, where a policy $pi$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[R_t]$. The policy takes as input the observation of the environment $o_t in cal(O)$, and outputs a distribution over actions $cal(A)$. When the agent interacts with the environmnet, it does so by performing an action $a_t ~ pi(o_t)$. The environment responds by updating its state from $s_t in cal(S)$ to $s_(t+1) in cal(S)$, and emitting a scalar reward $r_t in Re$, which may depend on the action $a_t$ performed and the successor state $s_(t+1)$.
+Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[G_t]$ by varying the parameters $theta$ of the policy. This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+
+RL is distinct from supervised learning in that the agent does not know the correct or optimal action to take at any given time, and must learn this through trial and error. 
 
 #v(2em)
 
@@ -246,8 +253,6 @@ Reinforcement learning is a subfield of machine learning, where a policy $pi$ is
     Interaction between the agent and the environment over time.
   ],
 )
-
-Note that this is distinct from the classical formulation where the agent directly observes the state $s_t$. In our case, the environment is said to be _partially observable_, and the agent must learn a policy that maps from observations to actions (compared to the classical mapping of states to actions). The information available in the state $s_t$ that is not available in the observation $o_t$ is called privledged information.
 
 == REINFORCE
 
