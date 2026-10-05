@@ -320,10 +320,8 @@ if __name__ == "__main__":
         yaw_rate_weight=0.0,
         num_stacked_lidar_frames=50,  # 50Hz
         n_rays=101,
-        lidar_conv="conv2d",
-        time_kernel=8,
-        time_stride=2,
+        lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="conv2d"
+        name="conv1d"
     )
