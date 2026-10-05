@@ -310,8 +310,8 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=1,
-        num_agents_per_env=4,
+        num_envs=8,
+        num_agents_per_env=6,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
@@ -323,5 +323,5 @@ if __name__ == "__main__":
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="conv1d_v2"
+        name="conv1d"
     )
