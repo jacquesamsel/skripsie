@@ -79,7 +79,7 @@ def _patch_retry_on_transient_obs_gap(env, max_retries=5):
 def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
-        time_scale=time_scale, quality_level=quality_level, width=64, height=64)
+        time_scale=time_scale, quality_level=quality_level)
     seed = random.randint(0, 1000)
     print("Seed", seed)
     env = UnityMLAgentsEnv(
@@ -90,7 +90,6 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
         # each Unity instance needs its own port (base_port 5005 + worker_id)
         worker_id=worker_id,
-
         seed=seed
     )
     _patch_retry_on_transient_obs_gap(env)
