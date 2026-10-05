@@ -3,7 +3,7 @@ import math
 
 import torch
 from collections import deque
-
+import time
 import tensordict as td
 from matplotlib import pyplot as plt
 from torchrl.envs.utils import ExplorationType, set_exploration_type
@@ -12,7 +12,7 @@ from torchrl.objectives.value import GAE
 from environment import make_envs
 from model import make_model
 
-#curl -F "reqtype=fileupload" -F "time=24h" -F "fileToUpload=@Archiv.zip" https://litterbox.catbox.moe/resources/internals/api.php
+# curl -F "reqtype=fileupload" -F "time=24h" -F "fileToUpload=@Archiv.zip" https://litterbox.catbox.moe/resources/internals/api.php
 
 # Must match train.py's gamma/lmbda -- not stored in the checkpoint, so kept in sync by hand.
 GAMMA = 0.99
@@ -39,7 +39,7 @@ class AgentPanel:
         self.chart_ax = chart_ax
         self.image = None
         self.history = {name: deque(maxlen=history_len)
-                         for name in ("reward", "progress", "return", "discounted_return")}
+                        for name in ("reward", "progress", "return", "discounted_return")}
 
         return_ax = chart_ax.twinx()
         self.return_ax = return_ax
@@ -59,7 +59,8 @@ class AgentPanel:
         chart_ax.set_ylabel("reward / progress")
         return_ax.set_ylabel("return", color="tab:orange")
         lines = list(self.lines.values())
-        chart_ax.legend(lines, [line.get_label() for line in lines], loc="upper left")
+        chart_ax.legend(lines, [line.get_label()
+                        for line in lines], loc="upper left")
 
     def update(self, lidar_frame, reward: float, progress: float,
                episode_return: float, episode_discounted_return: float):
@@ -123,9 +124,12 @@ class Visualiser:
             done=("agents", "done"),
             terminated=("agents", "terminated"),
         )
-        self.episode_steps = [[[] for _ in range(num_agents)] for _ in range(num_envs)]
-        self.episode_return = [[math.nan] * num_agents for _ in range(num_envs)]
-        self.episode_discounted_return = [[math.nan] * num_agents for _ in range(num_envs)]
+        self.episode_steps = [[[]
+                               for _ in range(num_agents)] for _ in range(num_envs)]
+        self.episode_return = [[math.nan] *
+                               num_agents for _ in range(num_envs)]
+        self.episode_discounted_return = [
+            [math.nan] * num_agents for _ in range(num_envs)]
 
     def render_view(self, tensordict: td.TensorDict):
         # make_envs() skips ParallelEnv (and its env-count batch dim) when
@@ -135,7 +139,8 @@ class Visualiser:
         tensordict = tensordict.reshape(self.num_envs, self.num_agents)
 
         # tag -1 is distance (see environment.py's LIDAR_BLOCK / model.py's TrunkModel)
-        lidar = tensordict["next", "agents", "stacked_lidar"][..., -1, :].cpu().numpy()
+        lidar = tensordict["next", "agents",
+                           "stacked_lidar"][..., -1, :].cpu().numpy()
         n_frames, n_rays = lidar.shape[-2:]
         lidar = lidar.reshape(self.num_envs, self.num_agents, n_frames, n_rays)
 
@@ -156,7 +161,8 @@ class Visualiser:
                         self.gae(episode)
                     # value_target at the episode's first step estimates the
                     # return for the whole episode just finished.
-                    self.episode_return[e][a] = episode["value_target"][0].item()
+                    self.episode_return[e][a] = episode["value_target"][0].item(
+                    )
                     self.episode_discounted_return[e][a] = discounted_return(
                         episode["next", "agents", "reward"].squeeze(-1), GAMMA)
                     self.episode_steps[e][a] = []
@@ -173,7 +179,8 @@ class Visualiser:
         self.step += 1
 
         if done.sum() > 0.0:
-            print(f"Done! {torch.argwhere(tensordict['next', 'agents', 'done'])}")
+            print(
+                f"Done! {torch.argwhere(tensordict['next', 'agents', 'done'])}")
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
         plt.pause(0.0001)
@@ -191,25 +198,39 @@ if __name__ == "__main__":
     env = make_envs(
         num_envs=num_envs,
         num_agents_per_env=num_agents_per_env,
-        time_scale=0.1,
-        num_stacked_frames=model_config["num_stacked_lidar_frames"])
+        time_scale=20.0,
+        num_stacked_frames=model_config["num_stacked_lidar_frames"],
+        width=1280,
+        height=720,
+        # Profiler burst, written straight to a local file -- no live Editor connection
+        # needed, so this can't hit the transport-overflow crash. Skip `warmupTicks`
+        # physics ticks (let the communicator connect and Unity warm up), then capture
+        # the next `captureTicks`. Load the result in the Editor via
+        # Window > Analysis > Profiler > (dropdown next to Record) > Load Profile.
+        additional_args=["-profileCapture", "/tmp/infer_burst", "100", "200"],
+    )
     tensordict = env.reset()
 
     model = make_model(**model_config)
     model.load_state_dict(checkpoint["model"])
 
-    visualiser = Visualiser(
-        num_envs=num_envs, num_agents=num_agents_per_env,
-        value_operator=model.get_value_operator())
-
+    # visualiser = Visualiser(
+    #     num_envs=num_envs, num_agents=num_agents_per_env,
+    #     value_operator=model.get_value_operator())
+    start_time = time.perf_counter_ns()
+    iter = 0
     try:
         with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
+            
             while True:
                 step_result = env.step(model.get_policy_operator()(tensordict))
-                visualiser.render_view(step_result)
+                # visualiser.render_view(step_result)
                 tensordict = env.step_mdp(step_result)
+                iter += 1
     except KeyboardInterrupt:
         pass
     finally:
         env.close()
-        visualiser.close()
+        end_time = time.perf_counter_ns()
+        print(f"ms per frame: {(end_time - start_time) / (iter * 1e6)}")
+        # visualiser.close()

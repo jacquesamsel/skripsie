@@ -76,27 +76,34 @@ def _patch_retry_on_transient_obs_gap(env, max_retries=5):
     env._step = step_with_retry
 
 
-def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
+def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0,
+             width=None, height=None, target_frame_rate=None, additional_args=None):
     engine_channel = EngineConfigurationChannel()
-    engine_channel.set_configuration_parameters(
-        time_scale=time_scale, quality_level=quality_level)
+    engine_config = dict(time_scale=time_scale, quality_level=quality_level)
+    if width is not None and height is not None:
+        engine_config.update(width=width, height=height)
+    if target_frame_rate is not None:
+        engine_config.update(target_frame_rate=target_frame_rate)
+    engine_channel.set_configuration_parameters(**engine_config)
     seed = random.randint(0, 1000)
     print("Seed", seed)
     env = UnityMLAgentsEnv(
         file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
-        no_graphics=platform.system() != "Darwin",
+        no_graphics=True,
         side_channels=[engine_channel],
         num_areas=num_agents,
         group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
         # each Unity instance needs its own port (base_port 5005 + worker_id)
         worker_id=worker_id,
-        seed=seed
+        seed=seed,
+        additional_args=additional_args,
     )
     _patch_retry_on_transient_obs_gap(env)
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float, quality_level: int = 0):
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float,
+              quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
@@ -105,9 +112,13 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 "worker_id": k,
                 "num_agents": num_agents_per_env,
                 "time_scale": time_scale,
-                "quality_level": quality_level
+                "quality_level": quality_level,
+                "width": width,
+                "height": height,
+                "target_frame_rate": target_frame_rate,
+                "additional_args": additional_args,
             } for k in range(num_envs)],
-    ) if num_envs > 1 else make_env(0, num_agents_per_env, time_scale, quality_level)
+    ) if num_envs > 1 else make_env(0, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args)
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]
@@ -180,7 +191,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 progress_weight=10.0,
                 forward_velocity_weight=0.0,
                 step_penalty=0.0,
-                collision_penalty=1.0
+                collision_penalty=10.0
             ),
             ExcludeTransform(("agents", "unity_reward")),
             # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
@@ -323,8 +334,7 @@ class AgentBatch(Transform):
         grow = len(batch_size) > len(tensordict.batch_size)
         if not grow:  # a parent can't be larger than its children, so shrink top-down
             tensordict.batch_size = batch_size
-        for key in list(tensordict.keys()):
-            child = tensordict.get(key)
+        for _, child in list(tensordict.items()):
             if is_tensor_collection(child):
                 AgentBatch._set_batch_size(child, batch_size)
         if grow:  # ... and grow bottom-up
