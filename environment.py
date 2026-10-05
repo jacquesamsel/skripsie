@@ -42,10 +42,44 @@ class CatFramesResetOnDone(CatFrames):
         return next_tensordict
 
 
+def _patch_retry_on_transient_obs_gap(env, max_retries=5):
+    """mlagents_envs occasionally reports neither a decision nor a termination for
+    an agent on a given step. UnityMLAgentsEnv._make_td_out has a fallback for
+    exactly that case (see its own comment), but the fallback is broken: it reads
+    the missing observation from `tensordict_in`, which at that point only ever
+    carries the action (never the previous observation), so it raises KeyError
+    ("... not found in TensorDict with keys ['continuous_action']") instead of
+    reusing stale data like it's supposed to.
+
+    The Unity/C# side isn't at fault here -- Agent.cs's NotifyAgentDone() always
+    calls UpdateSensors()+CollectObservations() before reporting a terminal step,
+    so a full observation set is always sent for whichever step actually ends up
+    carrying the termination/decision. Retrying with the same action just asks
+    Unity to advance one more tick, which reliably clears the one-tick gap.
+    """
+    # TransformedEnv calls base_env._step(...) directly (not the public .step()),
+    # so the retry has to wrap the private method to actually be on the path.
+    original_step = env._step
+
+    def step_with_retry(tensordict):
+        for attempt in range(max_retries):
+            try:
+                return original_step(tensordict)
+            except KeyError as e:
+                if attempt == max_retries - 1:
+                    raise
+                print(f"[make_env] transient missing-observation step from mlagents "
+                      f"(torchrl's own carry-forward fallback can't handle this case) "
+                      f"-- retrying ({attempt + 1}/{max_retries}): {e}")
+        raise AssertionError("unreachable")
+
+    env._step = step_with_retry
+
+
 def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0):
     engine_channel = EngineConfigurationChannel()
     engine_channel.set_configuration_parameters(
-        time_scale=time_scale, quality_level=quality_level)
+        time_scale=time_scale, quality_level=quality_level, width=64, height=64)
     seed = random.randint(0, 1000)
     print("Seed", seed)
     env = UnityMLAgentsEnv(
@@ -59,6 +93,7 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
 
         seed=seed
     )
+    _patch_retry_on_transient_obs_gap(env)
     return env
 
 

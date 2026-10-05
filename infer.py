@@ -183,7 +183,7 @@ class Visualiser:
 
 
 if __name__ == "__main__":
-    checkpoint = torch.load("checkpoints/conv2d.pt", map_location="cpu")
+    checkpoint = torch.load("checkpoints/conv1d.pt", map_location="cpu")
     model_config = checkpoint["model_config"]
 
     num_envs = 1
@@ -203,7 +203,7 @@ if __name__ == "__main__":
         value_operator=model.get_value_operator())
 
     try:
-        with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
+        with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
             while True:
                 step_result = env.step(model.get_policy_operator()(tensordict))
                 visualiser.render_view(step_result)

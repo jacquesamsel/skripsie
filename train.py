@@ -80,7 +80,7 @@ def train(
     gamma = 0.999
     lmbda = 0.95
     clip_epsilon = 0.2
-    entropy_epsilon = 0.01
+    entropy_epsilon = 0.0005
     frames_per_rollout = 512
     batch_size = 2048
 
@@ -310,7 +310,7 @@ def train(
 
 if __name__ == "__main__":
     train(
-        num_envs=8,
+        num_envs=1,
         num_agents_per_env=4,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
@@ -323,5 +323,5 @@ if __name__ == "__main__":
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="conv1d"
+        name="conv1d_v2"
     )

@@ -81,11 +81,9 @@ class TrunkModel(torch.nn.Module):
         self.dense = torch.nn.Sequential(
             torch.nn.Linear(dense_in, 128),
             torch.nn.ReLU(),
-            torch.nn.Linear(128, 256),
+            torch.nn.Linear(128, 72),
             torch.nn.ReLU(),
-            torch.nn.Linear(256, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, 64),
+            torch.nn.Linear(72, 64),
             torch.nn.ReLU()
         )
 
