@@ -5,7 +5,6 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 from model import ActorValueAuxOperator, make_model
 from environment import make_envs
-from torchrl.data import ReplayBuffer, LazyTensorStorage, SamplerWithoutReplacement
 from torchrl.modules import ActorValueOperator
 import tensordict as td
 from torchrl.objectives.value import GAE
@@ -151,16 +150,6 @@ def train(
 
     i = start_iter - 1
     try:
-        # to prevent reallocation each iteration
-        rollout_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(
-                max_size=frames_per_rollout*num_envs*num_agents_per_env,
-                device=device,
-            ),
-            sampler=SamplerWithoutReplacement(),
-            batch_size=batch_size
-        )
-
         # infinite loop until interrupted
         for i in itertools.count(start=start_iter):
             # Collect the rollout
@@ -185,23 +174,26 @@ def train(
 
             save_rollout_buffer_start = time.perf_counter_ns()
 
-            rollout_buffer.empty()
             # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
-            rollout_buffer.extend(rollout.reshape(-1))
+            flat_rollout = rollout.reshape(-1)
+            num_samples = flat_rollout.shape[0]
 
             epochs_start = time.perf_counter_ns()
 
             loss_logs = []
             grad_norms = []
             for epochs in range(4):  # epochs
-                for minibatch in rollout_buffer:
+                shuffled = flat_rollout[torch.randperm(num_samples)]
+                for batch_start in range(0, num_samples, batch_size):
+                    minibatch = shuffled[batch_start:batch_start + batch_size]
                     optim.zero_grad()
-                    loss: td.TensorDict = loss_module(minibatch)
 
                     minibatch = model.get_trunk_operator()(minibatch)
 
                     # compute the auxiliary losses and add them to the rollout
                     minibatch = model.get_aux_head()(minibatch)
+
+                    loss: td.TensorDict = loss_module(minibatch)
 
                     aux_losses = td.TensorDict(dict(
                         velocity_forward=smooth_l1_loss(

@@ -77,7 +77,8 @@ def _patch_retry_on_transient_obs_gap(env, max_retries=5):
 
 
 def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0,
-             width=None, height=None, target_frame_rate=None, additional_args=None):
+             width=None, height=None, target_frame_rate=None, additional_args=None,
+             job_worker_count: int | None = None):
     engine_channel = EngineConfigurationChannel()
     engine_config = dict(time_scale=time_scale, quality_level=quality_level)
     if width is not None and height is not None:
@@ -87,6 +88,9 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
     engine_channel.set_configuration_parameters(**engine_config)
     seed = random.randint(0, 1000)
     print("Seed", seed)
+    if job_worker_count is not None:
+        additional_args = [*(additional_args or []),
+                           "-job-worker-count", str(job_worker_count)]
     env = UnityMLAgentsEnv(
         file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
         no_graphics=True,
@@ -103,13 +107,14 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
 
 
 def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float,
-              quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None):
+              quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None,
+              job_worker_count: int | None = 4):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
         create_env_kwargs=[
             {
-                "worker_id": k,
+                "worker_id": k + 100,
                 "num_agents": num_agents_per_env,
                 "time_scale": time_scale,
                 "quality_level": quality_level,
@@ -117,8 +122,9 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 "height": height,
                 "target_frame_rate": target_frame_rate,
                 "additional_args": additional_args,
+                "job_worker_count": job_worker_count,
             } for k in range(num_envs)],
-    ) if num_envs > 1 else make_env(0, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args)
+    ) if num_envs > 1 else make_env(100, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]

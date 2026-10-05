@@ -100,9 +100,13 @@ class TrunkModel(torch.nn.Module):
 
         n_tags -= 2  # remove the miss, dist 'tags'
 
-        # (..., n_stacked_frames, L) of distances only. Have to flip the lidar tensor on time so that the most recent frame is always included
-        lidar_distance_only = lidar.flip(-3)[...,
-                                             ::self.time_subsample,  -1, :]
+        # (..., n_stacked_frames, L) of distances only. Select the distance
+        # channel before flipping (not after) so the flip -- which has to
+        # touch every element -- only moves 1/4 as much data as flipping all
+        # tags first and discarding 3 of them afterwards; same result either
+        # way. Have to flip on time so that the most recent frame is always included.
+        lidar_distance_only = lidar[..., -1, :].flip(-2)[
+            ..., ::self.time_subsample, :]
 
         # flatten all leading batch dims (agents, time, envs, ...) into one
         # dim so Conv1d always sees (N, n_frames, L), then restore the batch shape
