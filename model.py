@@ -84,7 +84,8 @@ class TrunkModel(torch.nn.Module):
             torch.nn.Linear(128, 72),
             torch.nn.ReLU(),
             torch.nn.Linear(72, 64),
-            torch.nn.ReLU()
+            torch.nn.ReLU(),
+            torch.nn.LayerNorm(64)
         )
 
     def forward(self, lidar: torch.Tensor, cur_steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
