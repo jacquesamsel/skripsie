@@ -30,6 +30,43 @@ kaelbling1998:
     volume: 101
     issue: 1-2
 
+jaderberg2017unreal:
+  type: article
+  title: Reinforcement Learning with Unsupervised Auxiliary Tasks
+  author:
+    - Jaderberg, Max
+    - Mnih, Volodymyr
+    - Czarnecki, Wojciech Marian
+    - Schaul, Tom
+    - Leibo, Joel Z.
+    - Silver, David
+    - Kavukcuoglu, Koray
+  date: 2017
+  parent:
+    type: proceedings
+    title: International Conference on Learning Representations (ICLR 2017)
+  serial-number:
+    arxiv: "1611.05397"
+    doi: 10.48550/arXiv.1611.05397
+  url: https://arxiv.org/abs/1611.05397
+
+lample2017fps:
+  type: article
+  title: Playing FPS Games with Deep Reinforcement Learning
+  author:
+    - Lample, Guillaume
+    - Chaplot, Devendra Singh
+  date: 2017
+  page-range: 2140-2146
+  parent:
+    type: proceedings
+    title: Proceedings of the Thirty-First AAAI Conference on Artificial Intelligence
+    volume: 31
+    publisher: AAAI Press
+  serial-number:
+    arxiv: "1609.05521"
+  url: https://arxiv.org/abs/1609.05521
+
 williams1992:
   type: article
   title: Simple statistical gradient-following algorithms for connectionist reinforcement learning

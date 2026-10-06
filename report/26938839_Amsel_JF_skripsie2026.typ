@@ -11,6 +11,26 @@
 #let rule-colour = rgb("#DCDCDC") // rule below the running header
 #let link-colour = rgb("#666666") // gray!80!black for cites and URLs
 
+
+// Only reference equations that are actually referenced in the text
+#set math.equation(numbering: "(1)")
+
+#show math.equation.where(block: true): it => {
+  // Already processed: stop here to avoid recursion
+  if it.has("label") and it.label == <eq-unnumbered> { return it }
+
+  let referenced = (
+    it.has("label") and query(ref.where(target: it.label)).len() > 0
+  )
+
+  if referenced {
+    it
+  } else [
+    #counter(math.equation).update(n => n - 1)
+    #math.equation(it.body, block: true, numbering: none)<eq-unnumbered>
+  ]
+}
+
 // --- Fonts and text: 12pt Latin Modern Roman -----------------
 #set text(font: "New Computer Modern", size: 12pt, lang: "en", region: "ZA")
 #show math.equation: set text(font: "New Computer Modern Math")
@@ -55,20 +75,22 @@
   counter(figure.where(kind: table)).update(0)
   counter(figure.where(kind: raw)).update(0)
   pagebreak(weak: true)
-  set par(justify: false, leading: 0.6em, first-line-indent: 0pt)
+  set par(justify: false, first-line-indent: 0pt)
   set text(weight: "regular")
-  block(above: 30pt, below: 10pt, width: 100%, sticky: true)[
+  block(above: 0pt, below: 10pt, width: 100%, sticky: true)[
     // #if it.numbering != none [
     //   #align(right, text(size: 20pt, smallcaps[Chapter #counter(heading).display("1")]))
     //   #v(3pt)
     // ]
     //#line(length: 100%, stroke: 0.4pt)
-    #v(1.5em)
-    #let count_text = if it.numbering != none {
-      numbering(it.numbering, ..counter(heading).at(it.location())) + " "
-    } else { "" }
-    #align(center, text(size: 25pt, count_text + smallcaps(it.body)))
-    #v(1.5em)
+    #v(70pt)
+    #if (it.numbering != none) {
+      text(size: 22pt, "Chapter " + numbering("1", ..counter(heading).at(it.location())))
+    }
+
+
+    #text(size: 26pt, smallcaps(it.body))
+    #v(10pt)
     //#line(length: 100%, stroke: 0.4pt)
   ]
 }
@@ -212,14 +234,21 @@
 #set heading(numbering: "1.")
 
 = Introduction
-Autonomous racing is a challenging problem in robotics and artificial intelligence, requiring the development of algorithms that can make real-time decisions in complex and dynamic environments. The goal is to create an autonomous agent capable of navigating a race track at high speeds while avoiding obstacles and (in some cases) competing against other agents. However, traditional reinforcement learning (RL) methods often struggle to learn effective policies in such environments due to the high-dimensional state and action spaces, as well as the sparse and delayed rewards. Auxiliary learning has emerged as a promising approach to address these challenges by providing additional learning signals that can improve the agent's performance and sample efficiency.
 
-= Background
+== Background and motivation
+Autonomous racing is a challenging problem in robotics and artificial intelligence, requiring the development of algorithms that can make real-time decisions in complex and dynamic environments. The goal is to create an autonomous agent capable of navigating a race track at high speeds while avoiding obstacles and (in some cases) competing against other agents. However, traditional reinforcement learning (RL) methods often struggle to learn effective policies in such environments due to the high-dimensional state and action spaces, as well as the sparse and delayed rewards. Auxiliary learning has emerged as a promising approach to address these challenges by providing additional learning signals that can improve the agent's performance and sample efficiency. Auxiliary heads may be supervised  or unsupervised
+
+== Problem statement & objectives
+
+
+
+
+= Related literature
 
 == Markov Decision Processes (MDPs)
 A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment - its observation is $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
 
-Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if the light ahead is red, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957 and @kaelbling1998, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
+Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if I observe a red light ahead, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957 and @kaelbling1998, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
 
 Once the agent takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$, emitting a reward to the agent, $r_t in RR$, and a new observation $o_(t+1) in cal(O)$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken, and both the current state and the successor state: $r_t = R(s_(t), a_t, s_(t+1))$. Note that the reward depends on the true state, not on the agent's observation of it.
 
@@ -307,10 +336,43 @@ This property holds for the states, but generally not for the observations: a si
 
 
 === Value functions
-// TODO: finish
+Value functions are a central concept in reinforcement learning, providing a measure of how good it is for the agent to be in a particular state or to take a particular action.
+The state-value function,
+$
+  V_pi (s) = EE_pi [G_t | S_t = s]
+$ <state_value_function>
+
+represents the expected discounted return $G_t$ the agent can achieve starting from state $s$ and following policy $pi$ thereafter. The action-value function,
+$
+  Q_pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
+$ <action_value_function>
+represents the expected discounted return the agent can achieve starting from state $s$, taking action $a$, and following policy $pi$ thereafter.
+
+These value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
+
+$
+  V_pi (s) = EE_pi [R_{t+1} + gamma V_pi (S_{t+1}) | S_t = s]
+$ <state_value_bellman_equation>
+
+and the Bellman equation for the action-value function is given by:
+
+$
+  Q_pi (s, a) = EE_pi [R_{t+1} + gamma Q_pi (S_{t+1}, A_{t+1}) | S_t = s, A_t = a]
+$ <action_value_bellman_equation>
+
+These Bellman equations @state_value_bellman_equation and @action_value_bellman_equation provide a recursive relationship that allows the agent to update its value estimates based on the observed rewards and the estimated values of successor states.
+
+
 
 == Reinforcement Learning (RL)
-Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected return $EE[G_t]$ by varying the parameters $theta$ of the policy (i.e. finding the optimal policy $pi^*$). This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected discounted return under policy $pi_theta$, $EE_pi_theta [G_t]$, by varying the parameters $theta$ of the policy (i.e. finding the optimal policy $pi^*$)#footnote([The parameterisation restricts the search to the policy class
+  $Pi_Theta = {pi_theta : theta in Theta}$, the set of policies the chosen
+  model can represent. The optimal policy $pi^*$ need not lie in $Pi_Theta$:
+  for example, if $pi_theta$ outputs a Gaussian over actions, it cannot
+  represent an optimal policy that is multimodal or deterministic. In that
+  case, RL can at best find the policy in $Pi_Theta$ with the highest
+  expected return, $pi_(theta^*)$ with
+  $theta^* = arg max_theta EE_(pi_theta) [G_0]$.]). This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
 
 RL is distinct from supervised learning in that during training, the optimal or correct action is not known - the agent must explore the environment and learn from the consequences of its actions. It is also distinct from classical unsupervised learning methods in that there is a clear objective (maximising expected return) and feedback (rewards) to guide the learning process.
 
@@ -325,32 +387,31 @@ $
 
 Using the _log-derivative_ trick, the gradient of the expected return with respect to the policy parameters $theta$ can be calculated as follows:
 
-$
-$
+$$
 
 
-== REINFORCE
+=== REINFORCE
 
 The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods. The algorithm works by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to compute an estimate of the policy gradient, which is then used to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
 
-The loss,
+The loss $L_"REINFORCE"$ is minimised using gradient descent, and is given by the following equation:
 $
-  L = -1/T sum_(t=0)^T log(pi_theta (a_t | o_t)) dot G_t
+  L_"REINFORCE" = -1/T sum_(t=0)^T log(pi_theta (a_t | o_t)) dot G_t
 $
-where $T$ is the length of the trajectory, $G_T$ is the observed discounted return from time step $t$, and $pi_theta (a_t | o_t)$ is the probability of taking action $a_t$ given observation $o_t$ under the current policy parameters $theta$, is minimised using gradient descent after each episode. Intuitively, the loss function encourages the policy to increase the probability of actions that lead to higher returns, and decrease the probability of actions that lead to lower returns.
+where $T$ is the length of the trajectory, $G_T$ is the observed discounted return from time step $t$, and $pi_theta (a_t | o_t)$ is the probability of taking action $a_t$ given observation $o_t$ under the current policy parameters $theta$. Intuitively, minimising the loss function encourages the policy to increase the probability of actions that lead to higher returns, and decrease the probability of actions that lead to lower discounted returns.
 
-== Proximal Policy Optimization (PPO)
+=== Proximal Policy Optimization (PPO)
 PPO is a modern algorithm for policy learning introduced in \_\_\_ at ICML by \_\_\_. It is a more advanced policy gradient method than REINFORCE. It improves upon REINFORCE by using a surrogate loss function which prevents large and destructive policy updates and by approximating the value function, reducing the variance of the policy gradient estimate.
 
-The model we train no longer only outputs a distribution over actions, but also an estimate of the value function $hat(V) (s_t)$ for each oberserved state $s_t$. Then, the advantage $A_t = R_t - hat(V) (s_t)$ is computed, a measure of the suprise the model experiences at time $t$ (i.e. how much better it actually was to be in state $s_t$ compared to the model's estimate).
+The model we train no longer only outputs a distribution over actions, but also an estimate of the value function $hat(V) (s_t)$ for each oberserved state $s_t$. Then, the advantage $A_t = G_t - hat(V) (s_t)$ is computed, a measure of the suprise the model experiences at time $t$ (i.e. how much better it actually was to be in state $s_t$ compared to the model's estimate).
 
 $
   L_"clipped" (theta) = 1/T sum_(t=0)^T min((pi_theta (s_t))/(pi (s_t)) dot (hat(A)_t))
 $
 
-= Auxiliary learning in RL
+== Auxiliary learning in RL
 
-== 1st formulation (auxiliary loss)
+=== 1st formulation (auxiliary loss)
 Auxiliary learning is the practice of augmenting the loss function with heads for auxiliary tasks. For example, the model may be trained to simultaneously (a) produce a distribution over actions, and (b) estimate estimate the state $S_t$ which is partially observed in its observation $O_t$. Auxiliary learning has been empirically shown to improve sample efficiency in "complex enough" environments, and in certain situations, average reward too.
 #text("https://ieeexplore.ieee.org/document/10166271/", fill: red)
 
@@ -382,7 +443,7 @@ Auxiliary learning is the practice of augmenting the loss function with heads fo
 
 The loss function can then be written as
 $
-  L_"total" = L_"policy" (A_t, R_t) + L_"aux" (S_t, hat(S_t))
+  L_"total" = L_"policy" (A_t, G_t) + L_"aux" (S_t, hat(S_t))
 $
 
 Then, during a gradient update step, the parameters $theta$ are updated using information from both loss heads.
@@ -391,22 +452,26 @@ $
   theta_(t+1) = theta_(t) + alpha dot Delta_theta L_"total" =
 $
 
-== 2nd formulation (auxiliary rewards)
+=== 2nd formulation (auxiliary rewards)
 Auxiliary learning can also be formulated as an additional task the agent receives rewards for performing (well). This formulation has the drawback that gradient information is discarded.
 
-= The environment
+= System overview
+
+// Add a subsystem diagram
+
+= Simulation environments
 
 == F1Tenth Gym
 
 == AutoDrive, Unity, and MLAgents
 
-=== Track generation
+== Track generation
 
 #figure(
   caption: "Track generation",
   cetz.canvas({
     import cetz.draw: *
-    circle((0, 0), radius: 4)
+    circle((0, 0), radius: 4, stroke: (paint: luma(60%), dash: "dashed"))
     // dots: roughly trace the guide circle for 3/4 of a revolution, with a
     // little radial jitter so it reads as a walk rather than a perfect ring
     let n = 8
@@ -423,10 +488,6 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
         line(dots.at(idx - 1), dots.at(idx))
       }
     }
-    for idx in range(n) {
-      circle(dots.at(idx), radius: 8pt, fill: black)
-      content(dots.at(idx))[#text(size: 12pt, fill: white)[#(idx + 1)]]
-    }
 
     let last_point = dots.at(n - 1)
     let second_last_point = dots.at(n - 2)
@@ -442,8 +503,15 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
     )
 
     line(last_point, tangent_end)
+
+    for idx in range(n) {
+      circle(dots.at(idx), radius: 8pt, fill: black)
+      content(dots.at(idx))[#text(size: 12pt, fill: white)[#(idx + 1)]]
+    }
   }),
 )
+
+
 
 = The model
 
@@ -470,7 +538,7 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
   ),
 )
 
-= Results
+= Experiments & results
 
 == Training curves
 
