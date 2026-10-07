@@ -1,4 +1,5 @@
 #import "@preview/cetz:0.5.2"
+#import "@preview/lilaq:0.6.0" as lq
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
 
 // ============================================================
@@ -763,9 +764,21 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 
 = Experiments & results
 
-== Normalisation of privledged information
+== Baseline performance <baseline_model>
+
+Hey
+
+
+== Normalisation of ego-agent privledged information
 
 Prior to applying auxiliary learning, the privileged information must be normalised. The auxiliary loss is a sum over the individual prediction targets, so a target with a larger numerical range contributes larger errors and gradients, and can dominate the shared representation at the expense of the others. Training with unnormalised targets makes hyperparameter tuning @vanhasselt2016, and training more difficult @lecun1998.
+
+Chen et al. @chen2017gradnorm propose a method for automatically learning weights to balance the contributions of each task to the total loss. For a loss function $L$ that comprises $K$ tasks,
+
+$
+  L (t) = sum_(k=1)^K w_k(t) dot L_k (t)
+$
+
 
 
 == Training curves

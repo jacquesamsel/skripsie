@@ -130,58 +130,30 @@ if __name__ == "__main__":
         def feat(key):
             return agents[key].squeeze()
 
-        pos = feat("pos")
-        wheel_ticks = feat("wheel_ticks")
-        wheel_angles = feat("wheel_angles")
-        orientation_quaternion = feat("orientation_quaternion")
-        euler_angles = feat("euler_angles")
-        linear_acceleration = feat("linear_acceleration")
-        wheel_slips = feat("wheel_slips")  # (num_steps, 4, 2): FL, FR, RL, RR
-        curvature = feat("curvature")  # (num_steps, 3): 0.5m, 1.0m, 2.0m lookahead
-
         # lidar block layout is [Tag_1, Tag_2, Miss, Distance] (see LIDAR_BLOCK
         # in environment.py) -- index -1 selects the distance channel.
         lidar_distance = agents["lidar"].squeeze()[:, -1, :]
 
         df = pd.DataFrame({
-            "speed": feat("speed").numpy(),
-            "cur_steering_angle": feat("cur_steering_angle").numpy(),
-            "cur_throttle": feat("cur_throttle").numpy(),
-            "pos_x": pos[:, 0].numpy(),
-            "pos_y": pos[:, 1].numpy(),
-            "pos_z": pos[:, 2].numpy(),
-            "wheel_ticks_left": wheel_ticks[:, 0].numpy(),
-            "wheel_ticks_right": wheel_ticks[:, 1].numpy(),
-            "wheel_angle_left": wheel_angles[:, 0].numpy(),
-            "wheel_angle_right": wheel_angles[:, 1].numpy(),
-            "orientation_quaternion_x": orientation_quaternion[:, 0].numpy(),
-            "orientation_quaternion_y": orientation_quaternion[:, 1].numpy(),
-            "orientation_quaternion_z": orientation_quaternion[:, 2].numpy(),
-            "orientation_quaternion_w": orientation_quaternion[:, 3].numpy(),
-            "euler_angle_x": euler_angles[:, 0].numpy(),
-            "euler_angle_y": euler_angles[:, 1].numpy(),
-            "euler_angle_z": euler_angles[:, 2].numpy(),
             "angular_velocity_x": feat("angular_velocity_x").numpy(),
+            "angular_velocity_y": feat("angular_velocity_y").numpy(),  # yaw rate
             "angular_velocity_z": feat("angular_velocity_z").numpy(),
-            "yaw_rate": feat("yaw_rate").numpy(),
-            "linear_acceleration_x": linear_acceleration[:, 0].numpy(),
-            "linear_acceleration_y": linear_acceleration[:, 1].numpy(),
-            "linear_acceleration_z": linear_acceleration[:, 2].numpy(),
-            "wheel_slip_fl_forward": wheel_slips[:, 0, 0].numpy(),
-            "wheel_slip_fl_sideways": wheel_slips[:, 0, 1].numpy(),
-            "wheel_slip_fr_forward": wheel_slips[:, 1, 0].numpy(),
-            "wheel_slip_fr_sideways": wheel_slips[:, 1, 1].numpy(),
-            "wheel_slip_rl_forward": wheel_slips[:, 2, 0].numpy(),
-            "wheel_slip_rl_sideways": wheel_slips[:, 2, 1].numpy(),
-            "wheel_slip_rr_forward": wheel_slips[:, 3, 0].numpy(),
-            "wheel_slip_rr_sideways": wheel_slips[:, 3, 1].numpy(),
+            "linear_acceleration_x": feat("linear_acceleration_x").numpy(),
+            "linear_acceleration_y": feat("linear_acceleration_y").numpy(),
+            "linear_acceleration_z": feat("linear_acceleration_z").numpy(),
+            "wheel_slip_lf_forward": feat("wheel_slip_lf_forward").numpy(),
+            "wheel_slip_lf_lateral": feat("wheel_slip_lf_lateral").numpy(),
+            "wheel_slip_rf_forward": feat("wheel_slip_rf_forward").numpy(),
+            "wheel_slip_rf_lateral": feat("wheel_slip_rf_lateral").numpy(),
+            "wheel_slip_lr_forward": feat("wheel_slip_lr_forward").numpy(),
+            "wheel_slip_lr_lateral": feat("wheel_slip_lr_lateral").numpy(),
+            "wheel_slip_rr_forward": feat("wheel_slip_rr_forward").numpy(),
+            "wheel_slip_rr_lateral": feat("wheel_slip_rr_lateral").numpy(),
             "velocity_forward": feat("velocity_forward").numpy(),
             "velocity_lateral": feat("velocity_lateral").numpy(),
-            "progress": feat("progress").numpy(),
-            "curvature_0_5m": curvature[:, 0].numpy(),
-            "curvature_1_0m": curvature[:, 1].numpy(),
-            "curvature_2_0m": curvature[:, 2].numpy(),
-            **{f"lidar_{ray_idx}": lidar_distance[:, ray_idx].numpy() for ray_idx in range(lidar_distance.shape[-1])},
+            "curvature_05m": feat("curvature_05m").numpy(),
+            "curvature_10m": feat("curvature_10m").numpy(),
+            "curvature_20m": feat("curvature_20m").numpy(),
         })
         df.to_csv("rollout_data.csv", index=False)
         df.describe().to_csv("rollout_summary.csv")

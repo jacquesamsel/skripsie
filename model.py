@@ -158,16 +158,29 @@ class AuxModel(torch.nn.Module):
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
-        velocity_forward = out[..., :1]  # (..., 1) = [forward_velocity]
-        velocity_lateral = out[..., 1:2]  # (..., 1) = [lateral_velocity]
-        # (..., 1) = [yaw_rate] (angular velocity about Unity's y-axis)
-        yaw_rate = out[..., 2:3]
-        # (..., 4, 2) = [wheel_slip_lf_forward, wheel_slip_lf_sideways, ...] lf, rf, lr, rr
-        wheel_slips = out[..., 3:11].unflatten(-1, (4, 2))
-        # (..., 3) = [curvature_0.5_m, curvature_1.0_m, curvature_2.0_m]
-        curvature = out[..., 11:14]
+        velocity_forward = out[..., 0:1]
+        velocity_lateral = out[..., 1:2]
+        angular_velocity_y = out[..., 2:3]  # yaw rate (angular velocity about Unity's y-axis)
+        wheel_slip_lf_forward = out[..., 3:4]
+        wheel_slip_lf_lateral = out[..., 4:5]
+        wheel_slip_rf_forward = out[..., 5:6]
+        wheel_slip_rf_lateral = out[..., 6:7]
+        wheel_slip_lr_forward = out[..., 7:8]
+        wheel_slip_lr_lateral = out[..., 8:9]
+        wheel_slip_rr_forward = out[..., 9:10]
+        wheel_slip_rr_lateral = out[..., 10:11]
+        curvature_05m = out[..., 11:12]
+        curvature_10m = out[..., 12:13]
+        curvature_20m = out[..., 13:14]
 
-        return velocity_forward, velocity_lateral, yaw_rate, wheel_slips, curvature
+        return (
+            velocity_forward, velocity_lateral, angular_velocity_y,
+            wheel_slip_lf_forward, wheel_slip_lf_lateral,
+            wheel_slip_rf_forward, wheel_slip_rf_lateral,
+            wheel_slip_lr_forward, wheel_slip_lr_lateral,
+            wheel_slip_rr_forward, wheel_slip_rr_lateral,
+            curvature_05m, curvature_10m, curvature_20m,
+        )
 
 
 class ValueModel(torch.nn.Module):
@@ -258,8 +271,15 @@ def make_model(
     aux = TensorDictModule(
         AuxModel(),
         in_keys=["hidden_layer", "lidar_cnn_output"],
-        out_keys=[("aux", "velocity_forward"), ("aux", "velocity_lateral"),
-                  ("aux", "yaw_rate"), ("aux", "wheel_slips"), ("aux", "curvature")]
+        out_keys=[
+            ("aux", "velocity_forward"), ("aux", "velocity_lateral"),
+            ("aux", "angular_velocity_y"),
+            ("aux", "wheel_slip_lf_forward"), ("aux", "wheel_slip_lf_lateral"),
+            ("aux", "wheel_slip_rf_forward"), ("aux", "wheel_slip_rf_lateral"),
+            ("aux", "wheel_slip_lr_forward"), ("aux", "wheel_slip_lr_lateral"),
+            ("aux", "wheel_slip_rr_forward"), ("aux", "wheel_slip_rr_lateral"),
+            ("aux", "curvature_05m"), ("aux", "curvature_10m"), ("aux", "curvature_20m"),
+        ]
     )
 
     actor_tensordict_model = TensorDictModule(

@@ -163,6 +163,19 @@ lecun1998:
     issue: 11
     volume: 86
 
+chen2017gradnorm:
+  type: Article
+  title: "GradNorm: Gradient Normalization for Adaptive Loss Balancing in Deep Multitask Networks"
+  author:
+    - Chen, Zhao
+    - Badrinarayanan, Vijay
+    - Lee, Chen-Yu
+    - Rabinovich, Andrew
+  date: 2017-11
+  serial-number:
+    arxiv: "1711.02257"
+  url: https://arxiv.org/abs/1711.02257
+  note: "Preprint"
 
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses

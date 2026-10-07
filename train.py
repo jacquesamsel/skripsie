@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 from model import ActorValueAuxOperator, make_model
 from environment import make_envs
-from infer import rollout_stats
+from stats import rollout_stats
 from torchrl.modules import ActorValueOperator
 import tensordict as td
 from torchrl.objectives.value import GAE
@@ -17,15 +17,25 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import os
 import torch
 import itertools
+import pandas as pd
 
 
 def train(
         env,
-        forward_velocity_weight: float,
-        lateral_velocity_weight: float,
-        curvature_weights: torch.Tensor,
-        wheel_slips_weight: torch.Tensor,
-        yaw_rate_weight: float,
+        velocity_forward_weight: float,
+        velocity_lateral_weight: float,
+        curvature_05m_weight: float,
+        curvature_10m_weight: float,
+        curvature_20m_weight: float,
+        wheel_slip_rr_forward_weight: float,
+        wheel_slip_rr_lateral_weight: float,
+        wheel_slip_rf_forward_weight: float,
+        wheel_slip_rf_lateral_weight: float,
+        wheel_slip_lr_forward_weight: float,
+        wheel_slip_lr_lateral_weight: float,
+        wheel_slip_lf_forward_weight: float,
+        wheel_slip_lf_lateral_weight: float,
+        angular_velocity_y_weight: float,
         num_stacked_lidar_frames: int,
         n_rays: int,
         lidar_conv: Literal["conv1d", "conv2d"],
@@ -36,31 +46,22 @@ def train(
         time_stride: int | None = None,
         max_iters: int | None = None,
 ) -> tuple[ActorValueAuxOperator, dict[str, float]]:
-    """Runs training and returns the trained model, plus summary stats averaged
-    over the trailing iterations (reward_mean, velocity_forward_mean,
-    progress_mean, collision_rate -- see infer.py's rollout_stats) -- a score a
-    hyperparameter search can read off without a separate eval pass. Stats are
-    computed from the training rollouts themselves, which use stochastic
-    (exploring) actions, not a deterministic policy -- noisier than a proper
-    eval rollout but consistent across trials.
-
-    env is created by the caller (see environment.py's make_envs) so that
-    callers running multiple trials -- e.g. hyperparameter_search.py -- control
-    worker-id allocation themselves instead of train() reaching for a shared default.
-
-    If max_iters is given, stops after that many iterations instead of running
-    until interrupted.
-    """
     torch.set_num_threads(16)
-
-    # per-element weights broadcast against the target, so tensors let each
-    # component (e.g. each curvature horizon, each wheel/axis) be weighted separately
     aux_weights = dict(
-        velocity_forward=torch.as_tensor([forward_velocity_weight]),
-        velocity_lateral=torch.as_tensor([lateral_velocity_weight]),
-        curvature=curvature_weights,
-        wheel_slips=wheel_slips_weight,
-        yaw_rate=torch.as_tensor([yaw_rate_weight])
+        velocity_forward=velocity_forward_weight,
+        velocity_lateral=velocity_lateral_weight,
+        curvature_05m=curvature_05m_weight,
+        curvature_10m=curvature_10m_weight,
+        curvature_20m=curvature_20m_weight,
+        wheel_slip_rr_forward=wheel_slip_rr_forward_weight,
+        wheel_slip_rr_lateral=wheel_slip_rr_lateral_weight,
+        wheel_slip_rf_forward=wheel_slip_rf_forward_weight,
+        wheel_slip_rf_lateral=wheel_slip_rf_lateral_weight,
+        wheel_slip_lr_forward=wheel_slip_lr_forward_weight,
+        wheel_slip_lr_lateral=wheel_slip_lr_lateral_weight,
+        wheel_slip_lf_forward=wheel_slip_lf_forward_weight,
+        wheel_slip_lf_lateral=wheel_slip_lf_lateral_weight,
+        angular_velocity_y=angular_velocity_y_weight,
     )
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
@@ -196,22 +197,38 @@ def train(
                             minibatch["aux", "velocity_forward"], minibatch["agents", "velocity_forward"]),
                         velocity_lateral=smooth_l1_loss(
                             minibatch["aux", "velocity_lateral"], minibatch["agents", "velocity_lateral"]),
-                        curvature=smooth_l1_loss(
-                            minibatch["aux", "curvature"], minibatch["agents", "curvature"]),
-                        wheel_slips=smooth_l1_loss(
-                            minibatch["aux", "wheel_slips"], minibatch["agents", "wheel_slips"]),
-                        yaw_rate=smooth_l1_loss(
-                            minibatch["aux", "yaw_rate"], minibatch["agents", "yaw_rate"])
+                        curvature_05m=smooth_l1_loss(
+                            minibatch["aux", "curvature_05m"], minibatch["agents", "curvature_05m"]),
+                        curvature_10m=smooth_l1_loss(
+                            minibatch["aux", "curvature_10m"], minibatch["agents", "curvature_10m"]),
+                        curvature_20m=smooth_l1_loss(
+                            minibatch["aux", "curvature_20m"], minibatch["agents", "curvature_20m"]),
+                        wheel_slip_lf_forward=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_lf_forward"], minibatch["agents", "wheel_slip_lf_forward"]),
+                        wheel_slip_lf_lateral=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_lf_lateral"], minibatch["agents", "wheel_slip_lf_lateral"]),
+                        wheel_slip_lr_forward=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_lr_forward"], minibatch["agents", "wheel_slip_lr_forward"]),
+                        wheel_slip_lr_lateral=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_lr_lateral"], minibatch["agents", "wheel_slip_lr_lateral"]),
+                        wheel_slip_rf_forward=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_rf_forward"], minibatch["agents", "wheel_slip_rf_forward"]),
+                        wheel_slip_rf_lateral=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_rf_lateral"], minibatch["agents", "wheel_slip_rf_lateral"]),
+                        wheel_slip_rr_forward=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_rr_forward"], minibatch["agents", "wheel_slip_rr_forward"]),
+                        wheel_slip_rr_lateral=smooth_l1_loss(
+                            minibatch["aux", "wheel_slip_rr_lateral"], minibatch["agents", "wheel_slip_rr_lateral"]),
+                        angular_velocity_y=smooth_l1_loss(
+                            minibatch["aux", "angular_velocity_y"], minibatch["agents", "angular_velocity_y"])
                     ))
 
-                    total_loss = (
-                        # PPO loss
-                        loss["loss_entropy"] + loss["loss_critic"] +
-                        loss["loss_objective"]  # + \
-                        # auxiliary losses
-                        + sum((aux_weights[k] * aux_losses[k].mean(0)).sum()
-                              for k in aux_weights)
-                    ).mean()
+                    ppo_loss = loss["loss_entropy"] + \
+                        loss["loss_critic"] + loss["loss_objective"]
+                    aux_loss = sum((aux_weights[k] * aux_losses[k].mean(0)).sum()
+                                   for k in aux_weights)
+
+                    total_loss = (ppo_loss + aux_loss).mean()
                     total_loss.backward()
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         model.parameters(), 1.0).item()
@@ -280,7 +297,8 @@ def train(
             writer.add_scalar(
                 "reward/mean_forward_velocity", stats["velocity_forward_mean"], i)
             writer.add_scalar("reward/progress", stats["progress_mean"], i)
-            writer.add_scalar("reward/collision_rate", stats["collision_rate"], i)
+            writer.add_scalar("reward/collision_rate",
+                              stats["collision_rate"], i)
 
             # every sampled action of this rollout (all steps, envs and agents)
             for action_name in ("throttle", "steering"):
@@ -314,15 +332,24 @@ if __name__ == "__main__":
     )
     train(
         env,
-        forward_velocity_weight=0.0,
-        lateral_velocity_weight=0.0,
-        curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
-        wheel_slips_weight=torch.zeros(4, 2),
-        yaw_rate_weight=0.0,
+        velocity_forward_weight=0.007,
+        velocity_lateral_weight=0.007,
+        curvature_05m_weight=0.007,
+        curvature_10m_weight=0.007,
+        curvature_20m_weight=0.007,
+        wheel_slip_rr_forward_weight=0.007,
+        wheel_slip_rr_lateral_weight=0.007,
+        wheel_slip_rf_forward_weight=0.007,
+        wheel_slip_rf_lateral_weight=0.007,
+        wheel_slip_lr_forward_weight=0.007,
+        wheel_slip_lr_lateral_weight=0.007,
+        wheel_slip_lf_forward_weight=0.007,
+        wheel_slip_lf_lateral_weight=0.007,
+        angular_velocity_y_weight=0.007,
         num_stacked_lidar_frames=50,  # 25Hz
         n_rays=101,
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="conv1d"
+        name="007_all_weights"
     )

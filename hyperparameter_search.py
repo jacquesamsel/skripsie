@@ -1,7 +1,6 @@
 from train import train
 from environment import make_envs
 import optuna
-import torch
 
 # Iterations per trial. Each iteration is a full rollout + GAE + 4 epochs of
 # minibatch updates (see train.py's timing printout for how long one takes) --
@@ -23,8 +22,8 @@ def objective(trial: optuna.Trial):
         "curvature_weights_0_5m", 0.0, 1.0)
     curvature_weights_1_0m = trial.suggest_float(
         "curvature_weights_1_0m", 0.0, 1.0)
-    curvature_weights_1_5m = trial.suggest_float(
-        "curvature_weights_1_5m", 0.0, 1.0)
+    curvature_weights_2_0m = trial.suggest_float(
+        "curvature_weights_2_0m", 0.0, 1.0)
     wheel_slips_weight_front_lateral = trial.suggest_float(
         "wheel_slips_weight_front_lateral", 0.0, 1.0)
     wheel_slips_weight_rear_lateral = trial.suggest_float(
@@ -33,7 +32,8 @@ def objective(trial: optuna.Trial):
         "wheel_slips_weight_front_forward", 0.0, 1.0)
     wheel_slips_weight_rear_forward = trial.suggest_float(
         "wheel_slips_weight_rear_forward", 0.0, 1.0)
-    yaw_rate_weight = trial.suggest_float("yaw_rate_weight", 0.0, 1.0)
+    angular_velocity_y_weight = trial.suggest_float(
+        "angular_velocity_y_weight", 0.0, 1.0)
 
     trial_worker_id_start = 100 + trial.number * WORKER_IDS_PER_TRIAL
 
@@ -45,26 +45,25 @@ def objective(trial: optuna.Trial):
         worker_id_start=trial_worker_id_start,
     )
 
+    # Front/rear each share a single left-right weight to keep the search
+    # space at 4 wheel-slip params instead of 8 (LF/RF share "front", LR/RR
+    # share "rear").
     model, train_stats = train(
         env,
-        forward_velocity_weight=forward_velocity_weight,
-        lateral_velocity_weight=lateral_velocity_weight,
-        curvature_weights=torch.as_tensor([
-            curvature_weights_0_5m,
-            curvature_weights_1_0m,
-            curvature_weights_1_5m
-        ]),
-        # (4, 2): rows are wheels in [LF, RF, LR, RR] order, columns are
-        # [forward, lateral] -- matches AuxModel.forward's wheel_slips layout
-        # and the ("agents", "wheel_slips") target shape. Front/rear share a
-        # weight left-right to keep the search space at 4 params instead of 8.
-        wheel_slips_weight=torch.as_tensor([
-            [wheel_slips_weight_front_forward, wheel_slips_weight_front_lateral],
-            [wheel_slips_weight_front_forward, wheel_slips_weight_front_lateral],
-            [wheel_slips_weight_rear_forward, wheel_slips_weight_rear_lateral],
-            [wheel_slips_weight_rear_forward, wheel_slips_weight_rear_lateral],
-        ]),
-        yaw_rate_weight=yaw_rate_weight,
+        velocity_forward_weight=forward_velocity_weight,
+        velocity_lateral_weight=lateral_velocity_weight,
+        curvature_05m_weight=curvature_weights_0_5m,
+        curvature_10m_weight=curvature_weights_1_0m,
+        curvature_20m_weight=curvature_weights_2_0m,
+        wheel_slip_lf_forward_weight=wheel_slips_weight_front_forward,
+        wheel_slip_lf_lateral_weight=wheel_slips_weight_front_lateral,
+        wheel_slip_rf_forward_weight=wheel_slips_weight_front_forward,
+        wheel_slip_rf_lateral_weight=wheel_slips_weight_front_lateral,
+        wheel_slip_lr_forward_weight=wheel_slips_weight_rear_forward,
+        wheel_slip_lr_lateral_weight=wheel_slips_weight_rear_lateral,
+        wheel_slip_rr_forward_weight=wheel_slips_weight_rear_forward,
+        wheel_slip_rr_lateral_weight=wheel_slips_weight_rear_lateral,
+        angular_velocity_y_weight=angular_velocity_y_weight,
         num_stacked_lidar_frames=50,
         n_rays=101,
         lidar_conv="conv1d",
