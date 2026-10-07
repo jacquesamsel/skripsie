@@ -15,9 +15,37 @@ from torchrl.envs import set_exploration_type
 from torch.nn.functional import smooth_l1_loss
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import os
+import random
 import torch
 import itertools
 import pandas as pd
+
+# rollout_data.csv's column names for each aux target, pooled where a target
+# is predicted separately for two wheels that should nonetheless share one
+# normalisation scale (front: fl+fr, rear: rl+rr).
+AUX_TARGET_COLUMNS = dict(
+    velocity_forward=["velocity_forward"],
+    velocity_lateral=["velocity_lateral"],
+    angular_velocity_y=["yaw_rate"],
+    curvature_05m=["curvature_0_5m"],
+    curvature_10m=["curvature_1_0m"],
+    curvature_20m=["curvature_2_0m"],
+    wheel_slip_front_forward=["wheel_slip_fl_forward", "wheel_slip_fr_forward"],
+    wheel_slip_front_lateral=["wheel_slip_fl_sideways", "wheel_slip_fr_sideways"],
+    wheel_slip_rear_forward=["wheel_slip_rl_forward", "wheel_slip_rr_forward"],
+    wheel_slip_rear_lateral=["wheel_slip_rl_sideways", "wheel_slip_rr_sideways"],
+)
+
+
+def compute_aux_loss_scale(csv_path: str = "rollout_data.csv") -> dict[str, float]:
+    df = pd.read_csv(csv_path)
+    return {
+        name: 1.0 / pd.concat([df[column] for column in columns], ignore_index=True).var()
+        for name, columns in AUX_TARGET_COLUMNS.items()
+    }
+
+
+AUX_LOSS_SCALE = compute_aux_loss_scale()
 
 
 def train(
@@ -27,14 +55,10 @@ def train(
         curvature_05m_weight: float,
         curvature_10m_weight: float,
         curvature_20m_weight: float,
-        wheel_slip_rr_forward_weight: float,
-        wheel_slip_rr_lateral_weight: float,
-        wheel_slip_rf_forward_weight: float,
-        wheel_slip_rf_lateral_weight: float,
-        wheel_slip_lr_forward_weight: float,
-        wheel_slip_lr_lateral_weight: float,
-        wheel_slip_lf_forward_weight: float,
-        wheel_slip_lf_lateral_weight: float,
+        wheel_slip_front_forward_weight: float,
+        wheel_slip_front_lateral_weight: float,
+        wheel_slip_rear_forward_weight: float,
+        wheel_slip_rear_lateral_weight: float,
         angular_velocity_y_weight: float,
         num_stacked_lidar_frames: int,
         n_rays: int,
@@ -42,27 +66,35 @@ def train(
         ray_kernel: int,
         ray_stride: int,
         name: str,
+        seed: int,
         time_kernel: int | None = None,
         time_stride: int | None = None,
         max_iters: int | None = None,
 ) -> tuple[ActorValueAuxOperator, dict[str, float]]:
     torch.set_num_threads(16)
-    aux_weights = dict(
-        velocity_forward=velocity_forward_weight,
-        velocity_lateral=velocity_lateral_weight,
-        curvature_05m=curvature_05m_weight,
-        curvature_10m=curvature_10m_weight,
-        curvature_20m=curvature_20m_weight,
-        wheel_slip_rr_forward=wheel_slip_rr_forward_weight,
-        wheel_slip_rr_lateral=wheel_slip_rr_lateral_weight,
-        wheel_slip_rf_forward=wheel_slip_rf_forward_weight,
-        wheel_slip_rf_lateral=wheel_slip_rf_lateral_weight,
-        wheel_slip_lr_forward=wheel_slip_lr_forward_weight,
-        wheel_slip_lr_lateral=wheel_slip_lr_lateral_weight,
-        wheel_slip_lf_forward=wheel_slip_lf_forward_weight,
-        wheel_slip_lf_lateral=wheel_slip_lf_lateral_weight,
-        angular_velocity_y=angular_velocity_y_weight,
-    )
+
+    # Fixes model init, action sampling, and minibatch shuffling so that
+    # trials/runs using the same seed are only distinguished by their
+    # hyperparameters, not by incidental RNG noise.
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    aux_weights = {
+        "velocity_forward": velocity_forward_weight * AUX_LOSS_SCALE["velocity_forward"],
+        "velocity_lateral": velocity_lateral_weight * AUX_LOSS_SCALE["velocity_lateral"],
+        "curvature_05m": curvature_05m_weight * AUX_LOSS_SCALE["curvature_05m"],
+        "curvature_10m": curvature_10m_weight * AUX_LOSS_SCALE["curvature_10m"],
+        "curvature_20m": curvature_20m_weight * AUX_LOSS_SCALE["curvature_20m"],
+        "wheel_slip_lf_forward": wheel_slip_front_forward_weight * AUX_LOSS_SCALE["wheel_slip_front_forward"],
+        "wheel_slip_rf_forward": wheel_slip_front_forward_weight * AUX_LOSS_SCALE["wheel_slip_front_forward"],
+        "wheel_slip_lf_lateral": wheel_slip_front_lateral_weight * AUX_LOSS_SCALE["wheel_slip_front_lateral"],
+        "wheel_slip_rf_lateral": wheel_slip_front_lateral_weight * AUX_LOSS_SCALE["wheel_slip_front_lateral"],
+        "wheel_slip_lr_forward": wheel_slip_rear_forward_weight * AUX_LOSS_SCALE["wheel_slip_rear_forward"],
+        "wheel_slip_rr_forward": wheel_slip_rear_forward_weight * AUX_LOSS_SCALE["wheel_slip_rear_forward"],
+        "wheel_slip_lr_lateral": wheel_slip_rear_lateral_weight * AUX_LOSS_SCALE["wheel_slip_rear_lateral"],
+        "wheel_slip_rr_lateral": wheel_slip_rear_lateral_weight * AUX_LOSS_SCALE["wheel_slip_rear_lateral"],
+        "angular_velocity_y": angular_velocity_y_weight * AUX_LOSS_SCALE["angular_velocity_y"],
+    }
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
@@ -188,7 +220,8 @@ def train(
                     minibatch = model.get_trunk_operator()(minibatch)
 
                     # compute the auxiliary losses and add them to the rollout
-                    minibatch = model.get_aux_head()(minibatch)
+                    aux_head = model.get_aux_head()
+                    minibatch = aux_head(minibatch)
 
                     loss: td.TensorDict = loss_module(minibatch)
 
@@ -225,8 +258,12 @@ def train(
 
                     ppo_loss = loss["loss_entropy"] + \
                         loss["loss_critic"] + loss["loss_objective"]
-                    aux_loss = sum((aux_weights[k] * aux_losses[k].mean(0)).sum()
-                                   for k in aux_weights)
+                    aux_loss = sum(
+                        0.5 * (
+                            aux_weights[k] * aux_losses[k].mean(0)
+                        ).sum()
+                        for k in aux_weights
+                    )
 
                     total_loss = (ppo_loss + aux_loss).mean()
                     total_loss.backward()
@@ -324,11 +361,13 @@ def train(
 
 
 if __name__ == "__main__":
+    SEED = 42
     env = make_envs(
         num_envs=8,
         num_agents_per_env=6,
         num_stacked_frames=50,
         time_scale=20.0,
+        seed=SEED,
     )
     train(
         env,
@@ -337,19 +376,16 @@ if __name__ == "__main__":
         curvature_05m_weight=0.007,
         curvature_10m_weight=0.007,
         curvature_20m_weight=0.007,
-        wheel_slip_rr_forward_weight=0.007,
-        wheel_slip_rr_lateral_weight=0.007,
-        wheel_slip_rf_forward_weight=0.007,
-        wheel_slip_rf_lateral_weight=0.007,
-        wheel_slip_lr_forward_weight=0.007,
-        wheel_slip_lr_lateral_weight=0.007,
-        wheel_slip_lf_forward_weight=0.007,
-        wheel_slip_lf_lateral_weight=0.007,
+        wheel_slip_front_forward_weight=0.007,
+        wheel_slip_front_lateral_weight=0.007,
+        wheel_slip_rear_forward_weight=0.007,
+        wheel_slip_rear_lateral_weight=0.007,
         angular_velocity_y_weight=0.007,
         num_stacked_lidar_frames=50,  # 25Hz
         n_rays=101,
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="007_all_weights"
+        name="007_all_weights",
+        seed=SEED,
     )

@@ -91,6 +91,7 @@ if __name__ == "__main__":
         num_agents_per_env=num_agents_per_env,
         time_scale=1.0,
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
+        seed=42,
         width=1280,
         height=720,
     )

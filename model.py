@@ -155,6 +155,7 @@ class AuxModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.head = torch.nn.Linear(64, 14)
+        #self.log_vars = torch.nn.Parameter(torch.zeros(14))
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)

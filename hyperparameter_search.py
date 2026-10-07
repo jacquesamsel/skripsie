@@ -12,28 +12,33 @@ TRIAL_ITERS = 50
 # bit, so reusing it immediately for the next trial risks a bind failure.
 WORKER_IDS_PER_TRIAL = 20
 
+# Fixed across every trial, so that model init, env/track layout and
+# minibatch shuffling are identical for each -- isolating the reward
+# weights as the only thing that varies between trials.
+SEED = 42
+
 
 def objective(trial: optuna.Trial):
     forward_velocity_weight = trial.suggest_float(
-        "forward_velocity_weight", 0.0, 1.0)
+        "forward_velocity_weight", 0.0, 0.3)
     lateral_velocity_weight = trial.suggest_float(
-        "lateral_velocity_weight", 0.0, 1.0)
+        "lateral_velocity_weight", 0.0, 0.3)
     curvature_weights_0_5m = trial.suggest_float(
-        "curvature_weights_0_5m", 0.0, 1.0)
+        "curvature_weights_0_5m", 0.0, 0.3)
     curvature_weights_1_0m = trial.suggest_float(
-        "curvature_weights_1_0m", 0.0, 1.0)
+        "curvature_weights_1_0m", 0.0, 0.3)
     curvature_weights_2_0m = trial.suggest_float(
-        "curvature_weights_2_0m", 0.0, 1.0)
+        "curvature_weights_2_0m", 0.0, 0.3)
     wheel_slips_weight_front_lateral = trial.suggest_float(
-        "wheel_slips_weight_front_lateral", 0.0, 1.0)
+        "wheel_slips_weight_front_lateral", 0.0, 0.3)
     wheel_slips_weight_rear_lateral = trial.suggest_float(
-        "wheel_slips_weight_rear_lateral", 0.0, 1.0)
+        "wheel_slips_weight_rear_lateral", 0.0, 0.3)
     wheel_slips_weight_front_forward = trial.suggest_float(
-        "wheel_slips_weight_front_forward", 0.0, 1.0)
+        "wheel_slips_weight_front_forward", 0.0, 0.3)
     wheel_slips_weight_rear_forward = trial.suggest_float(
-        "wheel_slips_weight_rear_forward", 0.0, 1.0)
+        "wheel_slips_weight_rear_forward", 0.0, 0.3)
     angular_velocity_y_weight = trial.suggest_float(
-        "angular_velocity_y_weight", 0.0, 1.0)
+        "angular_velocity_y_weight", 0.0, 0.3)
 
     trial_worker_id_start = 100 + trial.number * WORKER_IDS_PER_TRIAL
 
@@ -42,12 +47,14 @@ def objective(trial: optuna.Trial):
         num_agents_per_env=6,
         num_stacked_frames=50,
         time_scale=20.0,
+        seed=SEED,
         worker_id_start=trial_worker_id_start,
     )
 
-    # Front/rear each share a single left-right weight to keep the search
-    # space at 4 wheel-slip params instead of 8 (LF/RF share "front", LR/RR
-    # share "rear").
+    # Front/rear each share a single left-right weight (LF/RF share "front",
+    # LR/RR share "rear") -- train() itself pairs them, both for this search
+    # space (4 wheel-slip params instead of 8) and for the fixed normalisation
+    # scale it multiplies each weight by (see AUX_LOSS_SCALE in train.py).
     model, train_stats = train(
         env,
         velocity_forward_weight=forward_velocity_weight,
@@ -55,14 +62,10 @@ def objective(trial: optuna.Trial):
         curvature_05m_weight=curvature_weights_0_5m,
         curvature_10m_weight=curvature_weights_1_0m,
         curvature_20m_weight=curvature_weights_2_0m,
-        wheel_slip_lf_forward_weight=wheel_slips_weight_front_forward,
-        wheel_slip_lf_lateral_weight=wheel_slips_weight_front_lateral,
-        wheel_slip_rf_forward_weight=wheel_slips_weight_front_forward,
-        wheel_slip_rf_lateral_weight=wheel_slips_weight_front_lateral,
-        wheel_slip_lr_forward_weight=wheel_slips_weight_rear_forward,
-        wheel_slip_lr_lateral_weight=wheel_slips_weight_rear_lateral,
-        wheel_slip_rr_forward_weight=wheel_slips_weight_rear_forward,
-        wheel_slip_rr_lateral_weight=wheel_slips_weight_rear_lateral,
+        wheel_slip_front_forward_weight=wheel_slips_weight_front_forward,
+        wheel_slip_front_lateral_weight=wheel_slips_weight_front_lateral,
+        wheel_slip_rear_forward_weight=wheel_slips_weight_rear_forward,
+        wheel_slip_rear_lateral_weight=wheel_slips_weight_rear_lateral,
         angular_velocity_y_weight=angular_velocity_y_weight,
         num_stacked_lidar_frames=50,
         n_rays=101,
@@ -71,6 +74,7 @@ def objective(trial: optuna.Trial):
         ray_stride=1,
         name=f"optuna_trial_{trial.number}",
         max_iters=TRIAL_ITERS,
+        seed=SEED,
     )
 
     for key, value in train_stats.items():
@@ -89,7 +93,8 @@ if __name__ == "__main__":
         direction="maximize",
         study_name="hyperparameter_search",
         storage=storage,
-        load_if_exists=True
+        load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(seed=SEED),
     )
 
-    study.optimize(objective, n_trials=500, show_progress_bar=True)
+    study.optimize(objective, n_trials=30, show_progress_bar=True)

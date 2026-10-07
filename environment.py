@@ -8,7 +8,6 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import tensordict as td
 from tensordict import is_tensor_collection
 import platform
-import random
 
 
 class CatFramesResetOnDone(CatFrames):
@@ -76,7 +75,7 @@ def _patch_retry_on_transient_obs_gap(env, max_retries=5):
     env._step = step_with_retry
 
 
-def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0,
+def make_env(worker_id: int, num_agents: int, time_scale: float, seed: int, quality_level=0,
              width=None, height=None, target_frame_rate=None, additional_args=None,
              job_worker_count: int | None = None):
     engine_channel = EngineConfigurationChannel()
@@ -86,7 +85,6 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
     if target_frame_rate is not None:
         engine_config.update(target_frame_rate=target_frame_rate)
     engine_channel.set_configuration_parameters(**engine_config)
-    seed = random.randint(0, 1000)
     print("Seed", seed)
     if job_worker_count is not None:
         additional_args = [*(additional_args or []),
@@ -106,7 +104,7 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
     return env
 
 
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float,
+def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float, seed: int,
               quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None,
               job_worker_count: int | None = 4, worker_id_start: int = 100):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
@@ -117,6 +115,9 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 "worker_id": worker_id_start + k,
                 "num_agents": num_agents_per_env,
                 "time_scale": time_scale,
+                # each env gets its own, reproducible seed (controls Unity's
+                # procedural track generation) derived from the master seed
+                "seed": seed + k,
                 "quality_level": quality_level,
                 "width": width,
                 "height": height,
@@ -124,7 +125,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 "additional_args": additional_args,
                 "job_worker_count": job_worker_count,
             } for k in range(num_envs)],
-    ) if num_envs > 1 else make_env(worker_id_start, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
+    ) if num_envs > 1 else make_env(worker_id_start, num_agents_per_env, time_scale, seed, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]

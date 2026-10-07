@@ -225,6 +225,10 @@
   [$EE[X]$], [Expected value of random variable $X$],
   [$"Var"(X)$], [Variance of random variable $X$],
   [$rho_0 (s)$], [Initial state distribution],
+  [$X ~ Y$], [Random variable $X$ is distributed according to distribution $Y$],
+  [$X dot(~) Y$], [Random variable $X$ is approximately distributed according to distribution $Y$],
+  [$N(y; mu; sigma^2)$],
+  [Gaussian probability density function with mean $mu$ and variance $sigma^2$ with evaluation point $y$],
 )
 
 #pagebreak()
@@ -455,6 +459,53 @@ $
 
 === 2nd formulation (auxiliary rewards)
 Auxiliary learning can also be formulated as an additional task the agent receives rewards for performing (well). This formulation has the drawback that gradient information is discarded.
+
+== Loss scaling
+
+When composing the $L_"total"$, the question naturally arises: what should be the values of the weights ${w_1, ..., w_N}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $L_"total"$), we must use another technique.
+
+=== Hyperparameter tuning
+
+Naïvely, one may empirically estimate the optimal weights using hyperparameter tuning tools such as Optuna @akiba2019optuna. However, when it is expensive to train a model, this method of search quickly becomes impractical, since every candidate set of weights requires its own training run.
+
+Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the validation score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna.
+
+A second way to cut cost is to stop unpromising trials early. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill trials that perform more exploration early on.
+
+Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
+
+=== Uncertainty weighting
+Two kinds of uncertainty can be modelled in a model's predictions @kendall2017uncertainties:
+- _Epistemic_ uncertainty: the model is unsure because it hasn't been trained on enough data. More data reduces epistemic uncertainty.
+- _Aleatoric_ uncertainty: the data itself is noisy or incomplete, so even a perfect model can't predict exactly. In this case, more training data doesn't help.
+
+Aleatoric uncertainty has two forms:
+- _Data-dependent_ or _Heteroscedastic_: the noise changes from input to input (e.g. a blurry image is harder to make inference from than a clear one).
+- _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task ($L_1, ..., L_N$).
+
+Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only.
+
+Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
+$
+  Y_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
+$
+
+The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
+
+$
+  L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||^2 + log sigma_i
+$
+
+Then, assuming the tasks are independent, the total loss is the sum of the individual losses:
+$
+  L_"total" = sum_(i=1)^N L_i = sum_(i=1)^N (1/(2 sigma_i^2) ||y_i - f_i (x)||^2 + log sigma_i)
+$
+
+Of course, in reality, the tasks are not independent, but this method has been shown to work well in practice. The log-variance $log sigma_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term. 
+
+
+
+
 
 = System overview
 
@@ -773,12 +824,14 @@ Hey
 
 Prior to applying auxiliary learning, the privileged information must be normalised. The auxiliary loss is a sum over the individual prediction targets, so a target with a larger numerical range contributes larger errors and gradients, and can dominate the shared representation at the expense of the others. Training with unnormalised targets makes hyperparameter tuning @vanhasselt2016, and training more difficult @lecun1998.
 
-Chen et al. @chen2017gradnorm propose a method for automatically learning weights to balance the contributions of each task to the total loss. For a loss function $L$ that comprises $K$ tasks,
+Kendall et al. proposes a solution to this problem by learning a log-variance $log sigma_i$ for each loss $L_i$ @kendall2018multitask-cvpr. Because it is expensive to perform hyperparameter searches across the loss weights ${w_1, ..., w_N}$,.
 
-$
-  L (t) = sum_(k=1)^K w_k(t) dot L_k (t)
-$
 
+_Epistemic uncertainty_ is the uncertainty that comes as a result of lack of training data.
+
+_Aleatoric uncertainty_ is that which cannot be reduced
+
+An alternative method is @chen2017gradnorm, which dynamically scales the weights of each loss term to balance the $||delta_W L_i||_2$
 
 
 == Training curves

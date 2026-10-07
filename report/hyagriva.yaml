@@ -177,5 +177,135 @@ chen2017gradnorm:
   url: https://arxiv.org/abs/1711.02257
   note: "Preprint"
 
+kendall2018multitask-cvpr:
+  type: Article
+  title: Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics
+  author:
+    - Kendall, Alex
+    - Gal, Yarin
+    - Cipolla, Roberto
+  date: 2018-06
+  page-range: 7482-7491
+  url: https://arxiv.org/abs/1705.07115
+  parent:
+    type: Proceedings
+    title: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)
+    publisher: IEEE
+
+
+kendall2017uncertainties:
+  type: Article
+  title: What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?
+  author:
+    - Kendall, Alex
+    - Gal, Yarin
+  date: 2017-03-15
+  serial-number:
+    arxiv: "1703.04977"
+  url: https://arxiv.org/abs/1703.04977
+  parent:
+    type: Periodical
+    title: arXiv preprint
+
+akiba2019optuna:
+  type: Article
+  title: "Optuna: A Next-generation Hyperparameter Optimization Framework"
+  author:
+    - Akiba, Takuya
+    - Sano, Shotaro
+    - Yanase, Toshihiko
+    - Ohta, Takeru
+    - Koyama, Masanori
+  date: 2019-07-25
+  serial-number:
+    arxiv: "1907.10902"
+    doi: "10.48550/arXiv.1907.10902"
+  url: https://arxiv.org/abs/1907.10902
+  parent:
+    type: Periodical
+    title: arXiv preprint
+
+bergstra2012random:
+  type: Article
+  title: Random Search for Hyper-Parameter Optimization
+  author:
+    - Bergstra, James
+    - Bengio, Yoshua
+  date: 2012
+  page-range: 281-305
+  url: https://jmlr.org/papers/v13/bergstra12a.html
+  parent:
+    type: Periodical
+    title: Journal of Machine Learning Research
+    volume: 13
+    issue: 10
+
+bergstra2011algorithms:
+  type: Article
+  title: Algorithms for Hyper-Parameter Optimization
+  author:
+    - Bergstra, James S.
+    - Bardenet, Rémi
+    - Bengio, Yoshua
+    - Kégl, Balázs
+  date: 2011
+  url: https://papers.nips.cc/paper_files/paper/2011/hash/86e8f7ab32cfd12577bc2619bc635690-Abstract.html
+  parent:
+    type: Proceedings
+    title: Advances in Neural Information Processing Systems
+    volume: 24
+
+snoek2012practical:
+  type: Article
+  title: Practical Bayesian Optimization of Machine Learning Algorithms
+  author:
+    - Snoek, Jasper
+    - Larochelle, Hugo
+    - Adams, Ryan P.
+  date: 2012
+  page-range: 2951-2959
+  url: https://arxiv.org/abs/1206.2944
+  parent:
+    type: Proceedings
+    title: Advances in Neural Information Processing Systems
+    volume: 25
+
+li2018hyperband:
+  type: Article
+  title: "Hyperband: A Novel Bandit-Based Approach to Hyperparameter Optimization"
+  author:
+    - Li, Lisha
+    - Jamieson, Kevin
+    - DeSalvo, Giulia
+    - Rostamizadeh, Afshin
+    - Talwalkar, Ameet
+  date: 2018
+  page-range: 1-52
+  url: https://arxiv.org/abs/1603.06560
+  parent:
+    type: Periodical
+    title: Journal of Machine Learning Research
+    volume: 18
+
+li2020asha:
+  type: Article
+  title: A System for Massively Parallel Hyperparameter Tuning
+  author:
+    - Li, Liam
+    - Jamieson, Kevin
+    - Rostamizadeh, Afshin
+    - Gonina, Ekaterina
+    - Ben-tzur, Jonathan
+    - Hardt, Moritz
+    - Recht, Benjamin
+    - Talwalkar, Ameet
+  date: 2020
+  page-range: 230-246
+  url: https://arxiv.org/abs/1810.05934
+  parent:
+    type: Proceedings
+    title: Proceedings of Machine Learning and Systems
+    volume: 2
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
