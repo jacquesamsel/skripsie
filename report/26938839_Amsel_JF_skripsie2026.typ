@@ -459,6 +459,229 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
 
 // Add a subsystem diagram
 
+== RoboRacer
+
+RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. It is an open standard used for learning and research in the field of autonomous racing. With over 1000 related publications, it is widely used in the research community. @roboracer_homepage The RoboRacer race car (@roboracer_car) is a small vehicle  governed by RoboRacer's rules @roboracer_rules, which includes specifications on the vehicle's dimensions, weight, and performance.
+
+
+// ------------------------------------------------------------------
+// RoboRacer vehicle, plan view.
+//
+// The body outline is traced from the vehicle silhouette in
+// `Frame 42.svg`.  The pixel coordinates of that tracing are mapped
+// onto the real vehicle dimensions by `fx()` and `fy()`, so the
+// overall length, overall width, wheelbase and track width of the
+// drawing are exactly the values it is annotated with.
+// ------------------------------------------------------------------
+#let roboracer-car(show-dimensions: true) = {
+  // -- vehicle geometry [mm] ---------------------------------------
+  let o-len = 568 // overall length  (rules: 568 mm +/- 10%)
+  let o-wid = 296 // overall width   (rules: 296 mm +/- 10%)
+  let wb = 324 // wheelbase       (AutoDrive vehicle settings)
+  let tw = 236 // track width     (AutoDrive vehicle settings)
+  let d-max = 30deg // steering limit  (AutoDrive vehicle settings)
+
+  // -- tracing -> vehicle coordinates ------------------------------
+  // Landmarks in the tracing: the body runs from 32 px (rear) to
+  // 346.5 px (front), its centreline sits at 103.875 px, and the wheel
+  // hubs are at 85 px and 290 px, 150 px apart and 74 px long.
+  //
+  // The scale factor `k` is taken from the wheelbase, which also puts
+  // the traced track width within half a millimetre of the simulated
+  // one: the chassis, its suspension and the wheels therefore line up
+  // exactly.  At that scale the traced body is 71 mm shorter than the
+  // overall length, so the two bumper blocks -- everything outside
+  // 71 px and 311 px, which carries no suspension detail -- are
+  // stretched lengthwise to make up the difference.
+  let cx = (85 + 290) / 2
+  let cy = 103.875
+  let k = wb / (290 - 85)
+  let k-rear = (o-len / 2 - (cx - 71) * k) / (71 - 32)
+  let k-front = (o-len / 2 - (311 - cx) * k) / (346.5 - 311)
+  let fx(x) = {
+    if x <= 71 { (71 - cx) * k - (71 - x) * k-rear } else if x >= 311 {
+      (311 - cx) * k + (x - 311) * k-front
+    } else { (x - cx) * k }
+  }
+  let fy(y) = (cy - y) * k
+
+  // The wheels are not part of the traced outline: they sit on the
+  // simulated wheelbase and track, which is where the tracing has
+  // them, and are as wide as the overall width allows.
+  let r-w = 37 * k // wheel radius (half a traced wheel)
+  let w-w = o-wid - tw // tyre width: the wheels set the overall width
+
+  let s = 1 / 45 // canvas units per millimetre
+  let p(x, y) = (x * s, y * s)
+
+  // -- palette and strokes -----------------------------------------
+  let c-wheel = luma(90%)
+  let c-part = luma(96%)
+  let outline = (paint: black, thickness: 0.6pt)
+  let thin = (paint: luma(25%), thickness: 0.4pt)
+  let hair = (paint: luma(5%), thickness: 0.35pt)
+  let dashed = (paint: luma(35%), thickness: 0.4pt, dash: "dashed")
+  let arrow = (start: ">", end: ">", scale: 0.45, fill: luma(25%))
+
+  // -- key, built here so that cetz's `grid` does not shadow the
+  // standard one ---------------------------------------------------
+  let item(n, body) = ([#n.], body)
+
+  cetz.canvas({
+    import cetz.draw: *
+    set-style(stroke: outline, content: (padding: 0pt))
+
+    let lbl(body) = text(size: 7.5pt, body)
+
+    // -- dimension helpers (arguments in mm) -----------------------
+    let dim-h(x1, x2, y, ey, body) = {
+      line(p(x1, ey), p(x1, y), stroke: hair)
+      line(p(x2, ey), p(x2, y), stroke: hair)
+      line(p(x1, y), p(x2, y), stroke: thin, mark: arrow)
+      content(p((x1 + x2) / 2, y + 7), anchor: "south", lbl(body))
+    }
+    let dim-v(y1, y2, x, ex, body) = {
+      line(p(ex, y1), p(x, y1), stroke: hair)
+      line(p(ex, y2), p(x, y2), stroke: hair)
+      line(p(x, y1), p(x, y2), stroke: thin, mark: arrow)
+      content(p(x - 7, (y1 + y2) / 2), anchor: "south", angle: 90deg, lbl(body))
+    }
+
+    // -- numbered callout ------------------------------------------
+    let tag(n, x, y) = {
+      circle(p(x, y), radius: 15 * s, fill: white, stroke: thin)
+      content(p(x, y), text(size: 7pt, [#n]))
+    }
+
+    // -- size envelope ---------------------------------------------
+    if show-dimensions {
+      rect(p(-o-len / 2, -o-wid / 2), p(o-len / 2, o-wid / 2), stroke: dashed)
+    }
+
+    // -- wheels ----------------------------------------------------
+    // drawn first, so that the body outline runs over them
+    let wheel(x, y, angle, fill: c-wheel, stroke: none) = {
+      group({
+        translate(p(x, y))
+        rotate(angle)
+        rect(p(-r-w, -w-w / 2), p(r-w, w-w / 2), fill: fill, stroke: stroke)
+      })
+    }
+    for m in (-1, 1) {
+      wheel(-wb / 2, m * tw / 2, 0deg)
+      wheel(wb / 2, m * tw / 2, 0deg)
+    }
+
+    // -- body outline ----------------------------------------------
+    // One half of the tracing, mirrored about the centreline by `m`.
+    // Each outline runs from the centreline, around the half it
+    // describes, and back to the centreline; the edge the tracing puts
+    // *along* the centreline is left out, so the two halves join into
+    // a single silhouette.
+    let body(m) = {
+      let q(x, y) = (fx(x) * s, m * fy(y) * s)
+
+      // front bumper
+      merge-path({
+        line(q(71, cy), q(71, 34), q(47.5, 34))
+        bezier(q(47.5, 34), q(32, 45), q(37, 34), q(32, 41))
+        line(q(32, 45), q(32, cy))
+      })
+
+      // chassis tub, from the front shock tower back to the side pod
+      merge-path({
+        line(
+          q(71, cy),
+          q(71, 62),
+          q(74, 43.5),
+          q(92, 43.5),
+          q(94, 88.5),
+          q(101.5, 86),
+          q(110.5, 74.5),
+          q(110.5, 62),
+          q(114.5, 58),
+          q(227.5, 58),
+        )
+        bezier(q(227.5, 58), q(255, 77), q(233, 58), q(243.585, 70.6678))
+        bezier(q(255, 77), q(288, 91), q(267.242, 83.791), q(275.113, 85.5327))
+        line(q(288, 91), q(288, cy))
+      })
+
+      // rear suspension tower and rear bumper
+      merge-path({
+        line(
+          q(288, cy),
+          q(288, 90.5),
+          q(273.5, 85),
+          q(275.5, 44.5),
+          q(298.5, 44.5),
+          q(305.5, 94),
+          q(311, 85),
+          q(311, 60.5),
+          q(323.5, 60.5),
+          q(330.5, 42),
+          q(340, 42),
+        )
+        bezier(q(340, 42), q(346.5, cy), q(343.507, 50.3434), q(344.779, 66.1226))
+      })
+    }
+    body(1)
+    body(-1)
+
+    // -- on-board hardware -----------------------------------------
+    let part(x1, x2, hw, radius: 4) = {
+      rect(p(x1, -hw), p(x2, hw), fill: c-part, stroke: thin, radius: radius * s)
+    }
+    tag(1, 240, 0)
+    circle(p(92, 0), radius: 34 * s, fill: c-part, stroke: thin)
+    tag(2, 92, 0)
+    part(8, 44, 18)
+    tag(3, 26, 0)
+
+    // -- dimensions ------------------------------------------------
+    if show-dimensions {
+      dim-v(-o-wid / 2, o-wid / 2, -345, -o-len / 2, [296mm])
+      dim-v(-tw / 2, tw / 2, 345, o-len / 2, [Track width])
+      dim-h(-o-len / 2, o-len / 2, -205, -o-wid / 2, [568mm])
+      dim-h(-wb / 2, wb / 2, 200, o-wid / 2, [Wheel base])
+
+      // steering limit, drawn on the near front wheel
+      let (wx, wy) = (wb / 2, tw / 2)
+      let (ri, ro) = (48, 52)
+      line(p(wx - ri, wy), p(wx + ro, wy), stroke: dashed)
+      line(
+        p(wx - ri * calc.cos(d-max), wy - ri * calc.sin(d-max)),
+        p(wx + ro * calc.cos(d-max), wy + ro * calc.sin(d-max)),
+        stroke: thin,
+      )
+      arc(
+        p(wx, wy),
+        start: 0deg,
+        stop: d-max,
+        radius: 40 * s,
+        anchor: "origin",
+        stroke: thin,
+        mark: (end: ">", scale: 0.4, fill: luma(25%)),
+      )
+      line(
+        p(wx + 42 * calc.cos(d-max / 2), wy + 42 * calc.sin(d-max / 2)),
+        p(wx + 72, wy + 56),
+        stroke: hair,
+      )
+      content(p(wx + 76, wy + 56), anchor: "west", lbl[$delta_max$])
+    }
+  })
+}
+
+#figure(
+  caption: [
+    Sketch of the RoboRacer vehicle: a 1:10 scale car on a Traxxas chassis
+  ],
+  roboracer-car(show-dimensions: true),
+) <roboracer_car>
+
+
+
 = Simulation environments
 
 == F1Tenth Gym

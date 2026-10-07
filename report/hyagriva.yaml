@@ -110,5 +110,23 @@ sparse-rewards-auxiliary-tasks:
     arxiv: "1910.09281"
   url: "https://arxiv.org/abs/1910.09281"
 
+roboracer_rules:
+  type: Web
+  title: "RoboRacer Rules"
+  author: "RoboRacer"
+  version: "3.2026-draft"
+  date: 2026-09-17
+  url:
+    value: "https://github.com/f1tenth/roboracer_rules/blob/cfc65eca67d2a9b83d028eb963f64902e01810a4/rules_v3.md"
+    date: 2026-10-07
+
+roboracer_homepage:
+  type: Web
+  title: "RoboRacer"
+  author: "RoboRacer"
+  url:
+    value: "https://roboracer.ai"
+    date: 2026-10-07
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
