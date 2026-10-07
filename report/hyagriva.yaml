@@ -128,5 +128,41 @@ roboracer_homepage:
     value: "https://roboracer.ai"
     date: 2026-10-07
 
+vanhasselt2016:
+  type: Article
+  title: Learning values across many orders of magnitude
+  author:
+    - "van Hasselt, Hado"
+    - "Guez, Arthur"
+    - "Hessel, Matteo"
+    - "Mnih, Volodymyr"
+    - "Silver, David"
+  date: 2016
+  parent:
+    type: Proceedings
+    title: Advances in Neural Information Processing Systems
+    volume: 29
+  serial-number:
+    arxiv: "1602.07714"
+
+lecun1998:
+  type: article
+  title: Gradient-based learning applied to document recognition
+  author:
+  - Lecun, Y.
+  - Bottou, L.
+  - Bengio, Y.
+  - Haffner, P.
+  date: 1998
+  page-range: 2278-2324
+  serial-number:
+    doi: 10.1109/5.726791
+  parent:
+    type: periodical
+    title: Proceedings of the IEEE
+    issue: 11
+    volume: 86
+
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses

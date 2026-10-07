@@ -461,7 +461,7 @@ Auxiliary learning can also be formulated as an additional task the agent receiv
 
 == RoboRacer
 
-RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. It is an open standard used for learning and research in the field of autonomous racing. With over 1000 related publications, it is widely used in the research community. @roboracer_homepage The RoboRacer race car (@roboracer_car) is a small vehicle  governed by RoboRacer's rules @roboracer_rules, which includes specifications on the vehicle's dimensions, weight, and performance.
+RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. It is an open standard used for learning and research in the field of autonomous racing, and with over 1000 related publications, it is widely used in the research community. @roboracer_homepage The RoboRacer race car (@roboracer_car) is a small vehicle  governed by RoboRacer's rules @roboracer_rules, which includes specifications on the vehicle's dimensions, weight, and performance. During training, this vehicle is simulated with a wheelbase of $324 "mm"$, a track width of $236 "mm"$, and a maximum steering angle of $30 degree$ . The vehicle is powered by an electric motor and is equipped with a LiDAR sensor and camera for perception, as well as an onboard computer for processing and decision-making.
 
 
 // ------------------------------------------------------------------
@@ -640,9 +640,9 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 
     // -- dimensions ------------------------------------------------
     if show-dimensions {
-      dim-v(-o-wid / 2, o-wid / 2, -345, -o-len / 2, [296mm])
+      dim-v(-o-wid / 2, o-wid / 2, -345, -o-len / 2, [296mm #sym.plus.minus max])
       dim-v(-tw / 2, tw / 2, 345, o-len / 2, [Track width])
-      dim-h(-o-len / 2, o-len / 2, -205, -o-wid / 2, [568mm])
+      dim-h(-o-len / 2, o-len / 2, -205, -o-wid / 2, [568mm max])
       dim-h(-wb / 2, wb / 2, 200, o-wid / 2, [Wheel base])
 
       // steering limit, drawn on the near front wheel
@@ -762,6 +762,11 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 )
 
 = Experiments & results
+
+== Normalisation of privledged information
+
+Prior to applying auxiliary learning, the privileged information must be normalised. The auxiliary loss is a sum over the individual prediction targets, so a target with a larger numerical range contributes larger errors and gradients, and can dominate the shared representation at the expense of the others. Training with unnormalised targets makes hyperparameter tuning @vanhasselt2016, and training more difficult @lecun1998.
+
 
 == Training curves
 
