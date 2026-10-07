@@ -154,22 +154,20 @@ class ActionModel(torch.nn.Module):
 class AuxModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.head = torch.nn.Linear(64, 16)
+        self.head = torch.nn.Linear(64, 14)
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
         velocity_forward = out[..., :1]  # (..., 1) = [forward_velocity]
         velocity_lateral = out[..., 1:2]  # (..., 1) = [lateral_velocity]
-        # (..., 2) = [forward_pos_delta, lateral_pos_delta]
-        pos_delta = out[..., 2:4]
         # (..., 1) = [yaw_rate] (angular velocity about Unity's y-axis)
-        yaw_rate = out[..., 4:5]
+        yaw_rate = out[..., 2:3]
         # (..., 4, 2) = [wheel_slip_lf_forward, wheel_slip_lf_sideways, ...] lf, rf, lr, rr
-        wheel_slips = out[..., 5:13].unflatten(-1, (4, 2))
+        wheel_slips = out[..., 3:11].unflatten(-1, (4, 2))
         # (..., 3) = [curvature_0.5_m, curvature_1.0_m, curvature_2.0_m]
-        curvature = out[..., 13:16]
+        curvature = out[..., 11:14]
 
-        return velocity_forward, velocity_lateral, pos_delta, yaw_rate, wheel_slips, curvature
+        return velocity_forward, velocity_lateral, yaw_rate, wheel_slips, curvature
 
 
 class ValueModel(torch.nn.Module):
@@ -260,8 +258,8 @@ def make_model(
     aux = TensorDictModule(
         AuxModel(),
         in_keys=["hidden_layer", "lidar_cnn_output"],
-        out_keys=[("aux", "velocity_forward"), ("aux", "velocity_lateral"), ("aux",
-                                                                             "pos_delta"), ("aux", "yaw_rate"), ("aux", "wheel_slips"), ("aux", "curvature")]
+        out_keys=[("aux", "velocity_forward"), ("aux", "velocity_lateral"),
+                  ("aux", "yaw_rate"), ("aux", "wheel_slips"), ("aux", "curvature")]
     )
 
     actor_tensordict_model = TensorDictModule(

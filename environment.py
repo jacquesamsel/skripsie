@@ -108,13 +108,13 @@ def make_env(worker_id: int, num_agents: int, time_scale: float, quality_level=0
 
 def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float,
               quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None,
-              job_worker_count: int | None = 4):
+              job_worker_count: int | None = 4, worker_id_start: int = 100):
     agents = [f"agent_{i}" for i in range(num_agents_per_env)]
     env = ParallelEnv(
         num_envs, make_env,
         create_env_kwargs=[
             {
-                "worker_id": k + 100,
+                "worker_id": worker_id_start + k,
                 "num_agents": num_agents_per_env,
                 "time_scale": time_scale,
                 "quality_level": quality_level,
@@ -124,7 +124,7 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                 "additional_args": additional_args,
                 "job_worker_count": job_worker_count,
             } for k in range(num_envs)],
-    ) if num_envs > 1 else make_env(100, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
+    ) if num_envs > 1 else make_env(worker_id_start, num_agents_per_env, time_scale, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]
@@ -181,7 +181,10 @@ def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, t
                     (("agents", "wheel_angles"), torch.Size([2])),
                     (("agents", "orientation_quaternion"), torch.Size([4])),
                     (("agents", "euler_angles"), torch.Size([3])),
-                    (("agents", "angular_velocity"), torch.Size([3])),
+                    (("agents", "angular_velocity_x"), torch.Size([1])),
+                    # Unity is Y-up, so rotation rate about Y is yaw rate
+                    (("agents", "yaw_rate"), torch.Size([1])),
+                    (("agents", "angular_velocity_z"), torch.Size([1])),
                     (("agents", "linear_acceleration"), torch.Size([3])),
                     (("agents", "wheel_slips"), torch.Size(
                         [4, 2])),  # [FL_fw, FL_lat, ...]

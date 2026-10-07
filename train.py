@@ -5,6 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 from model import ActorValueAuxOperator, make_model
 from environment import make_envs
+from infer import rollout_stats
 from torchrl.modules import ActorValueOperator
 import tensordict as td
 from torchrl.objectives.value import GAE
@@ -18,29 +19,11 @@ import torch
 import itertools
 
 
-def world_to_local(vector: torch.Tensor, quaternion: torch.Tensor) -> torch.Tensor:
-    """Rotates a world-frame vector into the local frame of a Unity (x, y, z, w) quaternion."""
-    # inverse rotation of a unit quaternion is its conjugate: negate the vector part
-    u = -quaternion[..., :3]
-    w = quaternion[..., 3:]
-    uv = torch.linalg.cross(u, vector, dim=-1)
-    return vector + 2 * w * uv + 2 * torch.linalg.cross(u, uv, dim=-1)
-
-
-def compute_pos_delta(data: td.TensorDict) -> torch.Tensor:
-    """[forward, lateral] displacement over the step, in the car's frame at the start of the step."""
-    world_delta = data["next", "agents", "pos"] - data["agents", "pos"]
-    local_delta = world_to_local(
-        world_delta, data["agents", "orientation_quaternion"])
-    # Unity: +z is forward, +x is right
-    return torch.stack([local_delta[..., 2], local_delta[..., 0]], dim=-1)
-
-
 def train(
+        env,
         forward_velocity_weight: float,
         lateral_velocity_weight: float,
         curvature_weights: torch.Tensor,
-        pos_delta_weights: torch.Tensor,
         wheel_slips_weight: torch.Tensor,
         yaw_rate_weight: float,
         num_stacked_lidar_frames: int,
@@ -48,12 +31,26 @@ def train(
         lidar_conv: Literal["conv1d", "conv2d"],
         ray_kernel: int,
         ray_stride: int,
-        num_envs: int,
-        num_agents_per_env: int,
         name: str,
         time_kernel: int | None = None,
         time_stride: int | None = None,
-):
+        max_iters: int | None = None,
+) -> tuple[ActorValueAuxOperator, dict[str, float]]:
+    """Runs training and returns the trained model, plus summary stats averaged
+    over the trailing iterations (reward_mean, velocity_forward_mean,
+    progress_mean, collision_rate -- see infer.py's rollout_stats) -- a score a
+    hyperparameter search can read off without a separate eval pass. Stats are
+    computed from the training rollouts themselves, which use stochastic
+    (exploring) actions, not a deterministic policy -- noisier than a proper
+    eval rollout but consistent across trials.
+
+    env is created by the caller (see environment.py's make_envs) so that
+    callers running multiple trials -- e.g. hyperparameter_search.py -- control
+    worker-id allocation themselves instead of train() reaching for a shared default.
+
+    If max_iters is given, stops after that many iterations instead of running
+    until interrupted.
+    """
     torch.set_num_threads(16)
 
     # per-element weights broadcast against the target, so tensors let each
@@ -63,6 +60,7 @@ def train(
         velocity_lateral=torch.as_tensor([lateral_velocity_weight]),
         curvature=curvature_weights,
         wheel_slips=wheel_slips_weight,
+        yaw_rate=torch.as_tensor([yaw_rate_weight])
     )
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
@@ -72,9 +70,6 @@ def train(
 
     device = torch.device("cpu")
     print(f"Using device: {device}")
-
-    env = make_envs(num_envs=num_envs, num_agents_per_env=num_agents_per_env,
-                    num_stacked_frames=num_stacked_lidar_frames, time_scale=20.0)
 
     gamma = 0.995
     lmbda = 0.97
@@ -149,8 +144,9 @@ def train(
         }, checkpoint_path)
 
     i = start_iter - 1
+    stats_history: list[dict[str, float]] = []
     try:
-        # infinite loop until interrupted
+        # infinite loop until interrupted, unless max_iters bounds it
         for i in itertools.count(start=start_iter):
             # Collect the rollout
             steps = []
@@ -204,6 +200,8 @@ def train(
                             minibatch["aux", "curvature"], minibatch["agents", "curvature"]),
                         wheel_slips=smooth_l1_loss(
                             minibatch["aux", "wheel_slips"], minibatch["agents", "wheel_slips"]),
+                        yaw_rate=smooth_l1_loss(
+                            minibatch["aux", "yaw_rate"], minibatch["agents", "yaw_rate"])
                     ))
 
                     total_loss = (
@@ -276,14 +274,13 @@ def train(
                 "grad_norm/mean", sum(grad_norms) / len(grad_norms), i)
             writer.add_scalar("grad_norm/max", max(grad_norms), i)
 
+            stats = rollout_stats(rollout)
+            stats_history.append(stats)
+            writer.add_scalar("reward/mean", stats["reward_mean"], i)
             writer.add_scalar(
-                "reward/mean", rollout["next", "agents", "reward"].mean().item(), i)
-            writer.add_scalar("reward/mean_forward_velocity",
-                              rollout["agents", "velocity_forward"].mean().item(), i)
-            writer.add_scalar("reward/progress",
-                              rollout["agents", "progress"].mean().item(), i)
-            writer.add_scalar("reward/collision_rate",
-                              rollout["agents", "terminated"].float().mean().item(), i)
+                "reward/mean_forward_velocity", stats["velocity_forward_mean"], i)
+            writer.add_scalar("reward/progress", stats["progress_mean"], i)
+            writer.add_scalar("reward/collision_rate", stats["collision_rate"], i)
 
             # every sampled action of this rollout (all steps, envs and agents)
             for action_name in ("throttle", "steering"):
@@ -292,6 +289,9 @@ def train(
 
             if i % 10 == 0:
                 save_checkpoint(i)
+
+            if max_iters is not None and i - start_iter + 1 >= max_iters:
+                break
     except KeyboardInterrupt:
         print("Interrupted — saving checkpoint before exit")
     finally:
@@ -299,18 +299,27 @@ def train(
         print(f"Checkpoint saved at iteration {i}")
         env.close()
 
+    trailing = stats_history[-10:]
+    avg_stats = {k: sum(d[k] for d in trailing) / len(trailing)
+                 for k in trailing[0]} if trailing else {}
+    return model, avg_stats
+
 
 if __name__ == "__main__":
-    train(
+    env = make_envs(
         num_envs=8,
         num_agents_per_env=6,
+        num_stacked_frames=50,
+        time_scale=20.0,
+    )
+    train(
+        env,
         forward_velocity_weight=0.0,
         lateral_velocity_weight=0.0,
         curvature_weights=torch.tensor([0.0, 0.0, 0.0]),
-        pos_delta_weights=torch.tensor([0.0, 0.0]),
         wheel_slips_weight=torch.zeros(4, 2),
         yaw_rate_weight=0.0,
-        num_stacked_lidar_frames=50,  # 50Hz
+        num_stacked_lidar_frames=50,  # 25Hz
         n_rays=101,
         lidar_conv="conv1d",
         ray_kernel=8,
