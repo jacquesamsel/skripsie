@@ -1,3 +1,5 @@
+import argparse
+
 from train import train
 from environment import make_envs
 import optuna
@@ -5,7 +7,7 @@ import optuna
 # Iterations per trial. Each iteration is a full rollout + GAE + 4 epochs of
 # minibatch updates (see train.py's timing printout for how long one takes) --
 # tune this against your actual wall-clock budget for n_trials.
-TRIAL_ITERS = 50
+TRIAL_ITERS = 250
 
 # Worker IDs select the Unity instance's port (base_port + worker_id). Each
 # trial needs its own range -- a closed env's port can stay in TIME_WAIT for a
@@ -17,6 +19,10 @@ WORKER_IDS_PER_TRIAL = 20
 # weights as the only thing that varies between trials.
 SEED = 42
 
+# Per-trial torch thread count. When running several copies of this script
+# at once (see --num-threads), divide the machine's core count between them
+# so they don't oversubscribe each other.
+NUM_THREADS = 16
 
 def objective(trial: optuna.Trial):
     forward_velocity_weight = trial.suggest_float(
@@ -75,17 +81,28 @@ def objective(trial: optuna.Trial):
         name=f"optuna_trial_{trial.number}",
         max_iters=TRIAL_ITERS,
         seed=SEED,
+        num_threads=NUM_THREADS,
     )
 
     for key, value in train_stats.items():
         trial.set_user_attr("train_" + key, value)
 
-    # Run rollout to check
-
-    return train_stats["reward_mean"]
+    return train_stats["reward_auc"]
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    # This process's own share of the total trial budget -- when running P
+    # copies of this script in parallel against the same study, pass
+    # roughly (total desired trials) / P here for each copy.
+    parser.add_argument("--n-trials", type=int, default=50)
+    # torch threads for this process alone. Set to (core count) / (number of
+    # copies you're running at once) so parallel copies don't oversubscribe
+    # each other's CPU.
+    parser.add_argument("--num-threads", type=int, default=NUM_THREADS)
+    args = parser.parse_args()
+    NUM_THREADS = args.num_threads
+
     storage = optuna.storages.JournalStorage(
         optuna.storages.JournalFileStorage("./optuna_journal.log")
     )
@@ -94,7 +111,17 @@ if __name__ == "__main__":
         study_name="hyperparameter_search",
         storage=storage,
         load_if_exists=True,
-        sampler=optuna.samplers.TPESampler(seed=SEED),
+        # constant_liar: while a trial is still running in another process,
+        # treat its in-progress params as if they'd already returned a
+        # (temporary, worst-case) result, so concurrent processes don't all
+        # propose near-identical points before any of them has finished.
+        sampler=optuna.samplers.TPESampler(seed=SEED, constant_liar=True),
     )
 
-    study.optimize(objective, n_trials=30, show_progress_bar=True)
+    study.optimize(
+        objective,
+        n_trials=args.n_trials,
+        show_progress_bar=True,
+        catch=(Exception,),
+        gc_after_trial=True,
+    )

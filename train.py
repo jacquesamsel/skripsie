@@ -70,8 +70,9 @@ def train(
         time_kernel: int | None = None,
         time_stride: int | None = None,
         max_iters: int | None = None,
+        num_threads: int = 16,
 ) -> tuple[ActorValueAuxOperator, dict[str, float]]:
-    torch.set_num_threads(16)
+    torch.set_num_threads(num_threads)
 
     # Fixes model init, action sampling, and minibatch shuffling so that
     # trials/runs using the same seed are only distinguished by their
@@ -137,8 +138,6 @@ def train(
         start_iter = checkpoint["iter"] + 1
         print(f"Resumed from checkpoint at iteration {start_iter}")
 
-    tensordict: td.TensorDict = env.reset()
-
     gae = GAE(
         gamma=gamma,
         lmbda=lmbda,
@@ -179,6 +178,11 @@ def train(
     i = start_iter - 1
     stats_history: list[dict[str, float]] = []
     try:
+        # env.reset() lives inside this try (not before it) so a failure
+        # here still reaches the finally below and closes the env instead
+        # of orphaning its Unity worker subprocesses.
+        tensordict: td.TensorDict = env.reset()
+
         # infinite loop until interrupted, unless max_iters bounds it
         for i in itertools.count(start=start_iter):
             # Collect the rollout
@@ -357,6 +361,17 @@ def train(
     trailing = stats_history[-10:]
     avg_stats = {k: sum(d[k] for d in trailing) / len(trailing)
                  for k in trailing[0]} if trailing else {}
+
+    # Time-normalised area under the reward-per-iteration curve (mean over
+    # every iteration, not just the trailing window) -- rewards hyperparameters
+    # that learn fast across the whole run, not just ones with a good final
+    # plateau that got there slowly.
+    all_rewards = [s["reward_mean"] for s in stats_history]
+    avg_stats["reward_auc"] = sum(
+        all_rewards) / len(all_rewards) if all_rewards else 0.0
+    if all_rewards:
+        writer.add_scalar("reward/auc", avg_stats["reward_auc"], i)
+
     return model, avg_stats
 
 
