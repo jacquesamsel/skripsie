@@ -8,427 +8,184 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import tensordict as td
 from tensordict import is_tensor_collection
 import platform
+import random
 
 
-class CatFramesResetOnDone(CatFrames):
-    """CatFrames, but also clears an agent's frame stack the instant its
-    `done` flag fires on an ordinary step.
+class RoboRacerEnv(TransformedEnv):
+    """RoboRacer environment wrapper.
 
-    Unity resets a crashed agent/area internally and keeps every other agent
-    in the same worker running, so env.reset() is only ever called after a
-    whole-process crash -- CatFrames' own `_reset()` hook (which clears the
-    buffer) never fires on a normal per-agent episode boundary without this.
+    Args:
+        file_name (str): Path to the Unity executable.
+        num_stacked_frames (int): Number of frames to stack for the observations.
+        no_graphics (bool, optional): Whether to run the environment in no-graphics mode. Defaults to True.
+        num_areas (int, optional): Number of areas in the environment. Defaults to 10.
+        seed (int, optional): Random seed for the environment. Defaults to 0.
     """
-
-    def _call(self, next_tensordict, _reset=None):
-        next_tensordict = super()._call(next_tensordict, _reset=_reset)
-        if _reset is None:
-            done = next_tensordict.get(self.done_key).squeeze(-1)
-            if done.any():
-                # CatFrames' own partial-reset path assumes `_reset` collapses
-                # exactly one leading dim (num_envs). Ours collapses two
-                # (num_envs *and* num_agents), which its dim-shift formula
-                # gets wrong, so we fill the done slots ourselves instead of
-                # delegating to super()._call(_reset=...).
-                for in_key, out_key in zip(self.in_keys, self.out_keys):
-                    buffer = getattr(self, f"_cat_buffers_{in_key}")
-                    data = next_tensordict.get(in_key)
-                    data_reset = data[done]
-                    shape = [1] * data_reset.ndim
-                    shape[self.dim] = self.N
-                    buffer[done] = data_reset.repeat(shape)
-                    next_tensordict.set(out_key, buffer.clone())
-        return next_tensordict
-
-
-def _patch_retry_on_transient_obs_gap(env, max_retries=5):
-    """mlagents_envs occasionally reports neither a decision nor a termination for
-    an agent on a given step. UnityMLAgentsEnv._make_td_out has a fallback for
-    exactly that case (see its own comment), but the fallback is broken: it reads
-    the missing observation from `tensordict_in`, which at that point only ever
-    carries the action (never the previous observation), so it raises KeyError
-    ("... not found in TensorDict with keys ['continuous_action']") instead of
-    reusing stale data like it's supposed to.
-
-    The Unity/C# side isn't at fault here -- Agent.cs's NotifyAgentDone() always
-    calls UpdateSensors()+CollectObservations() before reporting a terminal step,
-    so a full observation set is always sent for whichever step actually ends up
-    carrying the termination/decision. Retrying with the same action just asks
-    Unity to advance one more tick, which reliably clears the one-tick gap.
-    """
-    # TransformedEnv calls base_env._step(...) directly (not the public .step()),
-    # so the retry has to wrap the private method to actually be on the path.
-    original_step = env._step
-
-    def step_with_retry(tensordict):
-        for attempt in range(max_retries):
-            try:
-                return original_step(tensordict)
-            except KeyError as e:
-                if attempt == max_retries - 1:
-                    raise
-                print(f"[make_env] transient missing-observation step from mlagents "
-                      f"(torchrl's own carry-forward fallback can't handle this case) "
-                      f"-- retrying ({attempt + 1}/{max_retries}): {e}")
-        raise AssertionError("unreachable")
-
-    env._step = step_with_retry
-
-
-def make_env(worker_id: int, num_agents: int, time_scale: float, seed: int, quality_level=0,
-             width=None, height=None, target_frame_rate=None, additional_args=None,
-             job_worker_count: int | None = None):
-    engine_channel = EngineConfigurationChannel()
-    engine_config = dict(time_scale=time_scale, quality_level=quality_level)
-    if width is not None and height is not None:
-        engine_config.update(width=width, height=height)
-    if target_frame_rate is not None:
-        engine_config.update(target_frame_rate=target_frame_rate)
-    engine_channel.set_configuration_parameters(**engine_config)
-    print("Seed", seed)
-    if job_worker_count is not None:
-        additional_args = [*(additional_args or []),
-                           "-job-worker-count", str(job_worker_count)]
-    env = UnityMLAgentsEnv(
-        file_name="AutoDrive/build.app" if platform.system() == "Darwin" else "linux_build/build_linux.x86_64",
-        no_graphics=platform.system() != "Darwin",
-        side_channels=[engine_channel],
-        num_areas=num_agents,
-        group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
-        # each Unity instance needs its own port (base_port 5005 + worker_id)
-        worker_id=worker_id,
-        seed=seed,
-        additional_args=additional_args,
-    )
-    _patch_retry_on_transient_obs_gap(env)
-    return env
-
-
-def make_envs(num_envs: int, num_agents_per_env: int, num_stacked_frames: int, time_scale: float, seed: int,
-              quality_level: int = 0, width=None, height=None, target_frame_rate=None, additional_args=None,
-              job_worker_count: int | None = 4, worker_id_start: int = 100):
-    agents = [f"agent_{i}" for i in range(num_agents_per_env)]
-    env = ParallelEnv(
-        num_envs, make_env,
-        create_env_kwargs=[
-            {
-                "worker_id": worker_id_start + k,
-                "num_agents": num_agents_per_env,
-                "time_scale": time_scale,
-                # each env gets its own, reproducible seed (controls Unity's
-                # procedural track generation) derived from the master seed
-                "seed": seed + k,
-                "quality_level": quality_level,
-                "width": width,
-                "height": height,
-                "target_frame_rate": target_frame_rate,
-                "additional_args": additional_args,
-                "job_worker_count": job_worker_count,
-            } for k in range(num_envs)],
-    ) if num_envs > 1 else make_env(worker_id_start, num_agents_per_env, time_scale, seed, quality_level, width, height, target_frame_rate, additional_args, job_worker_count)
 
     LIDAR_NUM_TAGS = 2
-    LIDAR_BLOCK = LIDAR_NUM_TAGS + 2  # [Tag_1..Tag_n, Miss, Distance]
-
-    done_stack = Stack(
-        in_keys=[("agents", a, "done") for a in agents],
-        out_key=("agents", "done"), dim=-2, del_keys=True,
-        in_key_inv=("agents", "_reset"),
-        out_keys_inv=[("agents", a, "_reset") for a in agents],
-    )
-    # also run the unstack on reset, not just on step
-    done_stack.enable_inv_on_reset = True
-
-    return TransformedEnv(
-        env,
-        Compose(
-            *[
-                Stack(in_keys=[("agents", a, key) for a in agents],
-                      out_key=("agents", key), dim=-2, del_keys=True)
-                for key in ["LIDAR1", "VectorSensor_size37"]
-            ],
-            done_stack,  # also unstacks the "_reset" flag per agent on reset
-            *[
-                Stack(in_keys=[("agents", a, key) for a in agents],
-                      out_key=("agents", key), dim=-2, del_keys=True)
-                for key in ["terminated", "truncated"]
-            ],
-            # Unity's own reward is only used as the crash signal (see ComposeReward)
-            StackIfPresent(in_keys=[("agents", a, "reward") for a in agents],
-                           out_key=("agents", "unity_reward"), dim=-2, del_keys=True),
-            RenameTransform(in_keys=[("agents", "VectorSensor_size37")], out_keys=[
-                            ("agents", "vector")]),
-            # de-interleave the lidar tensor so that it can be processed by Conv1d
-            UnaryTransform(
-                in_keys=[("agents", "LIDAR1")],
-                out_keys=[("agents", "lidar")],
-                # (..., n_rays * block) -> (..., n_rays, block) -> (..., block, n_rays)
-                fn=lambda x: x.unflatten(
-                    -1,
-                    (-1, LIDAR_BLOCK)
-                ).transpose(-1, -2),
-            ),
-            ExcludeTransform(
-                ("agents", "LIDAR1"),
-                *[("agents", agent, "group_reward") for agent in agents],
-            ),
-            SplitVector(
-                layout=[
-                    (("agents", "speed"), torch.Size([1])),
-                    (("agents", "cur_steering_angle"), torch.Size([1])),
-                    (("agents", "cur_throttle"), torch.Size([1])),
-                    (("agents", "pos_x"), torch.Size([1])),
-                    (("agents", "pos_y"), torch.Size([1])),
-                    (("agents", "pos_z"), torch.Size([1])),
-                    (("agents", "wheel_ticks_left"), torch.Size([1])),
-                    (("agents", "wheel_ticks_right"), torch.Size([1])),
-                    (("agents", "wheel_angle_left"), torch.Size([1])),
-                    (("agents", "wheel_angle_right"), torch.Size([1])),
-                    (("agents", "orientation_quaternion_x"), torch.Size([1])),
-                    (("agents", "orientation_quaternion_y"), torch.Size([1])),
-                    (("agents", "orientation_quaternion_z"), torch.Size([1])),
-                    (("agents", "orientation_quaternion_w"), torch.Size([1])),
-                    (("agents", "euler_angle_x"), torch.Size([1])),
-                    (("agents", "euler_angle_y"), torch.Size([1])),
-                    (("agents", "euler_angle_z"), torch.Size([1])),
-                    (("agents", "angular_velocity_x"), torch.Size([1])),
-                    # Unity is Y-up, so rotation rate about Y is yaw rate
-                    (("agents", "angular_velocity_y"), torch.Size([1])),
-                    (("agents", "angular_velocity_z"), torch.Size([1])),
-                    (("agents", "linear_acceleration_x"), torch.Size([1])),
-                    (("agents", "linear_acceleration_y"), torch.Size([1])),
-                    (("agents", "linear_acceleration_z"), torch.Size([1])),
-                    # wheel slip order matches Unity's AddWheelSlipObservations calls: FL, FR, RL, RR
-                    (("agents", "wheel_slip_lf_forward"), torch.Size([1])),
-                    (("agents", "wheel_slip_lf_lateral"), torch.Size([1])),
-                    (("agents", "wheel_slip_rf_forward"), torch.Size([1])),
-                    (("agents", "wheel_slip_rf_lateral"), torch.Size([1])),
-                    (("agents", "wheel_slip_lr_forward"), torch.Size([1])),
-                    (("agents", "wheel_slip_lr_lateral"), torch.Size([1])),
-                    (("agents", "wheel_slip_rr_forward"), torch.Size([1])),
-                    (("agents", "wheel_slip_rr_lateral"), torch.Size([1])),
-                    (("agents", "velocity_forward"), torch.Size([1])),
-                    (("agents", "velocity_lateral"), torch.Size([1])),
-                    (("agents", "progress"), torch.Size([1])),
-                    (("agents", "curvature_05m"), torch.Size([1])),
-                    (("agents", "curvature_10m"), torch.Size([1])),
-                    (("agents", "curvature_20m"), torch.Size([1])),
-                ],
-                in_key=("agents", "vector"),
-                delete_vector=True
-            ),
-            ComposeReward(
-                progress_weight=1.0,
-                forward_velocity_weight=0.0,
-                step_penalty=0.0,
-                collision_penalty=1.0
-            ),
-            ExcludeTransform(("agents", "unity_reward")),
-            # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
-            UnsqueezeTransform(
-                dim=-3,
-                in_keys=[("agents", "lidar")],
-                out_keys=[("agents", "lidar")]
-            ),
-            CatFramesResetOnDone(N=num_stacked_frames,
-                      dim=-3,
-                      in_keys=[("agents", "lidar")],
-                      out_keys=[("agents", "stacked_lidar")],
-                      done_key=("agents", "done"),
-                      reset_key=("agents", "_reset")
-                      ),
-            PackActions(agents=agents),
-            # Must stay last: declares the "agents" group as batched over the agents
-            AgentBatch(num_agents_per_env),
-        )
-    )
-
-
-class SplitVector(Transform):
-    def __init__(self, layout: list[tuple[td.NestedKey, torch.Size]], in_key: td.NestedKey, delete_vector: bool = False):
-        super().__init__(in_keys=[in_key], out_keys=[key for key, _ in layout])
-        self.layout = layout
-        self.delete_vector = delete_vector
-        self.in_key = in_key
-
-    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
-        offset = 0
-        vector = tensordict[self.in_key]
-        for key, shape in self.layout:
-            # find length of block
-            end = offset + reduce(lambda x, y: x * y, shape)
-            data = vector[..., offset:end]
-            if len(shape) > 1:
-                data = data.reshape(*data.shape[:-1], *shape)
-            tensordict.set(key, data)
-            offset = end
-        if self.delete_vector:
-            del tensordict[self.in_key]
-        return tensordict
-
-    def _reset(self, tensordict: td.TensorDict, tensordict_reset: td.TensorDict) -> td.TensorDict:
-        return self._call(tensordict_reset)
-
-    def transform_observation_spec(self, observation_spec):
-        vector_spec = observation_spec[self.in_key]
-        batch = vector_spec.shape[:-1]
-        if self.delete_vector:
-            del observation_spec[self.in_key]
-        observation_spec.update({
-            key: UnboundedContinuous(
-                shape=(*batch, *shape), dtype=vector_spec.dtype, device=vector_spec.device)
-            for key, shape in self.layout
-        })
-        return observation_spec
-
-
-class ComposeReward(Transform):
-    """Shaped per-agent reward. A car has crashed when Unity's own reward for it is negative."""
+    LIDAR_BLOCK_SIZE = LIDAR_NUM_TAGS + 2
 
     def __init__(
-            self,
-            progress_weight: float,
-            forward_velocity_weight: float,
-            step_penalty: float,
-            collision_penalty: float):
-        super().__init__(
-            in_keys=[
-                ("agents", "velocity_forward"),
-                ("agents", "progress"),
-                ("agents", "unity_reward"),
-            ],
-            out_keys=[("agents", "reward")],
+        self,
+        file_name: str,
+        num_stacked_frames: int,
+        no_graphics=True,
+        time_scale=100.0,
+        num_areas=10,
+        seed=0,
+    ):
+
+        engine_configuration_channel = EngineConfigurationChannel()
+        engine_configuration_channel.set_configuration_parameters(
+            time_scale=time_scale
         )
-        self.progress_weight = progress_weight
-        self.forward_velocity_weight = forward_velocity_weight
-        self.step_penalty = step_penalty
-        self.collision_penalty = collision_penalty
+        agent_names = [f"agent_{i}" for i in range(num_areas)]
+        base_env = UnityMLAgentsEnv(
+            file_name=file_name,
+            side_channels=[
+                engine_configuration_channel
+            ],
+            no_graphics=no_graphics,
+            num_areas=num_areas,
+            seed=seed,
+            group_map=MarlGroupMapType.ALL_IN_ONE_GROUP
+        )
 
-    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
-        forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
-        progress_delta = tensordict["agents", "progress"].squeeze(-1)
-        crashed = (
-            tensordict["agents", "unity_reward"].squeeze(-1) < 0).float()
-        progress_reward = progress_delta * \
-            self.progress_weight * (1.0 - crashed)
-        forward_velocity_reward = forward_velocity * self.forward_velocity_weight
-        step_penalty = torch.full((), -self.step_penalty)
-        collision_penalty = -self.collision_penalty * crashed
-        shaped = progress_reward + forward_velocity_reward + \
-            step_penalty + collision_penalty
-        tensordict["agents", "reward"] = shaped.unsqueeze(-1)
-        return tensordict
+        super().__init__(
+            base_env,
+            Compose(
+                *[Stack(
+                    in_keys=[
+                        ("agents", agent_name, key)
+                        for agent_name in agent_names],
+                    out_key=("agents", key), dim=-2, del_keys=True
+                ) for key in ["lidar", "VectorSensor_size23", "done", "terminated", "truncated"]],
 
-    def transform_output_spec(self, output_spec):
-        output_spec = output_spec.clone()
-        obs = output_spec["full_observation_spec",
-                          "agents", "velocity_forward"]
-        output_spec["full_reward_spec", "agents", "reward"] = Unbounded(
-            shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
-        return output_spec
-
-
-class StackIfPresent(Stack):
-    """Stack that leaves the reset output alone when none of its keys are there.
-
-    Unity's reset output has no reward, and a plain Stack would call torch.stack([]) on it.
-    """
-
-    def _reset(self, tensordict, tensordict_reset):
-        if all(tensordict_reset.get(key, None) is None for key in self.in_keys):
-            return tensordict_reset
-        return super()._reset(tensordict, tensordict_reset)
-
-
-class AgentBatch(Transform):
-    """Makes the whole env batched over agents: env batch size [N] -> [N, num_agents].
-
-    Must be the last transform in the Compose. Every entry the transforms before it produce
-    has the agent dim right after the env dim, so from the outside every tensor (observations,
-    reward, done, and the policy's actions/values/log-probs) shares the batch [N, num_agents].
-    Inverses run in reverse order, so its inverse runs first and hands the transforms before it
-    (and the wrapped ParallelEnv) plain [N]-batched data again.
-    """
-    enable_inv_on_reset = True
-
-    def __init__(self, num_agents: int):
-        super().__init__()
-        self.num_agents = num_agents
-
-    def transform_env_batch_size(self, batch_size):
-        return torch.Size([*batch_size, self.num_agents])
-
-    @staticmethod
-    def _set_batch_size(tensordict, batch_size):
-        """Sets the batch size of a tensordict and every tensordict nested in it (in place)."""
-        grow = len(batch_size) > len(tensordict.batch_size)
-        if not grow:  # a parent can't be larger than its children, so shrink top-down
-            tensordict.batch_size = batch_size
-        for _, child in list(tensordict.items()):
-            if is_tensor_collection(child):
-                AgentBatch._set_batch_size(child, batch_size)
-        if grow:  # ... and grow bottom-up
-            tensordict.batch_size = batch_size
-        return tensordict
-
-    def _call(self, next_tensordict):
-        return self._set_batch_size(
-            next_tensordict, torch.Size([*next_tensordict.batch_size, self.num_agents]))
-
-    def _reset(self, tensordict, tensordict_reset):
-        return self._call(tensordict_reset)
-
-    def _inv_call(self, tensordict):
-        return self._set_batch_size(
-            tensordict.copy(), torch.Size(tensordict.batch_size[:-1]))
-
-    def _label_spec(self, spec):
-        spec.shape = (*spec.shape, self.num_agents)
-        return spec
-
-    def transform_observation_spec(self, observation_spec):
-        return self._label_spec(observation_spec)
-
-    def transform_reward_spec(self, reward_spec):
-        return self._label_spec(reward_spec)
-
-    def transform_done_spec(self, done_spec):
-        return self._label_spec(done_spec)
-
-    def transform_output_spec(self, output_spec):
-        output_spec = super().transform_output_spec(output_spec)
-        return self._label_spec(output_spec)
-
-    def transform_input_spec(self, input_spec):
-        self._label_spec(input_spec["full_action_spec"])
-        self._label_spec(input_spec["full_state_spec"])
-        return self._label_spec(input_spec)
+                UnaryTransform(
+                    fn=lambda lidar: torch.unflatten(
+                        lidar, -1, (101, self.LIDAR_BLOCK_SIZE))
+                    .transpose(-1, -2),  # [1, 500, LIDAR_BLOCK_SIZE, 101]
+                    in_keys=[("agents", "lidar")],
+                    out_keys=[("agents", "lidar")],
+                ),
+                # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
+                UnsqueezeTransform(
+                    dim=-3,
+                    in_keys=[("agents", "lidar")],
+                    out_keys=[("agents", "lidar")]
+                ),
+                CatFramesResetOnDone(
+                    N=num_stacked_frames,
+                    dim=-3,
+                    in_keys=[("agents", "lidar")],
+                    out_keys=[("agents", "stacked_lidar")],
+                    done_key=("agents", "done"),
+                    reset_key=("agents", "done")
+                ),
+                StackAction(
+                    in_keys=[("agents", a, "continuous_action")
+                             for a in agent_names],
+                    out_key=("agents", "continuous_action"),
+                    in_key_inv=("agents", "continuous_action"),
+                    out_keys_inv=[("agents", a, "continuous_action")
+                                  for a in agent_names],
+                    dim=-2),
+                SplitAction(("agents", "continuous_action"),
+                            [("actions", "throttle"), ("actions", "steering")]),
+            )
+        )
 
 
-class PackActions(Transform):
-    """Policy throttle/steering [.., N] -> per-agent ("agents", a, "continuous_action") [.., 2]."""
+class SplitAction(Transform):
+    """Exposes one (..., n) action entry as n separate (..., 1) entries."""
 
-    def __init__(self, agents: list[str]):
-        super().__init__()
-        self.agents = agents
-
-    def _inv_call(self, tensordict):
-        packed = torch.stack(
-            [tensordict["action", "throttle"], tensordict["action", "steering"]], dim=-1)  # [.., N, 2]
-        tensordict = tensordict.copy()
-        for i, agent in enumerate(self.agents):
-            tensordict.set(
-                ("agents", agent, "continuous_action"), packed[..., i, :])
-        return tensordict
+    def __init__(self, in_key, out_keys):
+        super().__init__(in_keys=[], out_keys=[])
+        self.in_key = in_key
+        self.split_keys = out_keys
 
     def transform_input_spec(self, input_spec):
         action_spec = input_spec["full_action_spec"]
-        ref = action_spec["agents", self.agents[0], "continuous_action"]
-        shape = (*ref.shape[:-1], len(self.agents))
-        low, high = ref.space.low, ref.space.high
-        del action_spec["agents"]
-        action_spec["action", "throttle"] = Bounded(
-            low=float(low[..., 0].min()), high=float(high[..., 0].max()), shape=shape, dtype=ref.dtype)
-        action_spec["action", "steering"] = Bounded(
-            low=float(low[..., 1].min()), high=float(high[..., 1].max()), shape=shape, dtype=ref.dtype)
+        spec = action_spec[self.in_key]
+        for i, key in enumerate(self.split_keys):
+            action_spec[key] = spec[..., i:i + 1]
+        del action_spec[self.in_key]
         return input_spec
+
+    def _inv_call(self, tensordict):
+        return tensordict.set(self.in_key, torch.cat(
+            [tensordict.get(k) for k in self.split_keys], dim=-1))
+
+
+class StackAction(Stack):
+    """Stack whose forward side is inert: action keys never appear in observations."""
+
+    def _call(self, next_tensordict):
+        keys = next_tensordict.keys(include_nested=True)
+        if not any(k in keys for k in self.in_keys):
+            return next_tensordict
+        return super()._call(next_tensordict)
+
+    forward = _call
+
+    def _reset(self, tensordict, tensordict_reset):
+        return tensordict_reset
+
+    def transform_output_spec(self, output_spec):
+        return output_spec
+
+
+class CatFramesResetOnDone(CatFrames):
+    """CatFrames for envs that reset in-engine: flushes the stack per agent on done."""
+
+    _pending = None
+
+    def _reset(self, tensordict, tensordict_reset):
+        self._pending = None
+        return super()._reset(tensordict, tensordict_reset)
+
+    def _step(self, tensordict, next_tensordict):
+        pending, self._pending = self._pending, None
+        next_tensordict = self._call(next_tensordict)
+        if pending is not None:
+            next_tensordict = self._call(next_tensordict, _reset=pending)
+        done = next_tensordict.get(self.done_key)
+        if done.any():
+            self._pending = done.squeeze(-1).clone()
+        return next_tensordict
+
+
+class RoboRacerEnvs(ParallelEnv):
+    """Parallel wrapper for multiple RoboRacer environments.
+
+    Args:
+        num_envs (int): Number of parallel environments.
+        file_name (str): Path to the Unity executable.
+        num_stacked_frames (int): Number of frames to stack for the observations.
+        no_graphics (bool, optional): Whether to run the environment in no-graphics mode. Defaults to True.
+        time_scale (float, optional): Time scale for the Unity environment. Defaults to 100.0.
+        num_areas (int, optional): Number of areas in each environment. Defaults to 10.
+        seed (int, optional): Random seed for the environments. Defaults to 0.
+    """
+
+    def __init__(
+        self,
+        num_envs: int,
+        file_name: str,
+        num_stacked_frames: int,
+        no_graphics=True,
+        time_scale=100.0,
+        num_areas=10,
+        seed=0,
+    ):
+        super().__init__(
+            num_envs=num_envs,
+            create_env_fn=lambda rank: RoboRacerEnv(
+                file_name=file_name,
+                num_stacked_frames=num_stacked_frames,
+                no_graphics=no_graphics,
+                time_scale=time_scale,
+                num_areas=num_areas,
+                seed=seed + rank
+            )
+        )
