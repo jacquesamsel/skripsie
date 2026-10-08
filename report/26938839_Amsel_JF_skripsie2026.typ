@@ -451,7 +451,7 @@ Generally, policy gradient methods use the following algorithm to learn the poli
 
 === REINFORCE
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by simply sampling $N$ trajectories $tau^((i)) ~ pi_theta$, the policy gradient can be estimated in a Monte-Carlo fashion:
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
   hat(nabla_theta J)(theta) = 1/T sum_(t=0)^(T-1) log(pi_theta (a_t | o_t)) dot G_t
@@ -915,6 +915,9 @@ _Aleatoric uncertainty_ is that which cannot be reduced
 
 An alternative method is @chen2017gradnorm, which dynamically scales the weights of each loss term to balance the $||delta_W L_i||_2$
 
+
+= What I did
+- *Car always going full throttle + full steering*: This is because tanhnormal saturates at 1, so the model cannot learn when the output is close to 1 or -1. This is a problem because the car is always going full throttle, and the steering angle is often close to 1 or -1. The model cannot learn to output values further away. So, the scale of weights & biases was changed to start in the center
 
 == Training curves
 
