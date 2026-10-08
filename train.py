@@ -202,10 +202,14 @@ def train(
                 # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
                 rollout = gae(rollout)
 
+            print("Rollout batch size:", rollout.batch_size)
+
             save_rollout_buffer_start = time.perf_counter_ns()
 
             # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
             flat_rollout = rollout.reshape(-1)
+
+            print(flat_rollout.batch_size)
             num_samples = flat_rollout.shape[0]
 
             epochs_start = time.perf_counter_ns()

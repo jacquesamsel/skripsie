@@ -249,7 +249,7 @@
 = Introduction
 
 == Background and motivation
-Autonomous racing is a challenging problem in robotics and artificial intelligence, requiring the development of algorithms that can make real-time decisions in complex and dynamic environments. The goal is to create an autonomous agent capable of navigating a race track at high speeds while avoiding obstacles and (in some cases) competing against other agents. However, traditional reinforcement learning (RL) methods often struggle to learn effective policies in such environments due to the high-dimensional state and action spaces, as well as the sparse and delayed rewards. Auxiliary learning has emerged as a promising approach to address these challenges by providing additional learning signals that can improve the agent's performance and sample efficiency. Auxiliary heads may be supervised  or unsupervised
+Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes 
 
 == Problem statement & objectives
 

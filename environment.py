@@ -2,7 +2,7 @@ from functools import reduce
 
 from torchrl.envs.transforms import Transform, Stack, UnaryTransform, ExcludeTransform, RenameTransform, UnsqueezeTransform
 from torchrl.envs import CatFrames, TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv, Compose
-from torchrl.data import Bounded, Unbounded, UnboundedContinuous
+from torchrl.data import Bounded, Composite, Unbounded, UnboundedContinuous
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
@@ -164,7 +164,81 @@ class RoboRacerEnv(TransformedEnv):
                     dim=-2),
                 SplitAction(("agents", "continuous_action"),
                             [("action", "throttle"), ("action", "steering")]),
+                # Last: every ("agents", ...) leaf has to exist, and carry the
+                # area dim, before that dim can be declared as the batch dim.
+                AreasAsBatch(num_areas),
             )
+        )
+
+
+class AreasAsBatch(Transform):
+    """Declares Unity's per-area dimension as the env's batch dimension.
+
+    The Stacks above already leave every ("agents", ...) leaf with the area dim
+    leading -- (num_areas, 1) for the scalars, (num_areas, frames, block, rays)
+    for the lidar -- but the env goes on reporting batch_size=(), so that dim
+    reads as part of the data: a rollout of a 2-env/4-area setup stacks to
+    [T, 2] rather than [T, 2, 4], and train.py's reshape(-1) counts one sample
+    per *env* step instead of one per *car* step, so a minibatch is silently
+    num_areas times bigger than it claims and shuffling never separates the
+    cars sharing an engine.
+
+    Declaring it touches no tensor -- the data already has the right shape, only
+    the specs and the reported batch_size change -- which is why this can sit at
+    the end of the Compose without disturbing any transform before it.
+
+    The areas are independent tracks sharing one Unity process, not interacting
+    agents, so a batch dim (rather than the MARL convention of an agent dim
+    inside the "agents" group) is the honest description. The keys stay under
+    "agents" regardless, so train.py's set_keys(reward=("agents", "reward"))
+    is unaffected.
+    """
+
+    def __init__(self, num_areas: int):
+        super().__init__()
+        self.num_areas = num_areas
+
+    def transform_env_batch_size(self, batch_size: torch.Size) -> torch.Size:
+        return torch.Size([*batch_size, self.num_areas])
+
+    def _call(self, next_tensordict: td.TensorDictBase) -> td.TensorDictBase:
+        # the leaves are already (num_areas, ...); this only moves the boundary
+        # between batch dims and feature dims, hence batch_dims=1 rather than
+        # letting auto_batch_size_ swallow the feature dims too
+        return next_tensordict.auto_batch_size_(1)
+
+    forward = _call
+
+    def _reset(self, tensordict, tensordict_reset):
+        return self._call(tensordict_reset)
+
+    def _inv_call(self, tensordict: td.TensorDictBase) -> td.TensorDictBase:
+        # Going the other way, StackAction unstacks the action back into one
+        # (2,) entry per agent, which no longer carries the area dim -- so the
+        # batch dim has to come off before the transforms below run, or those
+        # writes are rejected as too small for the batch. Transform.inv hands
+        # this a shallow clone whose sub-tensordicts are fresh objects, so
+        # resetting the batch size in place doesn't touch the caller's copy.
+        return tensordict.auto_batch_size_(0)
+
+    def transform_output_spec(self, output_spec):
+        return self._batched_spec(output_spec)
+
+    def transform_input_spec(self, input_spec):
+        return self._batched_spec(input_spec)
+
+    def _batched_spec(self, spec):
+        """Re-declares every Composite with the area dim in its shape.
+
+        Leaf specs are returned as they are: their shape already starts with
+        num_areas, which is exactly what Composite validates against.
+        """
+        if not isinstance(spec, Composite):
+            return spec
+        return Composite(
+            {key: self._batched_spec(spec[key]) for key in spec.keys()},
+            shape=torch.Size([*spec.shape, self.num_areas]),
+            device=spec.device,
         )
 
 
