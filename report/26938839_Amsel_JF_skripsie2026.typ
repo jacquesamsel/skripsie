@@ -271,7 +271,7 @@ $ G_t = sum_(i=t)^T gamma^(i-t) r_i $
 
 is the discounted return from time step $t$, $T$ is the time step at which the episode terminates, and the expectation is taken over all trajectories that can arise from $rho_0$, the environment's dynamics, and the policy $pi$. The policy that achieves this maximum is called the _optimal policy_, $pi^*$.
 
-The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately, akin to an interest rate in a discounted cashflow model. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
+The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
 
 Formally, a POMDP is defined by a tuple $(cal(S), cal(A), cal(O), cal(P), cal(Z), R, rho_0, gamma)$, where
 
@@ -383,7 +383,7 @@ These Bellman equations @state_value_bellman_equation and @action_value_bellman_
 
 
 == Reinforcement Learning (RL)
-Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected discounted return under policy $pi_theta$, $EE_pi_theta [G_t]$, by varying the parameters $theta$ of the policy (i.e. finding the optimal policy $pi^*$)#footnote([The parameterisation restricts the search to the policy class
+Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected discounted return under policy $pi_theta$, $EE_pi_theta [G_t]$, by varying the parameters $theta$ (i.e. finding the optimal policy $pi^*$)#footnote([The parameterisation restricts the search to the policy class
   $Pi_Theta = {pi_theta : theta in Theta}$, the set of policies the chosen
   model can represent. The optimal policy $pi^*$ need not lie in $Pi_Theta$:
   for example, if $pi_theta$ outputs a Gaussian over actions, it cannot
@@ -394,19 +394,19 @@ Reinforcement learning is a subfield of machine learning, where a policy $pi_the
 
 RL is distinct from supervised learning in that during training, the optimal or correct action is not known - the agent must explore the environment and learn from the consequences of its actions. It is also distinct from classical unsupervised learning methods in that there is a clear objective (maximising expected return) and feedback (rewards) to guide the learning process.
 
-There exist two broad classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily in stats $s$, choosing action $a = argmax_(a in cal(A)) hat(Q)(s, a)$). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as value-based methods are less suitable for continuous action spaces @lillicrap2015continuous and policy-based methods can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
+There exist two broad classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily in state $s$, choosing action $a = argmax_(a in cal(A)) hat(Q)(s, a)$). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as value-based methods are less suitable for continuous action spaces @lillicrap2015continuous and policy-based methods can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
 
 == Policy gradient methods
 
-Policy gradient methods are a class of RL algorithms that learn a parameterised policy $pi_theta$ directly by optimising the expected return $EE[G_t]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, a_0, r_0, s_1, a_1, r_1, dots, s_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, the expected return must be maximised with respect to the policy parameters $theta$:
+Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_T, o_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
 $
   J(theta) = EE_(tau tilde p_theta) [G_0]
   = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
   = integral p_theta (tau) G(tau) dif tau
 $
 
-Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable, and the integral is finite.]),
-the gradient of the expected return with respect to $theta$ is
+Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done only under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable _almost_ everywhere, and the integral is finite.]),
+the gradient of the expected return with respect to $theta$ is then
 $
   nabla_theta J(theta)
   = nabla_theta integral p_theta (tau) G(tau) dif tau
@@ -414,20 +414,55 @@ $
   = integral p_theta (tau) nabla_theta log p_theta (tau) G(tau) dif tau
   #linebreak()
   = EE_(tau tilde p_theta) [nabla_theta log p_theta (tau) G(tau)]
+$ <policy_gradient_theorem>
+
+Considering that the probability of a trajectory can be factorised as
+$
+  p_theta (tau) = p(s_0) product_(t=0)^(T-1) underbrace(p(s_(t+1) | s_t, a_t), cal(P)) dot pi_theta (a_t | o_t) dot underbrace(p(o_t | s_t), cal(Z)) dot underbrace(p(r_t | s_t, a_t, s_(t+1), o_t), cal(R)),
 $
 
-Estimating the policy gradient from sampled trajectories, and using gradient descent to optimise the policy parameters $theta$, is the basis of policy gradient methods. The REINFORCE algorithm is one of the simplest policy gradient methods, and is described in the next section.
+since $p(s_0)$, $cal(P)$, $cal(Z)$ and $cal(R)$ do not depend on $theta$, their gradients vanish, so
 
+$
+  nabla_theta log p_theta (tau) = sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t)
+$
+
+Then, the _policy gradient_ can be expressed as
+
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(t)]
+$
+
+where $G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k$ is the discounted reward-to-go. Replacing $G(tau)$ by $G_t$ leaves the expectation unchanged, since action $a_t$ cannot influence rewards $r_k$ with $k < t$, and it reduces variance#footnote([Strictly, the exact gradient of the discounted objective carries an extra factor $gamma^t$ on each term. Practical implementations omit it, which is the standard convention.]).
+
+Generally, policy gradient methods use the following algorithm to learn the policy $pi_theta$:
+
+#todo([Add algorithm table here.])
+#figure(
+  table(
+    columns: 1,
+    [
+
+    ],
+  ),
+  caption: [Policy gradient algorithm for learning a policy $pi_theta$ with parameters $theta$.
+  ],
+)
 
 === REINFORCE
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods. The algorithm works by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to compute an estimate of the policy gradient, which is then used to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by simply sampling $N$ trajectories $tau^((i)) ~ pi_theta$, the policy gradient can be estimated in a Monte-Carlo fashion:
 
-The loss $L_"REINFORCE"$ is minimised using gradient descent, and is given by the following equation:
 $
-  L_"REINFORCE" = -1/T sum_(t=0)^T log(pi_theta (a_t | o_t)) dot G_t
+  hat(nabla_theta J)(theta) = 1/T sum_(t=0)^(T-1) log(pi_theta (a_t | o_t)) dot G_t
 $
-where $T$ is the length of the trajectory, $G_T$ is the observed discounted return from time step $t$, and $pi_theta (a_t | o_t)$ is the probability of taking action $a_t$ given observation $o_t$ under the current policy parameters $theta$. Intuitively, minimising the loss function encourages the policy to increase the probability of actions that lead to higher returns, and decrease the probability of actions that lead to lower discounted returns.
+
+In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
+$
+  cal(L)_"REINFORCE" = -1/T sum_(t=0)^(T-1) log(pi_theta (a_t | o_t)) dot G_t
+$
+
+Although REINFORCE is simple to implement, it has several drawbacks. First, it has high variance in its gradient estimates, which can lead to slow convergence and instability during training. Second, it does not make use of a value function to estimate the expected return, which can further increase variance. Finally, it is an on-policy algorithm, meaning that it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
 
 === Proximal Policy Optimization (PPO)
 PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V_pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_ that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
