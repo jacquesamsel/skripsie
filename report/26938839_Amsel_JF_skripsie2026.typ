@@ -1,6 +1,8 @@
 #import "@preview/cetz:0.5.2"
 #import "@preview/lilaq:0.6.0" as lq
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
+#import "@preview/algorithmic:1.0.7" as algorithmic: algorithm-figure, style-algorithm
+#show: style-algorithm
 
 // ============================================================
 // Styling after the Stellenbosch University thesis class
@@ -139,6 +141,32 @@
   ]
 }
 
+
+// --- Tables: booktabs rules as in the thesis class -----------
+// \heavyrulewidth = 0.08em and \lightrulewidth = 0.05em at 12pt,
+// \arraystretch = 1.2, \small body text, caption above the table.
+#let heavy-rule = 0.96pt
+#let light-rule = 0.6pt
+
+#show figure.where(kind: table): set figure.caption(position: top)
+#show figure.where(kind: table): set text(size: 11pt)
+
+// A booktabs-style table: no vertical rules, a heavy rule at the top
+// and bottom and a light rule under the header. `header` is the list of
+// header cells (pass none for a table without one); everything else is
+// passed straight through to `table`.
+#let stb-table(header: none, ..args) = table(
+  stroke: none,
+  inset: (x: 0.6em, y: 0.45em),
+  align: center + horizon,
+  row-gutter: 0pt,
+  table.hline(stroke: heavy-rule),
+  ..if header != none {
+    (table.header(..header), table.hline(stroke: light-rule))
+  } else { () },
+  ..args,
+  table.hline(stroke: heavy-rule),
+)
 // --- Lists: \labelitemi is $\divideontimes$ ------------------
 #set list(marker: text(size: 9pt, sym.circle.stroked.small), indent: 1em)
 #set enum(indent: 1em)
@@ -151,15 +179,15 @@
 #show cite: set text(fill: link-colour)
 
 #align(center + horizon)[
+
+
+  #set page(background: image("stb-thesis-frntp.pdf", width: 110%, height: 107%, fit: "stretch"))
+
   #title("Auxiliary learning for autonomous racing")
 
-  #image("./frontmatter/UScrest-WM.jpg", width: 120pt)
+  by
 
-  #v(1cm)
-
-  #text("Jacques Friedrich Amsel", size: 16pt, weight: "bold")
-
-  Student number: 26938839
+  #text("Jacques Friedrich Amsel", size: 18pt)
 
   #v(1cm)
 
@@ -175,7 +203,7 @@
 
   #v(1cm)
 
-  *Date*: #datetime.today().display("[month repr:long] [year]")
+  #datetime.today().display("[month repr:long] [year]")
 ]
 
 #pagebreak()
@@ -188,6 +216,21 @@
 #pagebreak()
 
 = Plagarism declaration
+
+1. Plagiaat is die oorneem en gebruik van die idees, materiaal en ander intellektueleeiendom van ander persone asof dit jou eie werk is. _Plagiarism is the use of ideas, material and other intellectual property of another’s work and to present is as my own._
+2. Ek erken dat die pleeg van plagiaat 'n strafbare oortreding is aangesien dit ‘n vorm van diefstal is. _I agree that plagiarism is a punishable offence because it constitutes theft._
+3. Dienooreenkomstig is alle aanhalings en bydraes vanuit enige bron (ingesluit die internet) volledig verwys (erken). Ek erken dat die woordelikse aanhaal van teks sonder aanhalingstekens (selfs al word die bron volledig erken) plagiaat is. _Accordingly all quotations and contributions from any source whatsoever (including the internet) have been cited fully. I understand that the reproduction of text without quotation marks (even when the source is cited) is plagiarism._
+4. Ek verklaar dat die werk in hierdie skryfstuk vervat, behalwe waar anders aangedui, my eie oorspronklike werk is en dat ek dit nie vantevore in die geheel of gedeeltelik ingehandig het vir bepunting in hierdie module/werkstuk of ‘n ander module/werkstuk nie. _I declare that the work contained in this assignment, except where otherwise stated, is my original work and that I have not previously (in its entirety or in part) submitted it for grading in this module/assignment or another module/assignment._
+
+#v(1fr)
+#table(
+  columns: (1fr, 1fr),
+  align: bottom + left,
+  rows: (2.5cm, 2.5cm),
+  [Student number #place(horizon + center)[#text("26938839", size: 24pt)]], [Signature],
+  [Initials and surname #place(horizon + center)[#text("J.F. Amsel", size: 24pt)]],
+  [Date #place(horizon + center)[#text(datetime.today().display("[day] [month repr:long] [year]"), size: 24pt)]],
+)
 
 #pagebreak()
 
@@ -249,7 +292,7 @@
 = Introduction
 
 == Background and motivation
-Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes 
+Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes
 
 == Problem statement & objectives
 
@@ -820,9 +863,62 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
     #image("figures/autodrive_isometric_close_up.png")
   ],
   caption: "AutoDrive-insired Unity environment, showing the RoboRacer vehicle, its LIDAR rays, and forward track prediction sampling points.",
-)
+) <track_rendering>
 
 == Track generation
+
+During model training, having a variety of tracks is important to prevent overfitting to a single track. This improves generalisation to unseen tracks, allowing the model to learn a more robust policy.
+
+For this purpose, a track generator was implemented in C\# in Unity to procedurally generate tracks. The track generator takes the following parameters as input: $R$ - the track radius, $n$ - the number of points to generate, $theta_max$, the maximum turn angle in a single step, $rho$ - the mean-reversion factor, $s$ - the mean-reversion exponent, $phi_max$ - the maximum heading offset, and $q$ - the probability of flipping the driving direction. The track generator outputs a list of points that define the track.
+
+#algorithm-figure(
+  "Random Closed Track",
+  vstroke: .5pt + luma(200),
+  {
+    import algorithmic: *
+    Procedure(
+      "Generate-Walk",
+      ($n$, $R$, $theta_"max"$, $rho$, $s$, $phi_"max"$, $q$),
+      {
+        Comment[Initialise the walk on the guide circle]
+        Assign[$L$][$2 pi R / n$]
+        Assign[$P_0$][$(R, 0)$]
+        Assign[$h$][$0$]
+        LineBreak
+        Comment[Random walk with a mean-reverting heading offset]
+        For(
+          $i = 1$ + [ to ] + $n$,
+          {
+            Assign[$r$][$rho + (1 - rho)(i / n)^s$]
+            Assign[$u$][$"Uniform"(-theta_"max", theta_"max")$]
+            Assign[$h$][$"clamp"((h + u)(1 - r), -phi_"max", phi_"max")$]
+            Assign[$alpha$][$(2 pi i) / n + pi / 2 + h$]
+            Assign[$P_i$][$P_(i-1) + L (cos alpha, sin alpha)$]
+          },
+        )
+        LineBreak
+        Comment[Spread the closing error evenly over the lap]
+        Assign[$g$][$P_n - P_0$]
+        For(
+          $i = 0$ + [ to ] + $n - 1$,
+          {
+            Assign[$Q_i$][$P_i - (i / n) g$]
+          },
+        )
+        LineBreak
+        Comment[Randomly flip the driving direction, keeping $Q_0$ fixed]
+        If(
+          $"Uniform"(0, 1) < q$,
+          {
+            Assign[$(Q_1, dots, Q_(n-1))$][$(Q_(n-1), dots, Q_1)$]
+          },
+        )
+        Return[$Q$]
+      },
+    )
+  },
+)
+
 
 #figure(
   caption: "Track generation",
@@ -831,11 +927,12 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
     circle((0, 0), radius: 4, stroke: (paint: luma(60%), dash: "dashed"))
     // dots: roughly trace the guide circle for 3/4 of a revolution, with a
     // little radial jitter so it reads as a walk rather than a perfect ring
-    let n = 8
-    let sweep = 270deg
-    let jitter = (0, 0.3, -0.2, 0.4, -0.3, 0.2, -1.5, 0.1)
+    let n = 7
+    let sweep = 250deg
+    let jitter = (0, 0.3, -0.2, 0.4, -0.3, 0.2, -1.5)
+    let angle_at = idx => sweep * (idx / (n - 1))
     let dots = range(n).map(idx => {
-      let angle = sweep * (idx / (n - 1))
+      let angle = angle_at(idx)
       let r = 4 + jitter.at(idx)
       (r * calc.cos(angle), r * calc.sin(angle))
     })
@@ -847,19 +944,46 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
     }
 
     let last_point = dots.at(n - 1)
-    let second_last_point = dots.at(n - 2)
 
-    let last_point_tanget_of_circle = last_point.at(0) / last_point.at(1)
+    // Where dot 7 would have landed had the walk stayed on the guide circle,
+    // and the unit tangent of the circle at that angle
+    let last_angle = angle_at(n - 1)
+    let guide_point = (4 * calc.cos(last_angle), 4 * calc.sin(last_angle))
+    let tangent_dir = (-calc.sin(last_angle), calc.cos(last_angle))
 
-    // Draw tangent from last point
-    let tangent_length = 4
-
-    let tangent_end = (
-      last_point.at(0) + tangent_length,
-      last_point.at(1) + tangent_length * last_point_tanget_of_circle,
+    let half_length = 2.8
+    let along = (base, t) => (
+      base.at(0) + t * tangent_dir.at(0),
+      base.at(1) + t * tangent_dir.at(1),
+    )
+    // Chevron denoting the two lines as parallel
+    let parallel_mark = base => line(
+      along(base, -1.5),
+      along(base, -1.1),
+      mark: (end: ">", scale: 0.8),
+      stroke: 0.8pt,
     )
 
-    line(last_point, tangent_end)
+    // Dotted tangent at the un-jittered position of dot 7
+    circle(
+      guide_point,
+      radius: 8pt,
+      stroke: (paint: luma(60%), dash: "dashed"),
+    )
+    line(
+      along(guide_point, -half_length),
+      along(guide_point, half_length),
+      stroke: (dash: "dotted"),
+    )
+    parallel_mark(guide_point)
+
+    // Its parallel, shifted inwards to cross through dot 7
+    line(
+      along(last_point, -half_length),
+      along(last_point, half_length),
+      stroke: (dash: "dotted"),
+    )
+    parallel_mark(last_point)
 
     for idx in range(n) {
       circle(dots.at(idx), radius: 8pt, fill: black)
@@ -869,6 +993,10 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 )
 
 
+
+Then, a Catmull-Rom spline is fitted to the points to create a smooth track centerline. In order to generate the inner and outer boundaries of the track, points are sampled along the centerline to generate a polygonal approximation of the track. The inner and outer boundaries are then generated by insetting/outsetting the centerline polygon by a fixed distance using the Clipper2 library @clipper2, which extends the Vatti polygon clipping algorithm @vatti1992.
+
+Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in @track_rendering.
 
 = The model
 
