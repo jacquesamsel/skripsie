@@ -5,6 +5,7 @@ import time
 from model import ActorValueAuxOperator, curvature_aux_name, make_model
 from environment import (
     CURVATURE_LOOKAHEAD_DISTANCES,
+    RoboRacerEnv,
     RoboRacerParallelEnvs,
     track_curvature_key,
 )
@@ -336,11 +337,33 @@ def train(
             stats = rollout_stats(rollout)
             stats_history.append(stats)
             writer.add_scalar("reward/mean", stats["reward_mean"], i)
+
+            # reward/* is the reward and nothing but: the terms below are in reward
+            # units and sum to reward/mean, so they answer "where did this reward come
+            # from". The quantities they are computed from are their own units and live
+            # under observation/*, and the crash rates are rates, so neither belongs in
+            # here. (Up to 3c82583 reward/progress carried raw metres and
+            # reward/collision_rate a rate, so those two tags mean something different
+            # in runs from before this change.)
+            writer.add_scalar("reward/progress", stats["reward_progress_mean"], i)
             writer.add_scalar(
-                "reward/mean_forward_velocity", stats["velocity_forward_mean"], i)
-            writer.add_scalar("reward/progress", stats["progress_mean"], i)
-            writer.add_scalar("reward/collision_rate",
-                              stats["collision_rate"], i)
+                "reward/forward_velocity", stats["reward_velocity_forward_mean"], i)
+            writer.add_scalar("reward/collision", stats["reward_collision_mean"], i)
+            writer.add_scalar(
+                "reward/step_penalty", stats["reward_step_penalty_mean"], i)
+
+            # The same driving in physical units, which stay put when a weight is
+            # retuned - so a reward that moved only because its weight moved can be
+            # told apart from a car that actually drove differently.
+            writer.add_scalar("observation/progress_metres",
+                              stats["progress_mean"], i)
+            writer.add_scalar("observation/forward_velocity",
+                              stats["velocity_forward_mean"], i)
+
+            writer.add_scalar("collision/per_episode",
+                              stats["collision_rate_per_episode"], i)
+            writer.add_scalar("collision/per_step",
+                              stats["collision_rate_per_step"], i)
 
             # every sampled action of this rollout (all steps, envs and agents)
             for action_name in ("throttle", "steering"):

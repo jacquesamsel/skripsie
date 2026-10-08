@@ -18,6 +18,22 @@ def track_curvature_key(metres: float) -> td.NestedKey:
     return ("agents", f"track_curvature_{metres:.2f}".replace(".", "_"))
 
 
+# The terms ComposeReward adds up, and the key each one is published under. They sum to
+# ("agents", "reward") exactly, so a reward curve can be read back as the contributions
+# that made it (see rollout_stats in stats.py, which reports the mean of each).
+#
+# Published by the env rather than re-derived downstream: the weights live in
+# ComposeReward, so anything computing "how much of this came from progress" from the
+# raw observations would be a second copy of the formula, free to drift from the reward
+# the agent was actually trained on.
+REWARD_TERM_KEYS: dict[str, td.NestedKey] = {
+    "progress": ("agents", "reward_progress"),
+    "velocity_forward": ("agents", "reward_velocity_forward"),
+    "step_penalty": ("agents", "reward_step_penalty"),
+    "collision": ("agents", "reward_collision"),
+}
+
+
 class RoboRacerEnv(TransformedEnv):
     """RoboRacer environment wrapper.
 
@@ -281,7 +297,12 @@ class SplitVector(Transform):
 
 
 class ComposeReward(Transform):
-    """Shaped per-agent reward. A car has crashed when Unity's own reward for it is negative."""
+    """Shaped per-agent reward. A car has crashed when Unity's own reward for it is negative.
+
+    Writes each term out under its own key as well (see REWARD_TERM_KEYS), as plain
+    observations rather than rewards -- torchrl treats every entry of the reward spec as
+    a reward to optimise, and these are only there to be read.
+    """
 
     def __init__(
             self,
@@ -295,7 +316,7 @@ class ComposeReward(Transform):
                 ("agents", "progress"),
                 ("agents", "unity_reward"),
             ],
-            out_keys=[("agents", "reward")],
+            out_keys=[("agents", "reward"), *REWARD_TERM_KEYS.values()],
         )
         self.progress_weight = progress_weight
         self.forward_velocity_weight = forward_velocity_weight
@@ -312,12 +333,29 @@ class ComposeReward(Transform):
         progress_reward = progress_delta * \
             self.progress_weight * (1.0 - crashed)
         forward_velocity_reward = forward_velocity * self.forward_velocity_weight
-        step_penalty = torch.full((), -self.step_penalty)
+        step_penalty = torch.full_like(progress_reward, -self.step_penalty)
         collision_penalty = -self.collision_penalty * crashed
-        shaped = progress_reward + forward_velocity_reward + \
-            step_penalty + collision_penalty
+        terms = {
+            "progress": progress_reward,
+            "velocity_forward": forward_velocity_reward,
+            "step_penalty": step_penalty,
+            "collision": collision_penalty,
+        }
+        shaped = sum(terms.values())
         tensordict["agents", "reward"] = shaped.unsqueeze(-1)
+        for name, term in terms.items():
+            tensordict[REWARD_TERM_KEYS[name]] = term.unsqueeze(-1)
         return tensordict
+
+    def _reset(self, tensordict: td.TensorDict, tensordict_reset: td.TensorDict) -> td.TensorDict:
+        # The terms are declared as observations, so the reset output has to carry them
+        # too or it no longer matches the spec. Zero is the honest value: there was no
+        # step to pay for. _call can't be reused here -- the reset output has no
+        # unity_reward (see StackIfPresent), so there is no crash signal to read.
+        for key in REWARD_TERM_KEYS.values():
+            tensordict_reset[key] = torch.zeros_like(
+                tensordict_reset["agents", "velocity_forward"])
+        return tensordict_reset
 
     def transform_output_spec(self, output_spec):
         output_spec = output_spec.clone()
@@ -325,6 +363,9 @@ class ComposeReward(Transform):
                           "agents", "velocity_forward"]
         output_spec["full_reward_spec", "agents", "reward"] = Unbounded(
             shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
+        for key in REWARD_TERM_KEYS.values():
+            output_spec[("full_observation_spec", *key)] = Unbounded(
+                shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
         return output_spec
 
 
