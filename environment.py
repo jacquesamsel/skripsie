@@ -475,6 +475,7 @@ class RoboRacerParallelEnvs(ParallelEnv):
         forward_velocity_weight=0.0,
         step_penalty=0.0,
         collision_penalty=1.0,
+        start_worker_id=0
     ):
         super().__init__(
             num_envs,
@@ -491,5 +492,5 @@ class RoboRacerParallelEnvs(ParallelEnv):
                 "step_penalty": step_penalty,
                 "collision_penalty": collision_penalty,
                 "worker_id": worker_id
-            } for worker_id in range(num_envs)],
+            } for worker_id in range(start_worker_id, start_worker_id + num_envs)],
         )
