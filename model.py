@@ -163,6 +163,8 @@ class ActionModel(torch.nn.Module):
         super().__init__()
         # 2 for throttle (loc, scale), 2 for steering (loc, scale)
         self.head = torch.nn.Linear(64, 4)
+        torch.nn.init.orthogonal_(self.head.weight, gain=0.01)
+        torch.nn.init.zeros_(self.head.bias)
 
     def forward(self, hidden_layer: torch.Tensor):
 
