@@ -24,18 +24,18 @@ class LidarVisualiser:
         self._background = None
 
     def render(self, lidar: torch.Tensor):
-        """Draws one frame from a (..., stacked_timesteps, n_tags, n_rays) lidar tensor.
+        """Draws one frame from a (..., stacked_timesteps, n_rays) lidar tensor.
 
-        The last tag is the distance channel, so only ``[..., :, -1, :]`` is
-        shown; the leading batch dims are flattened and laid out as a square-ish
-        grid of (stacked_timesteps x n_rays) heatmaps. The first call builds the
-        figure, every later call only pushes new pixel data through the existing
-        images and blits them, so nothing is re-laid-out per frame.
+        The tensor is distances already -- RoboRacerEnv drops the tag and miss
+        channels before stacking -- so the leading batch dims are flattened and
+        laid out as a square-ish grid of (stacked_timesteps x n_rays) heatmaps.
+        The first call builds the figure, every later call only pushes new pixel
+        data through the existing images and blits them, so nothing is
+        re-laid-out per frame.
         """
         # (..., n_stacked_frames, n_rays) -> (n_cells, n_stacked_frames, n_rays)
-        distances = lidar[..., :, -1, :]
-        distances = distances.detach().cpu().numpy().reshape(
-            -1, *distances.shape[-2:])
+        distances = lidar.detach().cpu().numpy().reshape(
+            -1, *lidar.shape[-2:])
 
         if self._fig is None:
             self._build(distances)

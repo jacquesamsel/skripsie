@@ -117,8 +117,10 @@ class TrunkModel(torch.nn.Module):
         )
 
     def forward(self, lidar: torch.Tensor, steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
-        # lidar is (..., n_stacked_frames, L) of distances (see StackLidar)
-        *batch_shape, n_frames, n_tags, n_rays = lidar.shape
+        # lidar is (..., n_stacked_frames, n_rays) of distances: RoboRacerEnv
+        # takes the distance channel out of each ray block before stacking, so
+        # there is no tag/miss channel left here to select.
+        *batch_shape, n_frames, n_rays = lidar.shape
         if n_frames != self.num_stacked_lidar_frames:
             raise ValueError(
                 f"Expected {self.num_stacked_lidar_frames} stacked lidar frames, got {n_frames}")
@@ -127,15 +129,9 @@ class TrunkModel(torch.nn.Module):
             raise ValueError(
                 f"Expected {self.n_rays} lidar rays, got {n_rays}")
 
-        n_tags -= 2  # remove the miss, dist 'tags'
-
-        # (..., n_stacked_frames, L) of distances only. Select the distance
-        # channel before flipping (not after) so the flip -- which has to
-        # touch every element -- only moves 1/4 as much data as flipping all
-        # tags first and discarding 3 of them afterwards; same result either
-        # way. Have to flip on time so that the most recent frame is always included.
-        lidar_distance_only = lidar[..., -1, :].flip(-2)[
-            ..., ::self.time_subsample, :]
+        # Flip time before striding by time_subsample, so that the stride lands
+        # on the most recent frame rather than the oldest one.
+        lidar_distance_only = lidar.flip(-2)[..., ::self.time_subsample, :]
 
         # flatten all leading batch dims (agents, time, envs, ...) into one
         # dim so Conv1d always sees (N, n_frames, L), then restore the batch shape

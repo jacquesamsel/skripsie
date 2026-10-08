@@ -109,26 +109,25 @@ class RoboRacerEnv(TransformedEnv):
                     out_key=("agents", "unity_reward"), dim=-2, del_keys=True
                 ),
                 RenameTransform(
-                    in_keys=[("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
+                    in_keys=[
+                        ("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
                     out_keys=[("agents", "vector")]
                 ),
-
                 UnaryTransform(
                     fn=lambda lidar: torch.unflatten(
-                        lidar, -1, (101, self.LIDAR_BLOCK_SIZE))
-                    .transpose(-1, -2),  # [1, 500, LIDAR_BLOCK_SIZE, 101]
+                        lidar, -1, (101, self.LIDAR_BLOCK_SIZE))[..., -1],
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")],
                 ),
                 # Add an extra dim to the lidar tensor so that it can be stacked with CatFrames
                 UnsqueezeTransform(
-                    dim=-3,
+                    dim=-2,
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")]
                 ),
                 CatFramesResetOnDone(
                     N=num_stacked_frames,
-                    dim=-3,
+                    dim=-2,
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "stacked_lidar")],
                     done_key=("agents", "done"),
