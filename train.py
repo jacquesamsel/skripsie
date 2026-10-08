@@ -380,11 +380,11 @@ if __name__ == "__main__":
     SEED = 42
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
-        num_envs=2,
-        file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/build_linux.x86_64",
+        num_envs=8,
+        file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
         num_stacked_frames=50,
         no_graphics=True,
-        num_areas=4,
+        num_areas=6,
         time_scale=100.0,
         seed=SEED,
     )
