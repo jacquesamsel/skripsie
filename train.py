@@ -2,8 +2,12 @@ from typing import Literal
 
 from torch.utils.tensorboard import SummaryWriter
 import time
-from model import ActorValueAuxOperator, make_model
-from environment import RoboRacerParallelEnvs
+from model import ActorValueAuxOperator, curvature_aux_name, make_model
+from environment import (
+    CURVATURE_LOOKAHEAD_DISTANCES,
+    RoboRacerParallelEnvs,
+    track_curvature_key,
+)
 from stats import rollout_stats
 import tensordict as td
 from torchrl.objectives.value import GAE
@@ -39,9 +43,7 @@ def train(
         env,
         velocity_forward_weight: float,
         velocity_lateral_weight: float,
-        curvature_05m_weight: float,
-        curvature_10m_weight: float,
-        curvature_20m_weight: float,
+        curvature_weights: dict[float, float],
         wheel_slip_front_forward_weight: float,
         wheel_slip_front_lateral_weight: float,
         wheel_slip_rear_forward_weight: float,
@@ -67,12 +69,20 @@ def train(
     random.seed(seed)
     torch.manual_seed(seed)
 
+    # Keyed by lookahead distance in metres; a distance left out of
+    # curvature_weights gets weight 0, i.e. its head is left untrained.
+    unknown_distances = sorted(
+        set(curvature_weights) - set(CURVATURE_LOOKAHEAD_DISTANCES))
+    if unknown_distances:
+        raise ValueError(
+            f"curvature_weights has no such lookahead distances: {unknown_distances}. "
+            f"Known distances (metres): {CURVATURE_LOOKAHEAD_DISTANCES}")
+
     aux_weights = {
         "velocity_forward": velocity_forward_weight,
         "velocity_lateral": velocity_lateral_weight,
-        "curvature_05m": curvature_05m_weight,
-        "curvature_10m": curvature_10m_weight,
-        "curvature_20m": curvature_20m_weight,
+        **{curvature_aux_name(metres): curvature_weights.get(metres, 0.0)
+           for metres in CURVATURE_LOOKAHEAD_DISTANCES},
         "wheel_slip_lf_forward": wheel_slip_front_forward_weight,
         "wheel_slip_rf_forward": wheel_slip_front_forward_weight,
         "wheel_slip_lf_lateral": wheel_slip_front_lateral_weight,
@@ -221,12 +231,12 @@ def train(
                             minibatch["aux", "velocity_forward"], minibatch["agents", "velocity_forward"]),
                         velocity_lateral=smooth_l1_loss(
                             minibatch["aux", "velocity_lateral"], minibatch["agents", "velocity_lateral"]),
-                        curvature_05m=smooth_l1_loss(
-                            minibatch["aux", "curvature_05m"], minibatch["agents", "track_curvature_0_50"]),
-                        curvature_10m=smooth_l1_loss(
-                            minibatch["aux", "curvature_10m"], minibatch["agents", "track_curvature_1_00"]),
-                        curvature_20m=smooth_l1_loss(
-                            minibatch["aux", "curvature_20m"], minibatch["agents", "track_curvature_2_00"]),
+                        **{
+                            curvature_aux_name(metres): smooth_l1_loss(
+                                minibatch["aux", curvature_aux_name(metres)],
+                                minibatch[track_curvature_key(metres)])
+                            for metres in CURVATURE_LOOKAHEAD_DISTANCES
+                        },
                         wheel_slip_lf_forward=smooth_l1_loss(
                             minibatch["aux", "wheel_slip_lf_forward"], minibatch["agents", "wheel_slip_forward_front_left"]),
                         wheel_slip_lf_lateral=smooth_l1_loss(
@@ -378,9 +388,8 @@ if __name__ == "__main__":
         env,
         velocity_forward_weight=0.0,
         velocity_lateral_weight=0.0,
-        curvature_05m_weight=0.0,
-        curvature_10m_weight=0.0,
-        curvature_20m_weight=0.0,
+        curvature_weights={metres: 0.0
+                           for metres in CURVATURE_LOOKAHEAD_DISTANCES},
         wheel_slip_front_forward_weight=0.0,
         wheel_slip_front_lateral_weight=0.0,
         wheel_slip_rear_forward_weight=0.0,

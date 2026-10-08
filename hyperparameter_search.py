@@ -1,7 +1,7 @@
 import argparse
 
 from train import train
-from environment import make_envs
+from environment import CURVATURE_LOOKAHEAD_DISTANCES, make_envs
 import optuna
 
 # Iterations per trial. Each iteration is a full rollout + GAE + 4 epochs of
@@ -29,12 +29,10 @@ def objective(trial: optuna.Trial):
         "forward_velocity_weight", 0.0, 0.3)
     lateral_velocity_weight = trial.suggest_float(
         "lateral_velocity_weight", 0.0, 0.3)
-    curvature_weights_0_5m = trial.suggest_float(
-        "curvature_weights_0_5m", 0.0, 0.3)
-    curvature_weights_1_0m = trial.suggest_float(
-        "curvature_weights_1_0m", 0.0, 0.3)
-    curvature_weights_2_0m = trial.suggest_float(
-        "curvature_weights_2_0m", 0.0, 0.3)
+    # Every lookahead distance has its own head, but they share one searched
+    # weight: 16 independent weights would blow up the search space, and the
+    # heads all predict the same quantity at a different distance.
+    curvature_weight = trial.suggest_float("curvature_weight", 0.0, 0.3)
     wheel_slips_weight_front_lateral = trial.suggest_float(
         "wheel_slips_weight_front_lateral", 0.0, 0.3)
     wheel_slips_weight_rear_lateral = trial.suggest_float(
@@ -65,9 +63,8 @@ def objective(trial: optuna.Trial):
         env,
         velocity_forward_weight=forward_velocity_weight,
         velocity_lateral_weight=lateral_velocity_weight,
-        curvature_05m_weight=curvature_weights_0_5m,
-        curvature_10m_weight=curvature_weights_1_0m,
-        curvature_20m_weight=curvature_weights_2_0m,
+        curvature_weights={metres: curvature_weight
+                           for metres in CURVATURE_LOOKAHEAD_DISTANCES},
         wheel_slip_front_forward_weight=wheel_slips_weight_front_forward,
         wheel_slip_front_lateral_weight=wheel_slips_weight_front_lateral,
         wheel_slip_rear_forward_weight=wheel_slips_weight_rear_forward,

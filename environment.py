@@ -8,6 +8,16 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import tensordict as td
 
 
+# One curvature observation, and so one auxiliary curvature head in model.py,
+# per distance in this list.
+CURVATURE_LOOKAHEAD_DISTANCES = [0.5 * i for i in range(1, 17)]
+
+
+def track_curvature_key(metres: float) -> td.NestedKey:
+    """Observation key for the centerline curvature `metres` ahead of the car."""
+    return ("agents", f"track_curvature_{metres:.2f}".replace(".", "_"))
+
+
 class RoboRacerEnv(TransformedEnv):
     """RoboRacer environment wrapper.
 
@@ -26,12 +36,6 @@ class RoboRacerEnv(TransformedEnv):
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK_SIZE = LIDAR_NUM_TAGS + 2
     VECTOR_SENSOR_SIZE = 32
-
-    # Arc length distances ahead of the car, in metres, at which the centerline's
-    # signed curvature is observed: 0.5 m to 8 m in 0.5 m steps. Mirrors Car.cs's
-    # curvatureLookaheadDistances as serialized on the Car prefab -- the vector is
-    # split positionally, so this has to match it in both order and length.
-    CURVATURE_LOOKAHEAD_DISTANCES = [0.5 * i for i in range(1, 17)]
 
     def __init__(
         self,
@@ -125,9 +129,8 @@ class RoboRacerEnv(TransformedEnv):
                         (("agents", "linear_acceleration_lateral"),
                          torch.Size([1])),
                         (("agents", "angular_velocity_y"), torch.Size([1])),
-                        *[(("agents", f"track_curvature_{metres:.2f}".replace(".", "_")),
-                           torch.Size([1]))
-                          for metres in self.CURVATURE_LOOKAHEAD_DISTANCES],
+                        *[(track_curvature_key(metres), torch.Size([1]))
+                          for metres in CURVATURE_LOOKAHEAD_DISTANCES],
                         *[
                             (("agents", f"wheel_slip_{direction}_{wheel}"), torch.Size(
                                 [1]))

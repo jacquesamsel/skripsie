@@ -5,6 +5,34 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 from torchrl.modules import ActorValueOperator, ProbabilisticActor, SafeProbabilisticTensorDictSequential, TanhNormal, ValueOperator
 import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
+from environment import CURVATURE_LOOKAHEAD_DISTANCES
+
+
+# Aux targets that aren't curvature. Order matters: this list, followed by one
+# entry per lookahead distance, is the order AuxModel's head slices its output
+# in and the order of the aux module's out_keys.
+AUX_STATE_NAMES = [
+    "velocity_forward",
+    "velocity_lateral",
+    "angular_velocity_y",  # yaw rate (angular velocity about Unity's y-axis)
+    "wheel_slip_lf_forward",
+    "wheel_slip_lf_lateral",
+    "wheel_slip_rf_forward",
+    "wheel_slip_rf_lateral",
+    "wheel_slip_lr_forward",
+    "wheel_slip_lr_lateral",
+    "wheel_slip_rr_forward",
+    "wheel_slip_rr_lateral",
+]
+
+
+def curvature_aux_name(metres: float) -> str:
+    """Aux head name for a lookahead distance: 0.5 m -> "curvature_05m"."""
+    return f"curvature_{round(metres * 10):02d}m"
+
+
+AUX_NAMES = AUX_STATE_NAMES + [curvature_aux_name(metres)
+                               for metres in CURVATURE_LOOKAHEAD_DISTANCES]
 
 
 class TrunkModel(torch.nn.Module):
@@ -159,34 +187,13 @@ class ActionModel(torch.nn.Module):
 class AuxModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.head = torch.nn.Linear(64, 14)
-        #self.log_vars = torch.nn.Parameter(torch.zeros(14))
+        self.head = torch.nn.Linear(64, len(AUX_NAMES))
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
-        velocity_forward = out[..., 0:1]
-        velocity_lateral = out[..., 1:2]
-        angular_velocity_y = out[..., 2:3]  # yaw rate (angular velocity about Unity's y-axis)
-        wheel_slip_lf_forward = out[..., 3:4]
-        wheel_slip_lf_lateral = out[..., 4:5]
-        wheel_slip_rf_forward = out[..., 5:6]
-        wheel_slip_rf_lateral = out[..., 6:7]
-        wheel_slip_lr_forward = out[..., 7:8]
-        wheel_slip_lr_lateral = out[..., 8:9]
-        wheel_slip_rr_forward = out[..., 9:10]
-        wheel_slip_rr_lateral = out[..., 10:11]
-        curvature_05m = out[..., 11:12]
-        curvature_10m = out[..., 12:13]
-        curvature_20m = out[..., 13:14]
-
-        return (
-            velocity_forward, velocity_lateral, angular_velocity_y,
-            wheel_slip_lf_forward, wheel_slip_lf_lateral,
-            wheel_slip_rf_forward, wheel_slip_rf_lateral,
-            wheel_slip_lr_forward, wheel_slip_lr_lateral,
-            wheel_slip_rr_forward, wheel_slip_rr_lateral,
-            curvature_05m, curvature_10m, curvature_20m,
-        )
+        # One (..., 1) prediction per name, in AUX_NAMES order -- the aux
+        # module's out_keys are built from the same list, so the two can't drift.
+        return tuple(out[..., i:i + 1] for i in range(len(AUX_NAMES)))
 
 
 class ValueModel(torch.nn.Module):
@@ -277,15 +284,7 @@ def make_model(
     aux = TensorDictModule(
         AuxModel(),
         in_keys=["hidden_layer", "lidar_cnn_output"],
-        out_keys=[
-            ("aux", "velocity_forward"), ("aux", "velocity_lateral"),
-            ("aux", "angular_velocity_y"),
-            ("aux", "wheel_slip_lf_forward"), ("aux", "wheel_slip_lf_lateral"),
-            ("aux", "wheel_slip_rf_forward"), ("aux", "wheel_slip_rf_lateral"),
-            ("aux", "wheel_slip_lr_forward"), ("aux", "wheel_slip_lr_lateral"),
-            ("aux", "wheel_slip_rr_forward"), ("aux", "wheel_slip_rr_lateral"),
-            ("aux", "curvature_05m"), ("aux", "curvature_10m"), ("aux", "curvature_20m"),
-        ]
+        out_keys=[("aux", name) for name in AUX_NAMES]
     )
 
     actor_tensordict_model = TensorDictModule(
