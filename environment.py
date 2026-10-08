@@ -21,6 +21,7 @@ class RoboRacerEnv(TransformedEnv):
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK_SIZE = LIDAR_NUM_TAGS + 2
+    VECTOR_SENSOR_SIZE = 31
 
     def __init__(
         self,
@@ -58,7 +59,11 @@ class RoboRacerEnv(TransformedEnv):
                         ("agents", agent_name, key)
                         for agent_name in agent_names],
                     out_key=("agents", key), dim=-2, del_keys=True
-                ) for key in ["lidar", "VectorSensor_size23", "done", "terminated", "truncated"]],
+                ) for key in ["lidar", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}", "done", "terminated", "truncated"]],
+                RenameTransform(
+                    in_keys=[("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
+                    out_keys=[("agents", "vector")]
+                ),
 
                 UnaryTransform(
                     fn=lambda lidar: torch.unflatten(
@@ -81,6 +86,45 @@ class RoboRacerEnv(TransformedEnv):
                     done_key=("agents", "done"),
                     reset_key=("agents", "done")
                 ),
+                SplitVector(
+                    layout=[
+                        (("agents", "steering_angle"), torch.Size([1])),
+                        (("agents", "throttle"), torch.Size([1])),
+                        (("agents", "velocity_forward"), torch.Size([1])),
+                        (("agents", "velocity_lateral"), torch.Size([1])),
+                        (("agents", "linear_acceleration_forward"),
+                         torch.Size([1])),
+                        (("agents", "linear_acceleration_lateral"),
+                         torch.Size([1])),
+                        (("agents", "angular_velocity_y"), torch.Size([1])),
+                        *[(("agents", f"track_curvature_{i}"), torch.Size([1])) for i in [
+                            "0_25",
+                            "0_50",
+                            "0_75",
+                            "1_00",
+                            "1_25",
+                            "1_50",
+                            "1_75",
+                            "2_00",
+                            "2_25",
+                            "2_50",
+                            "2_75",
+                            "3_00",
+                            "3_25",
+                            "3_50",
+                            "3_75",
+                            "4_00"
+                        ]],
+                        *[
+                            (("agents", f"wheel_slip_{direction}_{wheel}"), torch.Size(
+                                [1]))
+                            for wheel in ["front_left", "front_right", "back_left", "back_right"]
+                            for direction in ["forward", "lateral"]
+                        ]
+                    ],
+                    in_key=("agents", "vector"),
+                    delete_vector=True
+                ),
                 StackAction(
                     in_keys=[("agents", a, "continuous_action")
                              for a in agent_names],
@@ -93,6 +137,44 @@ class RoboRacerEnv(TransformedEnv):
                             [("actions", "throttle"), ("actions", "steering")]),
             )
         )
+
+
+class SplitVector(Transform):
+    def __init__(self, layout: list[tuple[td.NestedKey, torch.Size]], in_key: td.NestedKey, delete_vector: bool = False):
+        super().__init__(in_keys=[in_key], out_keys=[key for key, _ in layout])
+        self.layout = layout
+        self.delete_vector = delete_vector
+        self.in_key = in_key
+
+    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
+        offset = 0
+        vector = tensordict[self.in_key]
+        for key, shape in self.layout:
+            # find length of block
+            end = offset + reduce(lambda x, y: x * y, shape)
+            data = vector[..., offset:end]
+            if len(shape) > 1:
+                data = data.reshape(*data.shape[:-1], *shape)
+            tensordict.set(key, data)
+            offset = end
+        if self.delete_vector:
+            del tensordict[self.in_key]
+        return tensordict
+
+    def _reset(self, tensordict: td.TensorDict, tensordict_reset: td.TensorDict) -> td.TensorDict:
+        return self._call(tensordict_reset)
+
+    def transform_observation_spec(self, observation_spec):
+        vector_spec = observation_spec[self.in_key]
+        batch = vector_spec.shape[:-1]
+        if self.delete_vector:
+            del observation_spec[self.in_key]
+        observation_spec.update({
+            key: UnboundedContinuous(
+                shape=(*batch, *shape), dtype=vector_spec.dtype, device=vector_spec.device)
+            for key, shape in self.layout
+        })
+        return observation_spec
 
 
 class SplitAction(Transform):
