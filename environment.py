@@ -6,9 +6,6 @@ from torchrl.data import Bounded, Unbounded, UnboundedContinuous
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
-from tensordict import is_tensor_collection
-import platform
-import random
 
 
 class RoboRacerEnv(TransformedEnv):
@@ -33,6 +30,7 @@ class RoboRacerEnv(TransformedEnv):
         time_scale=100.0,
         num_areas=10,
         seed=0,
+        worker_id=0
     ):
 
         engine_configuration_channel = EngineConfigurationChannel()
@@ -46,6 +44,7 @@ class RoboRacerEnv(TransformedEnv):
                 engine_configuration_channel
             ],
             no_graphics=no_graphics,
+            worker_id=worker_id,
             num_areas=num_areas,
             seed=seed,
             group_map=MarlGroupMapType.ALL_IN_ONE_GROUP
@@ -110,6 +109,12 @@ class SplitAction(Transform):
         for i, key in enumerate(self.split_keys):
             action_spec[key] = spec[..., i:i + 1]
         del action_spec[self.in_key]
+        # Deleting the only leaf leaves an empty group behind, which ParallelEnv
+        # rejects when it validates the sub-env specs.
+        parent_key = self.in_key[:-1]
+        while parent_key and action_spec[parent_key].is_empty():
+            del action_spec[parent_key]
+            parent_key = parent_key[:-1]
         return input_spec
 
     def _inv_call(self, tensordict):
@@ -155,7 +160,7 @@ class CatFramesResetOnDone(CatFrames):
         return next_tensordict
 
 
-class RoboRacerEnvs(ParallelEnv):
+class RoboRacerParallelEnvs(ParallelEnv):
     """Parallel wrapper for multiple RoboRacer environments.
 
     Args:
@@ -179,13 +184,15 @@ class RoboRacerEnvs(ParallelEnv):
         seed=0,
     ):
         super().__init__(
-            num_envs=num_envs,
-            create_env_fn=lambda rank: RoboRacerEnv(
-                file_name=file_name,
-                num_stacked_frames=num_stacked_frames,
-                no_graphics=no_graphics,
-                time_scale=time_scale,
-                num_areas=num_areas,
-                seed=seed + rank
-            )
+            num_envs,
+            RoboRacerEnv,
+            create_env_kwargs=[{
+                "file_name": file_name,
+                "num_stacked_frames": num_stacked_frames,
+                "no_graphics": no_graphics,
+                "time_scale": time_scale,
+                "num_areas": num_areas,
+                "seed": seed,
+                "worker_id": worker_id
+            } for worker_id in range(num_envs)],
         )
