@@ -12,6 +12,9 @@
 #let rule-colour = rgb("#DCDCDC") // rule below the running header
 #let link-colour = rgb("#666666") // gray!80!black for cites and URLs
 
+#let argmax = $op("arg max", limits: #true)$
+#let argmin = $op("arg min", limits: #true)$
+
 
 // Only reference equations that are actually referenced in the text
 #set math.equation(numbering: "(1)")
@@ -109,6 +112,11 @@
       #it.body
     ]
   ]
+}
+
+#let todo = it => {
+  set text(size: 12pt, weight: "regular", fill: rgb("#FF0000"))
+  text([\[#it\]])
 }
 #show heading.where(level: 2): stb-heading(17pt, 1.8em, 1em)
 #show heading.where(level: 3): stb-heading(14pt, 1.6em, 0.8em)
@@ -352,8 +360,13 @@ $
   Q_pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
 represents the expected discounted return the agent can achieve starting from state $s$, taking action $a$, and following policy $pi$ thereafter.
+The advantage function,
+$
+  A_pi (s, a) = Q_pi (s, a) - V_pi (s)
+$ <advantage_function>
+measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state.
 
-These value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
+These state-value and action-value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
 
 $
   V_pi (s) = EE_pi [R_{t+1} + gamma V_pi (S_{t+1}) | S_t = s]
@@ -381,18 +394,29 @@ Reinforcement learning is a subfield of machine learning, where a policy $pi_the
 
 RL is distinct from supervised learning in that during training, the optimal or correct action is not known - the agent must explore the environment and learn from the consequences of its actions. It is also distinct from classical unsupervised learning methods in that there is a clear objective (maximising expected return) and feedback (rewards) to guide the learning process.
 
-There exist two primary classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as they are more suitable for continuous action spaces and can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
+There exist two broad classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily in stats $s$, choosing action $a = argmax_(a in cal(A)) hat(Q)(s, a)$). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as value-based methods are less suitable for continuous action spaces @lillicrap2015continuous and policy-based methods can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
 
 == Policy gradient methods
 
-Policy gradient methods are a class of RL algorithms that learn a parameterised policy $pi_theta$ directly by optimising the expected return $EE[G_t]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, a_0, r_0, s_1, a_1, r_1, dots, s_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory under the policy $pi_theta$, the expected return must be maximised with respect to the policy parameters $theta$:
+Policy gradient methods are a class of RL algorithms that learn a parameterised policy $pi_theta$ directly by optimising the expected return $EE[G_t]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, a_0, r_0, s_1, a_1, r_1, dots, s_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, the expected return must be maximised with respect to the policy parameters $theta$:
 $
-  J(theta) = EE_(tau~pi_theta) [G_0] = EE_(tau~pi_theta) [sum_(t=0)^T gamma^t r_t]
+  J(theta) = EE_(tau tilde p_theta) [G_0]
+  = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
+  = integral p_theta (tau) G(tau) dif tau
 $
 
-Using the _log-derivative_ trick, the gradient of the expected return with respect to the policy parameters $theta$ can be calculated as follows:
+Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable, and the integral is finite.]),
+the gradient of the expected return with respect to $theta$ is
+$
+  nabla_theta J(theta)
+  = nabla_theta integral p_theta (tau) G(tau) dif tau
+  = integral nabla_theta p_theta (tau) G(tau) dif tau
+  = integral p_theta (tau) nabla_theta log p_theta (tau) G(tau) dif tau
+  #linebreak()
+  = EE_(tau tilde p_theta) [nabla_theta log p_theta (tau) G(tau)]
+$
 
-$$
+Estimating the policy gradient from sampled trajectories, and using gradient descent to optimise the policy parameters $theta$, is the basis of policy gradient methods. The REINFORCE algorithm is one of the simplest policy gradient methods, and is described in the next section.
 
 
 === REINFORCE
@@ -406,15 +430,30 @@ $
 where $T$ is the length of the trajectory, $G_T$ is the observed discounted return from time step $t$, and $pi_theta (a_t | o_t)$ is the probability of taking action $a_t$ given observation $o_t$ under the current policy parameters $theta$. Intuitively, minimising the loss function encourages the policy to increase the probability of actions that lead to higher returns, and decrease the probability of actions that lead to lower discounted returns.
 
 === Proximal Policy Optimization (PPO)
-PPO is a modern algorithm for policy learning introduced in \_\_\_ at ICML by \_\_\_. It is a more advanced policy gradient method than REINFORCE. It improves upon REINFORCE by using a surrogate loss function which prevents large and destructive policy updates and by approximating the value function, reducing the variance of the policy gradient estimate.
+PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V_pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_ that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
 
-The model we train no longer only outputs a distribution over actions, but also an estimate of the value function $hat(V) (s_t)$ for each oberserved state $s_t$. Then, the advantage $A_t = G_t - hat(V) (s_t)$ is computed, a measure of the suprise the model experiences at time $t$ (i.e. how much better it actually was to be in state $s_t$ compared to the model's estimate).
+Recall that the advantage function is the difference between the action-value and state-value functions:
 
 $
-  L_"clipped" (theta) = 1/T sum_(t=0)^T min((pi_theta (s_t))/(pi (s_t)) dot (hat(A)_t))
+  A^pi (s, a) = Q^pi (s, a) - V^pi (s),
 $
+
+where $V^pi (s) = EE_(a tilde pi)[Q^pi (s, a)]$ is the expected return of the
+policy from state $s$. The advantage therefore measures how much better
+(positive) or worse (negative) an action is than the policy's average action
+in that state. In training, $hat(A)_t$ is computed from observed rewards and
+the learned $V_phi$, for example with Generalized Advantage Estimation.
+
 
 == Auxiliary learning in RL
+
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_pi_theta [G_t]$. Auxiliary learning is the practice of augmenting the primary task with additional _auxiliary tasks_ that are related to the primary task, and for which additional learning signals can be obtained. The auxiliary tasks may be supervised or unsupervised, and may involve predicting future states, rewards, or other quantities of interest.
+
+Auxiliary learning builds on multi-task learning principles described in @caruana1997multitask. In some cases, it has been shown to improve generalization by using the training signals of related tasks as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]): by learning to solve related tasks, the model is encouraged to learn representations that are useful for the primary task.
+
+Previous work has shown that auxiliary learning can improve sample efficiency in supervised learning contexts #todo([citation needed]), and in reinforcement-learning contexts @jaderberg2017unreal, especially when the reward signal is sparse or delayed.
+
+We shall discuss two formulations of auxiliary learning in RL: (1) auxiliary loss functions, and (2) auxiliary rewards. Some other formulations such as UNsupervised REinforcement and Auxiliary Learning (UNREAL) @jaderberg2017unreal, which uses unsupervised auxiliary tasks to improve representation learning, may seem different, but can be formulated in formulation (1).
 
 === 1st formulation (auxiliary loss)
 Auxiliary learning is the practice of augmenting the loss function with heads for auxiliary tasks. For example, the model may be trained to simultaneously (a) produce a distribution over actions, and (b) estimate estimate the state $S_t$ which is partially observed in its observation $O_t$. Auxiliary learning has been empirically shown to improve sample efficiency in "complex enough" environments, and in certain situations, average reward too.
@@ -501,7 +540,7 @@ $
   L_"total" = sum_(i=1)^N L_i = sum_(i=1)^N (1/(2 sigma_i^2) ||y_i - f_i (x)||^2 + log sigma_i)
 $
 
-Of course, in reality, the tasks are not independent, but this method has been shown to work well in practice. The log-variance $log sigma_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term. 
+Of course, in reality, the tasks are not independent, but this method has been shown to work well in practice. The log-variance $log sigma_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
 
 
@@ -739,6 +778,14 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 == F1Tenth Gym
 
 == AutoDrive, Unity, and MLAgents
+#figure(
+  columns(2)[
+    #image("figures/autodrive_isometric_birds_eye.png")
+    #colbreak()
+    #image("figures/autodrive_isometric_close_up.png")
+  ],
+  caption: "AutoDrive-insired Unity environment, showing the RoboRacer vehicle, its LIDAR rays, and forward track prediction sampling points.",
+)
 
 == Track generation
 

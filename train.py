@@ -1,12 +1,10 @@
-from collections import defaultdict
 from typing import Literal
 
 from torch.utils.tensorboard import SummaryWriter
 import time
 from model import ActorValueAuxOperator, make_model
-from environment import make_envs
+from environment import RoboRacerParallelEnvs
 from stats import rollout_stats
-from torchrl.modules import ActorValueOperator
 import tensordict as td
 from torchrl.objectives.value import GAE
 from torchrl.objectives import ClipPPOLoss
@@ -15,6 +13,7 @@ from torchrl.envs import set_exploration_type
 from torch.nn.functional import smooth_l1_loss
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import os
+import platform
 import random
 import torch
 import itertools
@@ -35,18 +34,6 @@ AUX_TARGET_COLUMNS = dict(
     wheel_slip_rear_forward=["wheel_slip_rl_forward", "wheel_slip_rr_forward"],
     wheel_slip_rear_lateral=["wheel_slip_rl_sideways", "wheel_slip_rr_sideways"],
 )
-
-
-def compute_aux_loss_scale(csv_path: str = "rollout_data.csv") -> dict[str, float]:
-    df = pd.read_csv(csv_path)
-    return {
-        name: 1.0 / pd.concat([df[column] for column in columns], ignore_index=True).var()
-        for name, columns in AUX_TARGET_COLUMNS.items()
-    }
-
-
-AUX_LOSS_SCALE = compute_aux_loss_scale()
-
 
 def train(
         env,
@@ -81,20 +68,20 @@ def train(
     torch.manual_seed(seed)
 
     aux_weights = {
-        "velocity_forward": velocity_forward_weight * AUX_LOSS_SCALE["velocity_forward"],
-        "velocity_lateral": velocity_lateral_weight * AUX_LOSS_SCALE["velocity_lateral"],
-        "curvature_05m": curvature_05m_weight * AUX_LOSS_SCALE["curvature_05m"],
-        "curvature_10m": curvature_10m_weight * AUX_LOSS_SCALE["curvature_10m"],
-        "curvature_20m": curvature_20m_weight * AUX_LOSS_SCALE["curvature_20m"],
-        "wheel_slip_lf_forward": wheel_slip_front_forward_weight * AUX_LOSS_SCALE["wheel_slip_front_forward"],
-        "wheel_slip_rf_forward": wheel_slip_front_forward_weight * AUX_LOSS_SCALE["wheel_slip_front_forward"],
-        "wheel_slip_lf_lateral": wheel_slip_front_lateral_weight * AUX_LOSS_SCALE["wheel_slip_front_lateral"],
-        "wheel_slip_rf_lateral": wheel_slip_front_lateral_weight * AUX_LOSS_SCALE["wheel_slip_front_lateral"],
-        "wheel_slip_lr_forward": wheel_slip_rear_forward_weight * AUX_LOSS_SCALE["wheel_slip_rear_forward"],
-        "wheel_slip_rr_forward": wheel_slip_rear_forward_weight * AUX_LOSS_SCALE["wheel_slip_rear_forward"],
-        "wheel_slip_lr_lateral": wheel_slip_rear_lateral_weight * AUX_LOSS_SCALE["wheel_slip_rear_lateral"],
-        "wheel_slip_rr_lateral": wheel_slip_rear_lateral_weight * AUX_LOSS_SCALE["wheel_slip_rear_lateral"],
-        "angular_velocity_y": angular_velocity_y_weight * AUX_LOSS_SCALE["angular_velocity_y"],
+        "velocity_forward": velocity_forward_weight,
+        "velocity_lateral": velocity_lateral_weight,
+        "curvature_05m": curvature_05m_weight,
+        "curvature_10m": curvature_10m_weight,
+        "curvature_20m": curvature_20m_weight,
+        "wheel_slip_lf_forward": wheel_slip_front_forward_weight,
+        "wheel_slip_rf_forward": wheel_slip_front_forward_weight,
+        "wheel_slip_lf_lateral": wheel_slip_front_lateral_weight,
+        "wheel_slip_rf_lateral": wheel_slip_front_lateral_weight,
+        "wheel_slip_lr_forward": wheel_slip_rear_forward_weight,
+        "wheel_slip_rr_forward": wheel_slip_rear_forward_weight,
+        "wheel_slip_lr_lateral": wheel_slip_rear_lateral_weight,
+        "wheel_slip_rr_lateral": wheel_slip_rear_lateral_weight,
+        "angular_velocity_y": angular_velocity_y_weight,
     }
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
@@ -235,27 +222,27 @@ def train(
                         velocity_lateral=smooth_l1_loss(
                             minibatch["aux", "velocity_lateral"], minibatch["agents", "velocity_lateral"]),
                         curvature_05m=smooth_l1_loss(
-                            minibatch["aux", "curvature_05m"], minibatch["agents", "curvature_05m"]),
+                            minibatch["aux", "curvature_05m"], minibatch["agents", "track_curvature_0_50"]),
                         curvature_10m=smooth_l1_loss(
-                            minibatch["aux", "curvature_10m"], minibatch["agents", "curvature_10m"]),
+                            minibatch["aux", "curvature_10m"], minibatch["agents", "track_curvature_1_00"]),
                         curvature_20m=smooth_l1_loss(
-                            minibatch["aux", "curvature_20m"], minibatch["agents", "curvature_20m"]),
+                            minibatch["aux", "curvature_20m"], minibatch["agents", "track_curvature_2_00"]),
                         wheel_slip_lf_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lf_forward"], minibatch["agents", "wheel_slip_lf_forward"]),
+                            minibatch["aux", "wheel_slip_lf_forward"], minibatch["agents", "wheel_slip_forward_front_left"]),
                         wheel_slip_lf_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lf_lateral"], minibatch["agents", "wheel_slip_lf_lateral"]),
+                            minibatch["aux", "wheel_slip_lf_lateral"], minibatch["agents", "wheel_slip_lateral_front_left"]),
                         wheel_slip_lr_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lr_forward"], minibatch["agents", "wheel_slip_lr_forward"]),
+                            minibatch["aux", "wheel_slip_lr_forward"], minibatch["agents", "wheel_slip_forward_back_left"]),
                         wheel_slip_lr_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lr_lateral"], minibatch["agents", "wheel_slip_lr_lateral"]),
+                            minibatch["aux", "wheel_slip_lr_lateral"], minibatch["agents", "wheel_slip_lateral_back_left"]),
                         wheel_slip_rf_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rf_forward"], minibatch["agents", "wheel_slip_rf_forward"]),
+                            minibatch["aux", "wheel_slip_rf_forward"], minibatch["agents", "wheel_slip_forward_front_right"]),
                         wheel_slip_rf_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rf_lateral"], minibatch["agents", "wheel_slip_rf_lateral"]),
+                            minibatch["aux", "wheel_slip_rf_lateral"], minibatch["agents", "wheel_slip_lateral_front_right"]),
                         wheel_slip_rr_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rr_forward"], minibatch["agents", "wheel_slip_rr_forward"]),
+                            minibatch["aux", "wheel_slip_rr_forward"], minibatch["agents", "wheel_slip_forward_back_right"]),
                         wheel_slip_rr_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rr_lateral"], minibatch["agents", "wheel_slip_rr_lateral"]),
+                            minibatch["aux", "wheel_slip_rr_lateral"], minibatch["agents", "wheel_slip_lateral_back_right"]),
                         angular_velocity_y=smooth_l1_loss(
                             minibatch["aux", "angular_velocity_y"], minibatch["agents", "angular_velocity_y"])
                     ))
@@ -377,30 +364,33 @@ def train(
 
 if __name__ == "__main__":
     SEED = 42
-    env = make_envs(
-        num_envs=8,
-        num_agents_per_env=6,
+    is_mac = platform.system() == "Darwin"
+    env = RoboRacerParallelEnvs(
+        num_envs=2,
+        file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/build_linux.x86_64",
         num_stacked_frames=50,
-        time_scale=20.0,
+        no_graphics=True,
+        num_areas=4,
+        time_scale=100.0,
         seed=SEED,
     )
     train(
         env,
-        velocity_forward_weight=0.007,
-        velocity_lateral_weight=0.007,
-        curvature_05m_weight=0.007,
-        curvature_10m_weight=0.007,
-        curvature_20m_weight=0.007,
-        wheel_slip_front_forward_weight=0.007,
-        wheel_slip_front_lateral_weight=0.007,
-        wheel_slip_rear_forward_weight=0.007,
-        wheel_slip_rear_lateral_weight=0.007,
-        angular_velocity_y_weight=0.007,
-        num_stacked_lidar_frames=50,  # 25Hz
+        velocity_forward_weight=0.0,
+        velocity_lateral_weight=0.0,
+        curvature_05m_weight=0.0,
+        curvature_10m_weight=0.0,
+        curvature_20m_weight=0.0,
+        wheel_slip_front_forward_weight=0.0,
+        wheel_slip_front_lateral_weight=0.0,
+        wheel_slip_rear_forward_weight=0.0,
+        wheel_slip_rear_lateral_weight=0.0,
+        angular_velocity_y_weight=0.0,
+        num_stacked_lidar_frames=50,  # 25Hz => 2s of history
         n_rays=101,
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="007_all_weights",
+        name="conv1d",
         seed=SEED,
     )

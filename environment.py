@@ -17,11 +17,21 @@ class RoboRacerEnv(TransformedEnv):
         no_graphics (bool, optional): Whether to run the environment in no-graphics mode. Defaults to True.
         num_areas (int, optional): Number of areas in the environment. Defaults to 10.
         seed (int, optional): Random seed for the environment. Defaults to 0.
+        progress_weight (float, optional): Reward per metre of centerline progress. Defaults to 1.0.
+        forward_velocity_weight (float, optional): Reward per m/s of forward velocity. Defaults to 0.0.
+        step_penalty (float, optional): Fixed cost charged every step. Defaults to 0.0.
+        collision_penalty (float, optional): Cost charged on the step a car crashes. Defaults to 1.0.
     """
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK_SIZE = LIDAR_NUM_TAGS + 2
-    VECTOR_SENSOR_SIZE = 31
+    VECTOR_SENSOR_SIZE = 32
+
+    # Arc length distances ahead of the car, in metres, at which the centerline's
+    # signed curvature is observed: 0.5 m to 8 m in 0.5 m steps. Mirrors Car.cs's
+    # curvatureLookaheadDistances as serialized on the Car prefab -- the vector is
+    # split positionally, so this has to match it in both order and length.
+    CURVATURE_LOOKAHEAD_DISTANCES = [0.5 * i for i in range(1, 17)]
 
     def __init__(
         self,
@@ -31,6 +41,10 @@ class RoboRacerEnv(TransformedEnv):
         time_scale=100.0,
         num_areas=10,
         seed=0,
+        progress_weight=1.0,
+        forward_velocity_weight=0.0,
+        step_penalty=0.0,
+        collision_penalty=1.0,
         worker_id=0
     ):
 
@@ -60,6 +74,20 @@ class RoboRacerEnv(TransformedEnv):
                         for agent_name in agent_names],
                     out_key=("agents", key), dim=-2, del_keys=True
                 ) for key in ["lidar", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}", "done", "terminated", "truncated"]],
+                # Never read. Has to be dropped *before* the reward is stacked, not
+                # after: Stack(del_keys=True) prunes a per-agent subdict once it takes
+                # the last key out of it, but ExcludeTransform leaves the empty subdict
+                # behind -- and ParallelEnv rejects a sub-env whose specs contain one.
+                ExcludeTransform(
+                    *[("agents", agent_name, "group_reward")
+                      for agent_name in agent_names]
+                ),
+                # Unity's own reward is only used as the crash signal (see ComposeReward)
+                StackIfPresent(
+                    in_keys=[("agents", agent_name, "reward")
+                             for agent_name in agent_names],
+                    out_key=("agents", "unity_reward"), dim=-2, del_keys=True
+                ),
                 RenameTransform(
                     in_keys=[("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
                     out_keys=[("agents", "vector")]
@@ -97,34 +125,32 @@ class RoboRacerEnv(TransformedEnv):
                         (("agents", "linear_acceleration_lateral"),
                          torch.Size([1])),
                         (("agents", "angular_velocity_y"), torch.Size([1])),
-                        *[(("agents", f"track_curvature_{i}"), torch.Size([1])) for i in [
-                            "0_25",
-                            "0_50",
-                            "0_75",
-                            "1_00",
-                            "1_25",
-                            "1_50",
-                            "1_75",
-                            "2_00",
-                            "2_25",
-                            "2_50",
-                            "2_75",
-                            "3_00",
-                            "3_25",
-                            "3_50",
-                            "3_75",
-                            "4_00"
-                        ]],
+                        *[(("agents", f"track_curvature_{metres:.2f}".replace(".", "_")),
+                           torch.Size([1]))
+                          for metres in self.CURVATURE_LOOKAHEAD_DISTANCES],
                         *[
                             (("agents", f"wheel_slip_{direction}_{wheel}"), torch.Size(
                                 [1]))
                             for wheel in ["front_left", "front_right", "back_left", "back_right"]
                             for direction in ["forward", "lateral"]
-                        ]
+                        ],
+                        # Centerline metres covered since the last decision, drained per
+                        # decision step by Car.cs. Must stay last here: SplitVector is
+                        # positional, so this order has to match Car.CollectObservations'
+                        # AddObservation order, where it is the final entry.
+                        (("agents", "progress"), torch.Size([1])),
                     ],
                     in_key=("agents", "vector"),
                     delete_vector=True
                 ),
+                # Needs progress and velocity_forward, so it has to follow SplitVector
+                ComposeReward(
+                    progress_weight=progress_weight,
+                    forward_velocity_weight=forward_velocity_weight,
+                    step_penalty=step_penalty,
+                    collision_penalty=collision_penalty
+                ),
+                ExcludeTransform(("agents", "unity_reward")),
                 StackAction(
                     in_keys=[("agents", a, "continuous_action")
                              for a in agent_names],
@@ -134,7 +160,7 @@ class RoboRacerEnv(TransformedEnv):
                                   for a in agent_names],
                     dim=-2),
                 SplitAction(("agents", "continuous_action"),
-                            [("actions", "throttle"), ("actions", "steering")]),
+                            [("action", "throttle"), ("action", "steering")]),
             )
         )
 
@@ -175,6 +201,66 @@ class SplitVector(Transform):
             for key, shape in self.layout
         })
         return observation_spec
+
+
+class ComposeReward(Transform):
+    """Shaped per-agent reward. A car has crashed when Unity's own reward for it is negative."""
+
+    def __init__(
+            self,
+            progress_weight: float,
+            forward_velocity_weight: float,
+            step_penalty: float,
+            collision_penalty: float):
+        super().__init__(
+            in_keys=[
+                ("agents", "velocity_forward"),
+                ("agents", "progress"),
+                ("agents", "unity_reward"),
+            ],
+            out_keys=[("agents", "reward")],
+        )
+        self.progress_weight = progress_weight
+        self.forward_velocity_weight = forward_velocity_weight
+        self.step_penalty = step_penalty
+        self.collision_penalty = collision_penalty
+
+    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
+        forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
+        progress_delta = tensordict["agents", "progress"].squeeze(-1)
+        crashed = (
+            tensordict["agents", "unity_reward"].squeeze(-1) < 0).float()
+        # Progress is dropped on the crash step: the distance covered while sliding
+        # into a wall shouldn't be paid for.
+        progress_reward = progress_delta * \
+            self.progress_weight * (1.0 - crashed)
+        forward_velocity_reward = forward_velocity * self.forward_velocity_weight
+        step_penalty = torch.full((), -self.step_penalty)
+        collision_penalty = -self.collision_penalty * crashed
+        shaped = progress_reward + forward_velocity_reward + \
+            step_penalty + collision_penalty
+        tensordict["agents", "reward"] = shaped.unsqueeze(-1)
+        return tensordict
+
+    def transform_output_spec(self, output_spec):
+        output_spec = output_spec.clone()
+        obs = output_spec["full_observation_spec",
+                          "agents", "velocity_forward"]
+        output_spec["full_reward_spec", "agents", "reward"] = Unbounded(
+            shape=(*obs.shape[:-1], 1), dtype=torch.float32, device=obs.device)
+        return output_spec
+
+
+class StackIfPresent(Stack):
+    """Stack that leaves the reset output alone when none of its keys are there.
+
+    Unity's reset output has no reward, and a plain Stack would call torch.stack([]) on it.
+    """
+
+    def _reset(self, tensordict, tensordict_reset):
+        if all(tensordict_reset.get(key, None) is None for key in self.in_keys):
+            return tensordict_reset
+        return super()._reset(tensordict, tensordict_reset)
 
 
 class SplitAction(Transform):
@@ -253,6 +339,10 @@ class RoboRacerParallelEnvs(ParallelEnv):
         time_scale (float, optional): Time scale for the Unity environment. Defaults to 100.0.
         num_areas (int, optional): Number of areas in each environment. Defaults to 10.
         seed (int, optional): Random seed for the environments. Defaults to 0.
+        progress_weight (float, optional): Reward per metre of centerline progress. Defaults to 1.0.
+        forward_velocity_weight (float, optional): Reward per m/s of forward velocity. Defaults to 0.0.
+        step_penalty (float, optional): Fixed cost charged every step. Defaults to 0.0.
+        collision_penalty (float, optional): Cost charged on the step a car crashes. Defaults to 1.0.
     """
 
     def __init__(
@@ -264,6 +354,10 @@ class RoboRacerParallelEnvs(ParallelEnv):
         time_scale=100.0,
         num_areas=10,
         seed=0,
+        progress_weight=1.0,
+        forward_velocity_weight=0.0,
+        step_penalty=0.0,
+        collision_penalty=1.0,
     ):
         super().__init__(
             num_envs,
@@ -275,6 +369,10 @@ class RoboRacerParallelEnvs(ParallelEnv):
                 "time_scale": time_scale,
                 "num_areas": num_areas,
                 "seed": seed,
+                "progress_weight": progress_weight,
+                "forward_velocity_weight": forward_velocity_weight,
+                "step_penalty": step_penalty,
+                "collision_penalty": collision_penalty,
                 "worker_id": worker_id
             } for worker_id in range(num_envs)],
         )

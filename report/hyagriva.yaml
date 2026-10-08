@@ -307,5 +307,75 @@ li2020asha:
     title: Proceedings of Machine Learning and Systems
     volume: 2
 
+caruana1997multitask:
+  type: Article
+  title: Multitask Learning
+  author: ["Caruana, Rich"]
+  date: 1997-07
+  page-range: 41-75
+  parent:
+    type: Periodical
+    title: Machine Learning
+    volume: 28
+  serial-number:
+    doi: "10.1023/A:1007379606734"
+  url: https://doi.org/10.1023/A:1007379606734
+
+hullermeier2013inductive:
+  type: Chapter
+  title: Inductive Bias
+  author:
+    - "Hüllermeier, Eyke"
+    - "Fober, Thomas"
+    - "Mernberger, Marco"
+  date: 2013
+  page-range: 1018
+  parent:
+    type: Book
+    title: Encyclopedia of Systems Biology
+    editor:
+      - "Dubitzky, Werner"
+      - "Wolkenhauer, Olaf"
+      - "Cho, Kwang-Hyun"
+      - "Yokota, Hiroki"
+  publisher:
+    name: Springer
+    location: New York, NY
+  serial-number:
+    doi: "10.1007/978-1-4419-9863-7_927"
+    isbn: "978-1-4419-9863-7"
+  url: https://doi.org/10.1007/978-1-4419-9863-7_927
+
+
+schulman2017ppo:
+  type: Misc
+  title: Proximal Policy Optimization Algorithms
+  author:
+    - "Schulman, John"
+    - "Wolski, Filip"
+    - "Dhariwal, Prafulla"
+    - "Radford, Alec"
+    - "Klimov, Oleg"
+  date: 2017
+  serial-number:
+    arxiv: "1707.06347"
+  archive: arXiv
+  url: https://arxiv.org/abs/1707.06347
+
+lillicrap2015continuous:
+  type: Article
+  title: Continuous control with deep reinforcement learning
+  author:
+    - Lillicrap, Timothy P.
+    - Hunt, Jonathan J.
+    - Pritzel, Alexander
+    - Heess, Nicolas
+    - Erez, Tom
+    - Tassa, Yuval
+    - Silver, David
+    - Wierstra, Daan
+  date: 2015-09
+  url: https://ar5iv.arxiv.org/html/1509.02971
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses

@@ -88,7 +88,7 @@ class TrunkModel(torch.nn.Module):
             torch.nn.LayerNorm(64)
         )
 
-    def forward(self, lidar: torch.Tensor, cur_steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
+    def forward(self, lidar: torch.Tensor, steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
         # lidar is (..., n_stacked_frames, L) of distances (see StackLidar)
         *batch_shape, n_frames, n_tags, n_rays = lidar.shape
         if n_frames != self.num_stacked_lidar_frames:
@@ -124,7 +124,7 @@ class TrunkModel(torch.nn.Module):
 
         # only prev steering, throttle in input
         dense_input = torch.cat(
-            [lidar_cnn_output_flat, cur_steering_angle, cur_throttle], dim=-1)
+            [lidar_cnn_output_flat, steering_angle, cur_throttle], dim=-1)
         dense_output: torch.Tensor = self.dense(dense_input)
 
         return dense_output, lidar_cnn_output
@@ -140,8 +140,13 @@ class ActionModel(torch.nn.Module):
 
         out = self.head(hidden_layer)
 
-        throttle_loc, throttle_scale, steering_loc, steering_scale = out.unbind(
-            -1)
+        # Keep the trailing singleton: the action spec is (..., 1) per component
+        # (SplitAction slices the (..., 2) continuous action), and unbind would
+        # drop it, so the sampled action no longer fits the env's action buffer.
+        throttle_loc = out[..., 0:1]
+        throttle_scale = out[..., 1:2]
+        steering_loc = out[..., 2:3]
+        steering_scale = out[..., 3:4]
 
         throttle_scale = (torch.nn.functional.softplus(
             throttle_scale) + 1e-3) / 2.0
@@ -264,8 +269,8 @@ def make_model(
             time_stride=time_stride,
             time_kernel=time_kernel,
         ),
-        in_keys=[("agents", "stacked_lidar"), ("agents", "cur_steering_angle"),
-                 ("agents", "cur_throttle")],
+        in_keys=[("agents", "stacked_lidar"), ("agents", "steering_angle"),
+                 ("agents", "throttle")],
         out_keys=["hidden_layer", "lidar_cnn_output"]
     )
 
