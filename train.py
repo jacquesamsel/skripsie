@@ -140,7 +140,7 @@ def train(
         lmbda=lmbda,
         value_network=model.get_value_operator(),
         average_gae=True,
-        deactivate_vmap=False,
+        vectorized=True,
         time_dim=0,  # the rollout is stacked along the first dimension, so time_dim=0
     )
     gae.set_keys(
@@ -273,7 +273,7 @@ def train(
                     total_loss = (ppo_loss + aux_loss).mean()
                     total_loss.backward()
                     grad_norm = torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), 1.0).item()
+                        model.parameters(), 3.0).item()
                     optim.step()
 
                     # log the stuff

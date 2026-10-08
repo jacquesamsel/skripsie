@@ -39,7 +39,7 @@ class RoboRacerEnv(TransformedEnv):
 
     def __init__(
         self,
-        file_name: str,
+        file_name: str | None,
         num_stacked_frames: int,
         no_graphics=True,
         time_scale=100.0,
@@ -445,7 +445,7 @@ class RoboRacerParallelEnvs(ParallelEnv):
                 "no_graphics": no_graphics,
                 "time_scale": time_scale,
                 "num_areas": num_areas,
-                "seed": seed,
+                "seed": seed + worker_id,
                 "progress_weight": progress_weight,
                 "forward_velocity_weight": forward_velocity_weight,
                 "step_penalty": step_penalty,
