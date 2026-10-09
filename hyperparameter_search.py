@@ -1,45 +1,45 @@
 import optuna
+from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
 
-
-def generate_grid(
-    params: dict[str, list[float]]
-):
-    """Generates a grid of hyperparameter combinations from the given parameter ranges.
-
-    Args:
-        params (dict[str, list[float]]): A dictionary where keys are hyperparameter names and values are lists of possible values.
-
-    Returns:
-        list[dict[str, float]]: A list of dictionaries, each representing a unique combination of hyperparameters.
-    """
-    from itertools import product
-
-    keys = params.keys()
-    values = params.values()
-    grid = [dict(zip(keys, combination)) for combination in product(*values)]
-    return grid
-
-def generate_single_try_per_parameter():
-
-
-#def objective(trial: optuna.Trial):
-    # sample hyperparameters
+HYPERPARAMETER_GROUPS = [
+    ["velocity_forward"],
+    ["velocity_lateral"],
+    [
+        CURVATURE_LOOKAHEAD_KEYS[i]
+        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
+        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 3.0
+    ],
+    [
+        CURVATURE_LOOKAHEAD_KEYS[i]
+        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
+        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 6.0 and CURVATURE_LOOKAHEAD_DISTANCES[i] > 3.0
+    ],
+    [
+        CURVATURE_LOOKAHEAD_KEYS[i]
+        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
+        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 8.0 and CURVATURE_LOOKAHEAD_DISTANCES[i] > 6.0
+    ],
+    [
+        "wheel_slip_lf_forward",
+        "wheel_slip_rf_forward"
+    ],
+    [
+        "wheel_slip_lf_lateral",
+        "wheel_slip_rf_lateral"
+    ],
+    [
+        "wheel_slip_lb_forward"
+        "wheel_slip_rb_forward"
+    ],
+    [
+        "wheel_slip_lb_lateral",
+        "wheel_slip_rb_lateral"
+    ],
+    [
+        "angular_velocity_y"
+    ]
+]
 
 
 if __name__ == "__main__":
-    grid = generate_grid({
-        "velocity_forward_weight": [0.1, 0.5, 1.0],
-        "velocity_lateral_weight": [0.1, 0.5, 1.0],
-        "curvature_weights": {
-            "close": [0.1, 0.5, 1.0],
-            "medium": [0.1, 0.5, 1.0],
-            "far": [0.1, 0.5, 1.0]
-        },
-        "wheel_slip_front_forward": [0.1, 0.5, 1.0],
-        "wheel_slip_front_lateral": [0.1, 0.5, 1.0],
-        "wheel_slip_rear_forward": [0.1, 0.5, 1.0],
-        "wheel_slip_rear_lateral": [0.1, 0.5, 1.0],
-        "angular_velocity_weight": [0.1, 0.5, 1.0],
-    })
-
-    print(f"Generated {len(grid)} hyperparameter combinations.")
+    for i in range(len(HYPERPARAMETER_GROUPS)):
