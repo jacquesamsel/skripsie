@@ -5,35 +5,7 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 from torchrl.modules import ActorValueOperator, ProbabilisticActor, SafeProbabilisticTensorDictSequential, TanhNormal, ValueOperator
 import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
-from environment import CURVATURE_LOOKAHEAD_DISTANCES
-
-
-# Aux targets that aren't curvature. Order matters: this list, followed by one
-# entry per lookahead distance, is the order AuxModel's head slices its output
-# in and the order of the aux module's out_keys.
-AUX_STATE_NAMES = [
-    "velocity_forward",
-    "velocity_lateral",
-    "angular_velocity_y",  # yaw rate (angular velocity about Unity's y-axis)
-    "wheel_slip_lf_forward",
-    "wheel_slip_lf_lateral",
-    "wheel_slip_rf_forward",
-    "wheel_slip_rf_lateral",
-    "wheel_slip_lr_forward",
-    "wheel_slip_lr_lateral",
-    "wheel_slip_rr_forward",
-    "wheel_slip_rr_lateral",
-]
-
-
-def curvature_aux_name(metres: float) -> str:
-    """Aux head name for a lookahead distance: 0.5 m -> "curvature_05m"."""
-    return f"curvature_{round(metres * 10):02d}m"
-
-
-AUX_NAMES = AUX_STATE_NAMES + [curvature_aux_name(metres)
-                               for metres in CURVATURE_LOOKAHEAD_DISTANCES]
-
+from utils import AUX_HEAD_KEYS
 
 class TrunkModel(torch.nn.Module):
     def __init__(
@@ -185,13 +157,11 @@ class ActionModel(torch.nn.Module):
 class AuxModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.head = torch.nn.Linear(64, len(AUX_NAMES))
+        self.head = torch.nn.Linear(64, len(AUX_HEAD_KEYS))
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
-        # One (..., 1) prediction per name, in AUX_NAMES order -- the aux
-        # module's out_keys are built from the same list, so the two can't drift.
-        return tuple(out[..., i:i + 1] for i in range(len(AUX_NAMES)))
+        return tuple(out[..., i:i + 1] for i in range(len(AUX_HEAD_KEYS)))
 
 
 class ValueModel(torch.nn.Module):
@@ -282,7 +252,7 @@ def make_model(
     aux = TensorDictModule(
         AuxModel(),
         in_keys=["hidden_layer", "lidar_cnn_output"],
-        out_keys=[("aux", name) for name in AUX_NAMES]
+        out_keys=[("aux", name) for name in AUX_HEAD_KEYS]
     )
 
     actor_tensordict_model = TensorDictModule(
@@ -325,3 +295,10 @@ def make_model(
         critic,
         aux,
     )
+
+def load_model(path: str) -> ActorValueAuxOperator:
+    checkpoint = torch.load(path, map_location="cpu")
+    model_config = checkpoint["model_config"]
+    model = make_model(**model_config)
+    model.load_state_dict(checkpoint["model"])
+    return model, model_config
