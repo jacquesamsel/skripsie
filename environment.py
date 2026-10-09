@@ -123,7 +123,7 @@ class RoboRacerEnv(TransformedEnv):
                 # Mask the misses -> 0 length in LIDAR. This also removes the other
                 # lidar "channels", leaving one distance value per ray.
                 UnaryTransform(
-                    fn=lambda lidar: lidar[..., -1] * (lidar[..., -2] == 1.0).to(torch.float32),
+                    fn=lambda lidar: lidar[..., -1] * (lidar[..., -2] == 0.0).to(torch.float32),
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")],
                 ),
