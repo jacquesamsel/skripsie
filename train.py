@@ -274,7 +274,7 @@ def train(
                     total_loss = (ppo_loss + aux_loss).mean()
                     total_loss.backward()
                     grad_norm = torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), 3.0).item()
+                        model.parameters(), 6.0).item()
                     optim.step()
 
                     # log the stuff
@@ -391,7 +391,7 @@ def train(
 
 
 if __name__ == "__main__":
-    SEED = 42
+    SEED = 44
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
         num_envs=8,
@@ -400,6 +400,7 @@ if __name__ == "__main__":
         no_graphics=True,
         num_areas=6,
         time_scale=100.0,
+        start_worker_id=0,
         seed=SEED,
     )
     train(
@@ -418,6 +419,6 @@ if __name__ == "__main__":
         lidar_conv="conv1d",
         ray_kernel=8,
         ray_stride=1,
-        name="conv1d",
+        name="conv1d_fixed_lidar_try_2",
         seed=SEED,
     )
