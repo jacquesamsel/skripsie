@@ -58,7 +58,6 @@ def train(
     entropy_coeff = 0.0005
     frames_per_rollout = 512
     batch_size = 2048
-    minibatches_per_epoch = 4
 
     model, model_config, start_iter, optim_state_dict = make_or_load_model(
         name=name,
@@ -106,11 +105,10 @@ def train(
     aux_weights_scaling_factors = load_aux_head_scaling_factors(
         "results/aux_head_scaling_factors.json")
 
-    i = start_iter - 1
     try:
         tensordict: td.TensorDict = env.reset()
 
-        for i in itertools.count(start=start_iter):
+        for i in itertools.count(start=start_iter) if max_iters is None else range(start_iter, max_iters):
             # Collect the rollout
             steps = []
 
@@ -252,8 +250,6 @@ def train(
             if i % 10 == 0:
                 save_model(model, model_config, optim.state_dict(), i, name)
 
-            if max_iters is not None and i - start_iter + 1 >= max_iters:
-                break
     except KeyboardInterrupt:
         print("Interrupted — saving checkpoint before exit")
     finally:

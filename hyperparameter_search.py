@@ -30,7 +30,7 @@ SEEDS = [0, 1, 2, 3, 4]
 MAX_WORKERS = 3
 RUNS_DIR = Path("run_done_flags")
 
-NUM_ENVS = 8
+NUM_ENVS = 1
 MAX_WORKERS = 3
 
 _SLOT = None
@@ -81,7 +81,7 @@ def worker(trial: Trial):
 
     env = RoboRacerParallelEnvs(
         file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
-        num_envs=1,
+        num_envs=NUM_ENVS,
         num_areas=1,
         num_stacked_frames=50,
         seed=trial.seed,
@@ -91,6 +91,7 @@ def worker(trial: Trial):
         train(
             env,
             aux_weights=gen_aux_weights_default_zero(trial.params),
+            num_stacked_lidar_frames=50,
             name=trial.name,
             n_rays=101,
             ray_kernel=8,
