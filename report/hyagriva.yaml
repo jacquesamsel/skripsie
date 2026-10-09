@@ -403,5 +403,19 @@ vatti1992:
         issue: 7
         publisher: ACM
 
+huber1964robust:
+  type: Article
+  title: Robust Estimation of a Location Parameter
+  author: Huber, Peter J.
+  date: 1964-03
+  parent:
+    type: Periodical
+    title: The Annals of Mathematical Statistics
+    volume: 35
+    issue: 1
+  page-range: 73-101
+  serial-number:
+    doi: "10.1214/aoms/1177703732"
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
