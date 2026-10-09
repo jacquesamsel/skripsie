@@ -1,62 +1,68 @@
-import os
+import json
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor
-from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
+from pathlib import Path
 
-HYPERPARAMETER_GROUPS = [
-    [],
-    ["velocity_forward"],
-    ["velocity_lateral"],
-    [
-        CURVATURE_LOOKAHEAD_KEYS[i]
-        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
-        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 3.0
-    ],
-    [
-        CURVATURE_LOOKAHEAD_KEYS[i]
-        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
-        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 6.0 and CURVATURE_LOOKAHEAD_DISTANCES[i] > 3.0
-    ],
-    [
-        CURVATURE_LOOKAHEAD_KEYS[i]
-        for i in range(len(CURVATURE_LOOKAHEAD_KEYS))
-        if CURVATURE_LOOKAHEAD_DISTANCES[i] <= 8.0 and CURVATURE_LOOKAHEAD_DISTANCES[i] > 6.0
-    ],
-    [
-        "wheel_slip_lf_forward",
-        "wheel_slip_rf_forward"
-    ],
-    [
-        "wheel_slip_lf_lateral",
-        "wheel_slip_rf_lateral"
-    ],
-    [
-        "wheel_slip_lb_forward",
-        "wheel_slip_rb_forward"
-    ],
-    [
-        "wheel_slip_lb_lateral",
-        "wheel_slip_rb_lateral"
-    ],
-    [
-        "angular_velocity_y"
-    ]
-]
+from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
 
-WEIGHT_VALUES = [0.5, 0.1, 1]
-NUM_TRIALS_PER_GROUP = 5
 
-HYPERPARAMETER_SEARCH_SPACE = [{}] + [
-    {key: value for key in group} for value in WEIGHT_VALUES for group in HYPERPARAMETER_GROUPS if group
-]
+def curvature_keys(lo, hi):
+    return [k for k, d in zip(CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES)
+            if lo < d <= hi]
+
+
+HYPERPARAMETER_GROUPS = {
+    "velocity_forward": ["velocity_forward"],
+    "velocity_lateral": ["velocity_lateral"],
+    "curvature_close": curvature_keys(0.0, 3.0),
+    "curvature_medium": curvature_keys(3.0, 6.0),
+    "curvature_far": curvature_keys(6.0, 8.0),
+    "wheel_slip_front_forward": ["wheel_slip_lf_forward", "wheel_slip_rf_forward"],
+    "wheel_slip_front_lateral": ["wheel_slip_lf_lateral", "wheel_slip_rf_lateral"],
+    "wheel_slip_rear_forward": ["wheel_slip_lb_forward", "wheel_slip_rb_forward"],
+    "wheel_slip_rear_lateral": ["wheel_slip_lb_lateral", "wheel_slip_rb_lateral"],
+    "angular_velocity_y": ["angular_velocity_y"],
+}
+
+WEIGHT_VALUES = [0.1, 0.5, 1.0]
+SEEDS = [0, 1, 2, 3, 4]
+MAX_WORKERS = 3
+RUNS_DIR = Path("run_done_flags")
 
 
 @dataclass(frozen=True)
 class Trial:
-    name: str
-    params: dict[str, float]
+    group: str           # "baseline" or a key of HYPERPARAMETER_GROUPS
+    weight: float        # 0.0 for baseline
     seed: int
+
+    @property
+    def name(self):
+        return f"{self.group}_w{self.weight:g}_s{self.seed}"
+
+    @property
+    def params(self):
+        keys = HYPERPARAMETER_GROUPS.get(self.group, [])
+        return {k: self.weight for k in keys}
+
+    @property
+    def done_marker(self):
+        return RUNS_DIR / f"{self.name}.done"
+
+
+def build_trials():
+    for g, keys in HYPERPARAMETER_GROUPS.items():
+        assert keys, f"Group '{g}' is empty - check your filters"
+
+    trials = [Trial("baseline", 0.0, s) for s in SEEDS]
+    trials += [Trial(g, w, s)
+               for g in HYPERPARAMETER_GROUPS
+               for w in WEIGHT_VALUES
+               for s in SEEDS]
+    # seed-major order: complete seed sets finish first
+    trials.sort(key=lambda t: t.seed)
+    return trials
 
 
 def worker(trial: Trial):
@@ -64,38 +70,34 @@ def worker(trial: Trial):
     from train import train
     from utils import gen_aux_weights_default_zero
 
-    env = RoboRacerParallelEnvs(
-        num_envs=8,
-        seed=trial.seed
-    )
+    env = RoboRacerParallelEnvs(num_envs=8, seed=trial.seed)
     train(
         env,
         aux_weights=gen_aux_weights_default_zero(trial.params),
         name=trial.name,
         n_rays=101,
-        lidar_conv="conv1d"
+        lidar_conv="conv1d",
     )
+    trial.done_marker.touch()
+    return trial.name
 
 
 def main():
-    trials = [
-        Trial(
-            name=f"trial_{i}",
-            params=params,
-            seed=42
-        )
-        for i, params in enumerate(HYPERPARAMETER_SEARCH_SPACE)
-    ]
+    RUNS_DIR.mkdir(exist_ok=True)
+    trials = build_trials()
+
+    pending = [t for t in trials if not t.done_marker.exists()]
+    print(f"{len(pending)}/{len(trials)} trials to run")
+
     ctx = mp.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=3, mp_context=ctx) as ex:
-        futures = [
-            ex.submit(worker, trial) for trial in trials
-        ]
-        for i, fut in enumerate(futures):
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS, mp_context=ctx) as ex:
+        futures = {ex.submit(worker, t): t for t in pending}
+        for fut in as_completed(futures):
+            t = futures[fut]
             try:
-                fut.result()
+                print(f"done: {fut.result()}")
             except Exception as e:
-                print(f"Trial {trials[i].name} failed with exception: {e}")
+                print(f"FAILED: {t.name}: {e!r}")
 
 
 if __name__ == "__main__":
