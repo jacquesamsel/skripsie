@@ -2,6 +2,7 @@ import os
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
+from dataclasses import dataclass, asdict
 
 HYPERPARAMETER_GROUPS = [
     [],
@@ -50,10 +51,52 @@ HYPERPARAMETER_SEARCH_SPACE = [{}] + [
     {key: value for key in group} for value in WEIGHT_VALUES for group in HYPERPARAMETER_GROUPS if group
 ]
 
-def worker():
-    
 
+@dataclass(frozen=True)
+class Trial:
+    name: str
+    params: dict[str, float]
+    seed: int
+
+
+def worker(trial: Trial):
+    from environment import RoboRacerParallelEnvs
+    from train import train
+    from utils import gen_aux_weights_default_zero
+
+    env = RoboRacerParallelEnvs(
+        num_envs=8,
+        seed=trial.seed
+    )
+    train(
+        env,
+        aux_weights=gen_aux_weights_default_zero(trial.params),
+        name=trial.name,
+        n_rays=101,
+        lidar_conv="conv1d"
+    )
+
+
+def main():
+    trials = [
+        Trial(
+            name=f"trial_{i}",
+            params=params,
+            seed=42
+        )
+        for i, params in enumerate(HYPERPARAMETER_SEARCH_SPACE)
+    ]
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=3, mp_context=ctx) as ex:
+        futures = [
+            ex.submit(worker, trial) for trial in trials
+        ]
+        for i, fut in enumerate(futures):
+            try:
+                fut.result()
+            except Exception as e:
+                print(f"Trial {trials[i].name} failed with exception: {e}")
 
 
 if __name__ == "__main__":
-    print(HYPERPARAMETER_SEARCH_SPACE)
+    main()
