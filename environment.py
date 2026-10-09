@@ -113,22 +113,17 @@ class RoboRacerEnv(TransformedEnv):
                         ("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
                     out_keys=[("agents", "vector")]
                 ),
-                # Reshape the lidar tensor from (num_areas, frames, block*ray) to (num_areas, frames, block, ray)
+                # Reshape the lidar tensor from (num_areas, ray*block) to (num_areas, ray, block)
                 UnaryTransform(
                     fn=lambda lidar: torch.unflatten(
-                        lidar, -1, (self.LIDAR_BLOCK_SIZE, 101)),
+                        lidar, -1, (101, self.LIDAR_BLOCK_SIZE)),
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")],
                 ),
-                # Mask the misses -> 0 length in LIDAR
+                # Mask the misses -> 0 length in LIDAR. This also removes the other
+                # lidar "channels", leaving one distance value per ray.
                 UnaryTransform(
                     fn=lambda lidar: lidar[..., -1] * (lidar[..., -2] == 1.0).to(torch.float32),
-                    in_keys=[("agents", "lidar")],
-                    out_keys=[("agents", "lidar")],
-                ),
-                # Remove the other lidar "channels"
-                UnaryTransform(
-                    fn=lambda lidar: lidar[..., -1],
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")],
                 ),
