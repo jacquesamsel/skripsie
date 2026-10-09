@@ -48,10 +48,12 @@ def run_rollout(
     """
     steps = []
     lidar_visualiser = LidarVisualiser()
+    reward_visualiser = RewardVisualiser(gamma=GAMMA)
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
         for _ in itertools.count() if num_steps is None else range(num_steps):
             step_result = env.step(model.get_policy_operator()(tensordict))
             lidar_visualiser.render(step_result[("agents", "stacked_lidar")])
+            reward_visualiser.render(step_result[("next", "agents", "reward")], step_result[("next", "agents", "done")])
             steps.append(step_result)
             if on_step is not None:
                 on_step(step_result)
@@ -83,7 +85,7 @@ def scalar_observation_keys(env) -> list[td.NestedKey]:
 
 
 if __name__ == "__main__":
-    checkpoint = torch.load("checkpoints/conv1d.pt", map_location="cpu")
+    checkpoint = torch.load("checkpoints/conv1d_try_3_no_norm.pt", map_location="cpu")
     model_config = checkpoint["model_config"]
 
     is_mac = platform.system() == "Darwin"
@@ -124,6 +126,3 @@ if __name__ == "__main__":
                   f"{(end_time - start_time) / (len(collected_steps) * 1e6)}")
 
             rollout = torch.stack(collected_steps, dim=0)
-            df = rollout_dataframe(rollout, obs_keys)
-            df.to_csv("rollout_data.csv", index=False)
-            df.describe().to_csv("rollout_summary.csv")
