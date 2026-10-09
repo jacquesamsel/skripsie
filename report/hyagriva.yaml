@@ -377,5 +377,31 @@ lillicrap2015continuous:
   date: 2015-09
   url: https://ar5iv.arxiv.org/html/1509.02971
 
+clipper2:
+    type: repository
+    title: "Clipper2: Polygon Clipping, Offsetting & Triangulation in C++, C# and Delphi"
+    author: "Johnson, Angus"
+    date: 2022
+    url:
+        value: https://github.com/AngusJohnson/Clipper2
+        date: 2026-10-08
+    note: "Boost Software License 1.0"
+    publisher: GitHub
+
+vatti1992:
+    type: article
+    title: A generic solution to polygon clipping
+    author: "Vatti, Bala R."
+    date: 1992-07
+    page-range: 56-63
+    doi: 10.1145/129902.129906
+    url: https://dl.acm.org/doi/10.1145/129902.129906
+    parent:
+        type: periodical
+        title: Communications of the ACM
+        volume: 35
+        issue: 7
+        publisher: ACM
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses

@@ -302,7 +302,7 @@ Autonomous racing is a challenging problem in autonmous robotics: the high speed
 = Related literature
 
 == Markov Decision Processes (MDPs)
-A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment - its observation is $o_t in cal(O)$, where $cal(O)$ is the observation space. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
+A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment; its observation $o_t in cal(O)$, where $cal(O)$ is the observation space, is a function of the state $s_t$. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
 
 Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if I observe a red light ahead, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957 and @kaelbling1998, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
 
@@ -858,9 +858,9 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 == AutoDrive, Unity, and MLAgents
 #figure(
   columns(2)[
-    #image("figures/autodrive_isometric_birds_eye.png")
+    #image("figures/autodrive_isometric_birds_eye.png", width: 200pt, height: 175pt)
     #colbreak()
-    #image("figures/autodrive_isometric_close_up.png")
+    #image("figures/autodrive_isometric_close_up.png", width: 200pt, height: 175pt)
   ],
   caption: "AutoDrive-insired Unity environment, showing the RoboRacer vehicle, its LIDAR rays, and forward track prediction sampling points.",
 ) <track_rendering>
@@ -937,12 +937,6 @@ For this purpose, a track generator was implemented in C\# in Unity to procedura
       (r * calc.cos(angle), r * calc.sin(angle))
     })
 
-    for idx in range(n) {
-      if idx != 0 {
-        line(dots.at(idx - 1), dots.at(idx))
-      }
-    }
-
     let last_point = dots.at(n - 1)
 
     // Where dot 7 would have landed had the walk stayed on the guide circle,
@@ -950,6 +944,26 @@ For this purpose, a track generator was implemented in C\# in Unity to procedura
     let last_angle = angle_at(n - 1)
     let guide_point = (4 * calc.cos(last_angle), 4 * calc.sin(last_angle))
     let tangent_dir = (-calc.sin(last_angle), calc.cos(last_angle))
+
+    // Cone of headings reachable from dot 7, i.e. the support of
+    // $u ~ "Uniform"(-theta_max, theta_max)$ about the tangent direction
+    let theta_max = 60deg
+    arc(
+      last_point,
+      start: last_angle + 90deg - theta_max,
+      stop: last_angle + 90deg + theta_max,
+      radius: 2.6,
+      anchor: "origin",
+      mode: "PIE",
+      fill: color.transparentize(luma(89.8%), 50%),
+      stroke: none,
+    )
+
+    for idx in range(n) {
+      if idx != 0 {
+        line(dots.at(idx - 1), dots.at(idx))
+      }
+    }
 
     let half_length = 2.8
     let along = (base, t) => (
