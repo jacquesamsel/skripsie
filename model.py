@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -6,6 +6,8 @@ from torchrl.modules import ActorValueOperator, ProbabilisticActor, SafeProbabil
 import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
 from utils import AUX_HEAD_KEYS
+import os
+
 
 class TrunkModel(torch.nn.Module):
     def __init__(
@@ -232,7 +234,6 @@ def make_model(
     time_stride: int | None = None,
     time_kernel: int | None = None,
 ) -> ActorValueAuxOperator:
-
     trunk_tensordict_model = TensorDictModule(
         TrunkModel(
             num_stacked_lidar_frames=num_stacked_lidar_frames,
@@ -289,12 +290,41 @@ def make_model(
         out_keys=["state_value"]
     )
 
+    model_config = {
+        "num_stacked_lidar_frames": num_stacked_lidar_frames,
+        "n_rays": n_rays,
+        "lidar_conv": lidar_conv,
+        "ray_kernel": ray_kernel,
+        "ray_stride": ray_stride,
+        "time_subsample": time_subsample,
+        "time_stride": time_stride,
+        "time_kernel": time_kernel
+    }
+
     return ActorValueAuxOperator(
         trunk_tensordict_model,
         actor,
         critic,
         aux,
-    )
+    ), model_config
+
+
+def save_model(
+    model: ActorValueAuxOperator,
+    model_config: dict,
+    optim: dict[str, Any],
+    iter: int,
+    path: str,
+):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    checkpoint = {
+        "model": model.state_dict(),
+        "model_config": model_config,
+        "optim": optim,
+        "iter": iter
+    }
+    torch.save(checkpoint, path)
+
 
 def load_model(path: str) -> ActorValueAuxOperator:
     checkpoint = torch.load(path, map_location="cpu")

@@ -103,9 +103,6 @@ def train(
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
-    checkpoint_path = f"checkpoints/{name}.pt"
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-
     device = torch.device("cpu")
     print(f"Using device: {device}")
 
@@ -130,17 +127,6 @@ def train(
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     start_iter = 0
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        if checkpoint["model_config"] != model_config:
-            raise ValueError(
-                f"Checkpoint was trained with a different model_config.\n"
-                f"  checkpoint: {checkpoint['model_config']}\n"
-                f"  requested:  {model_config}")
-        model.load_state_dict(checkpoint["model"])
-        optim.load_state_dict(checkpoint["optim"])
-        start_iter = checkpoint["iter"] + 1
-        print(f"Resumed from checkpoint at iteration {start_iter}")
 
     gae = GAE(
         gamma=gamma,
@@ -170,14 +156,6 @@ def train(
         done=("agents", "done"),
         terminated=("agents", "terminated"),
     )
-
-    def save_checkpoint(iter_num):
-        torch.save({
-            "model": model.state_dict(),
-            "model_config": model_config,
-            "optim": optim.state_dict(),
-            "iter": iter_num,
-        }, checkpoint_path)
 
     i = start_iter - 1
     stats_history: list[dict[str, float]] = []
