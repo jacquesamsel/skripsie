@@ -105,159 +105,150 @@ def train(
     aux_weights_scaling_factors = load_aux_head_scaling_factors(
         "results/aux_head_scaling_factors.json")
 
-    try:
-        tensordict: td.TensorDict = env.reset()
+    tensordict: td.TensorDict = env.reset()
 
-        for i in itertools.count(start=start_iter) if max_iters is None else range(start_iter, max_iters):
-            # Collect the rollout
-            steps = []
+    for i in itertools.count(start=start_iter) if max_iters is None else range(start_iter, max_iters):
+        # Collect the rollout
+        steps = []
 
-            rollout_start = time.perf_counter_ns()
-            with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
-                for frame in range(frames_per_rollout):
-                    tensordict = env.step(
-                        model.get_policy_operator()(tensordict))
+        rollout_start = time.perf_counter_ns()
+        with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
+            for frame in range(frames_per_rollout):
+                tensordict = env.step(
+                    model.get_policy_operator()(tensordict))
 
-                    # Don't store next-step observations in the rollout
-                    steps.append(tensordict.exclude(
-                        ("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
-                    tensordict = env.step_mdp(tensordict)
+                # Don't store next-step observations in the rollout
+                steps.append(tensordict.exclude(
+                    ("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
+                tensordict = env.step_mdp(tensordict)
 
-            stack_rollout_start = time.perf_counter_ns()
-            # [T, num_envs, num_agents, ...]
-            rollout = torch.stack(steps, dim=0)
-            print(f"Rollout size: {rollout.bytes()} bytes")
-            gae_start = time.perf_counter_ns()
-            with torch.no_grad():
-                # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
-                rollout = gae(rollout)
-            print("Rollout batch size:", rollout.batch_size)
+        stack_rollout_start = time.perf_counter_ns()
+        # [T, num_envs, num_agents, ...]
+        rollout = torch.stack(steps, dim=0)
+        print(f"Rollout size: {rollout.bytes()} bytes")
+        gae_start = time.perf_counter_ns()
+        with torch.no_grad():
+            # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
+            rollout = gae(rollout)
+        print("Rollout batch size:", rollout.batch_size)
 
-            save_rollout_buffer_start = time.perf_counter_ns()
+        save_rollout_buffer_start = time.perf_counter_ns()
 
-            # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
-            flat_rollout = rollout.reshape(-1)
-            num_samples = flat_rollout.shape[0]
+        # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
+        flat_rollout = rollout.reshape(-1)
+        num_samples = flat_rollout.shape[0]
 
-            epochs_start = time.perf_counter_ns()
+        epochs_start = time.perf_counter_ns()
 
-            logs = []
-            for epochs in range(4):  # epochs
-                # randomly shuffle the rollout
-                shuffled = flat_rollout[torch.randperm(num_samples)]
+        logs = []
+        for epochs in range(4):  # epochs
+            # randomly shuffle the rollout
+            shuffled = flat_rollout[torch.randperm(num_samples)]
 
-                # do minibatch updates
-                for batch_start in range(0, num_samples, batch_size):
-                    minibatch = shuffled[batch_start:batch_start + batch_size]
-                    optim.zero_grad()
+            # do minibatch updates
+            for batch_start in range(0, num_samples, batch_size):
+                minibatch = shuffled[batch_start:batch_start + batch_size]
+                optim.zero_grad()
 
-                    minibatch = model.get_trunk_operator()(minibatch)
+                minibatch = model.get_trunk_operator()(minibatch)
 
-                    # compute the auxiliary losses and add them to the rollout
-                    aux_head = model.get_aux_head()
-                    minibatch = aux_head(minibatch)
+                # compute the auxiliary losses and add them to the rollout
+                aux_head = model.get_aux_head()
+                minibatch = aux_head(minibatch)
 
-                    loss: td.TensorDict = loss_module(minibatch)
+                loss: td.TensorDict = loss_module(minibatch)
 
-                    aux_losses = gen_aux_losses(
-                        minibatch, aux_weights_scaling_factors)
-                    r2_scores = get_aux_head_r2_scores(
-                        minibatch["aux"], minibatch["agents"])
+                aux_losses = gen_aux_losses(
+                    minibatch, aux_weights_scaling_factors)
+                r2_scores = get_aux_head_r2_scores(
+                    minibatch["aux"], minibatch["agents"])
 
-                    ppo_loss = loss["loss_entropy"] + \
-                        loss["loss_critic"] + loss["loss_objective"]
-                    aux_loss = sum(
-                        0.5 * (
-                            aux_weights[k] * aux_losses[k].mean(0)
-                        ).sum()
-                        for k in aux_weights
-                    )
+                ppo_loss = loss["loss_entropy"] + \
+                    loss["loss_critic"] + loss["loss_objective"]
+                aux_loss = sum(
+                    0.5 * (
+                        aux_weights[k] * aux_losses[k].mean(0)
+                    ).sum()
+                    for k in aux_weights
+                )
 
-                    total_loss = (ppo_loss + aux_loss).mean()
-                    total_loss.backward()
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), 6.0).item()
-                    optim.step()
+                total_loss = (ppo_loss + aux_loss).mean()
+                total_loss.backward()
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), 6.0).item()
+                optim.step()
 
-                    # Do logging for this minibatch
-                    logs.append(
-                        {
-                            "total_loss": total_loss.detach().item(),
-                            "grad_norm": grad_norm,
-                        }
-                        | {f"loss/{k}": loss[k].detach().item() for k in loss.keys(leaves_only=True)}
-                        | {
-                            f"loss/aux_{k}": aux_losses[k].mean().detach().item() for k in AUX_HEAD_KEYS
-                        }
-                        | {
-                            f"aux/r2_score_{k}": r2_scores[k].detach().item() for k in r2_scores
-                        }
-                    )
+                # Do logging for this minibatch
+                logs.append(
+                    {
+                        "total_loss": total_loss.detach().item(),
+                        "grad_norm": grad_norm,
+                    }
+                    | {f"loss/{k}": loss[k].detach().item() for k in loss.keys(leaves_only=True)}
+                    | {
+                        f"loss/aux_{k}": aux_losses[k].mean().detach().item() for k in AUX_HEAD_KEYS
+                    }
+                    | {
+                        f"aux/r2_score_{k}": r2_scores[k].detach().item() for k in r2_scores
+                    }
+                )
 
-            # average the per-minibatch logs over the whole iteration
-            avg_logs = pd.DataFrame(logs).mean().to_dict()
+        # average the per-minibatch logs over the whole iteration
+        avg_logs = pd.DataFrame(logs).mean().to_dict()
 
-            for log in avg_logs:
-                writer.add_scalar(log, avg_logs[log], i)
+        for log in avg_logs:
+            writer.add_scalar(log, avg_logs[log], i)
 
-            end_time = time.perf_counter_ns()
+        end_time = time.perf_counter_ns()
 
-            timings = {
-                "rollout": (stack_rollout_start-rollout_start)/1e9,
-                "stack_rollout": (gae_start-stack_rollout_start)/1e9,
-                "gae": (save_rollout_buffer_start-gae_start)/1e9,
-                "save_rollout_buffer": (epochs_start-save_rollout_buffer_start)/1e9,
-                "epochs": (end_time-epochs_start)/1e9,
-            }
-            timings["total"] = end_time/1e9 - rollout_start/1e9
+        timings = {
+            "rollout": (stack_rollout_start-rollout_start)/1e9,
+            "stack_rollout": (gae_start-stack_rollout_start)/1e9,
+            "gae": (save_rollout_buffer_start-gae_start)/1e9,
+            "save_rollout_buffer": (epochs_start-save_rollout_buffer_start)/1e9,
+            "epochs": (end_time-epochs_start)/1e9,
+        }
+        timings["total"] = end_time/1e9 - rollout_start/1e9
 
-            print(f"Timing (iteration {i}):")
-            for stage, seconds in timings.items():
-                print(f"  {stage:<20}{seconds:8.3f} s"
-                      f"{seconds * 1e3 / frames_per_rollout:9.2f} ms/frame")
+        print(f"Timing (iteration {i}):")
+        for stage, seconds in timings.items():
+            print(f"  {stage:<20}{seconds:8.3f} s"
+                    f"{seconds * 1e3 / frames_per_rollout:9.2f} ms/frame")
 
-            for stage, seconds in timings.items():
-                if stage != "total":
-                    writer.add_scalar(f"time/{stage}", seconds, i)
+        for stage, seconds in timings.items():
+            if stage != "total":
+                writer.add_scalar(f"time/{stage}", seconds, i)
 
-            stats = rollout_stats(rollout)
-            writer.add_scalar("reward/mean", stats["reward_mean"], i)
+        stats = rollout_stats(rollout)
+        writer.add_scalar("reward/mean", stats["reward_mean"], i)
 
-            writer.add_scalar("reward/progress",
-                              stats["reward_progress_mean"], i)
-            writer.add_scalar(
-                "reward/forward_velocity", stats["reward_velocity_forward_mean"], i)
-            writer.add_scalar("reward/collision",
-                              stats["reward_collision_mean"], i)
-            writer.add_scalar(
-                "reward/step_penalty", stats["reward_step_penalty_mean"], i)
+        writer.add_scalar("reward/progress",
+                            stats["reward_progress_mean"], i)
+        writer.add_scalar(
+            "reward/forward_velocity", stats["reward_velocity_forward_mean"], i)
+        writer.add_scalar("reward/collision",
+                            stats["reward_collision_mean"], i)
+        writer.add_scalar(
+            "reward/step_penalty", stats["reward_step_penalty_mean"], i)
 
-            writer.add_scalar("observation/progress_metres",
-                              stats["progress_mean"], i)
-            writer.add_scalar("observation/forward_velocity",
-                              stats["velocity_forward_mean"], i)
+        writer.add_scalar("observation/progress_metres",
+                            stats["progress_mean"], i)
+        writer.add_scalar("observation/forward_velocity",
+                            stats["velocity_forward_mean"], i)
 
-            writer.add_scalar("collision/per_episode",
-                              stats["collision_rate_per_episode"], i)
-            writer.add_scalar("collision/per_step",
-                              stats["collision_rate_per_step"], i)
+        writer.add_scalar("collision/per_episode",
+                            stats["collision_rate_per_episode"], i)
+        writer.add_scalar("collision/per_step",
+                            stats["collision_rate_per_step"], i)
 
-            # every sampled action of this rollout (all steps, envs and agents)
-            for action_name in ("throttle", "steering"):
-                writer.add_histogram(
-                    f"action/{action_name}", rollout["action", action_name].flatten(), i)
+        # every sampled action of this rollout (all steps, envs and agents)
+        for action_name in ("throttle", "steering"):
+            writer.add_histogram(
+                f"action/{action_name}", rollout["action", action_name].flatten(), i)
 
-            if i % 10 == 0:
-                save_model(model, model_config, optim.state_dict(), i, name)
+        if i % 10 == 0:
+            save_model(model, model_config, optim.state_dict(), i, name)
 
-    except KeyboardInterrupt:
-        print("Interrupted — saving checkpoint before exit")
-    finally:
-        save_model(model, model_config, optim.state_dict(), i, name)
-        print(f"Checkpoint saved at iteration {i}")
-        env.close()
-        while not env.is_closed:
-            time.sleep(0.1)
 
 
 if __name__ == "__main__":
@@ -273,14 +264,17 @@ if __name__ == "__main__":
         start_worker_id=0,
         seed=SEED,
     )
-    train(
-        env,
-        aux_weights=gen_aux_weights_default_zero({}),
-        num_stacked_lidar_frames=50,  # 25Hz => 2s of history
-        n_rays=101,
-        lidar_conv="conv1d",
-        ray_kernel=8,
-        ray_stride=1,
-        name="conv1d_fixed_lidar_try_2",
-        seed=SEED,
-    )
+    try:
+        train(
+            env,
+            aux_weights=gen_aux_weights_default_zero({}),
+            num_stacked_lidar_frames=50,  # 25Hz => 2s of history
+            n_rays=101,
+            lidar_conv="conv1d",
+            ray_kernel=8,
+            ray_stride=1,
+            name="conv1d_fixed_lidar_try_2",
+            seed=SEED,
+        )
+    finally:
+        env.close()
