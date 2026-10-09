@@ -2,7 +2,7 @@ from typing import Literal
 
 from torch.utils.tensorboard import SummaryWriter
 import time
-from model import ActorValueAuxOperator, make_model, make_or_load_model, save_model
+from model import ActorValueAuxOperator, make_or_load_model, save_model
 from environment import (
     RoboRacerEnv,
     RoboRacerParallelEnvs
@@ -10,11 +10,8 @@ from environment import (
 import tensordict as td
 from torchrl.objectives.value import GAE
 from torchrl.objectives import ClipPPOLoss
-from torchrl.envs.utils import ExplorationType, step_mdp
+from torchrl.envs.utils import ExplorationType
 from torchrl.envs import set_exploration_type
-from torch.nn.functional import smooth_l1_loss
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-import os
 import platform
 import random
 import torch
