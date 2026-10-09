@@ -36,11 +36,15 @@ AUX_TARGET_COLUMNS = dict(
     curvature_05m=["curvature_0_5m"],
     curvature_10m=["curvature_1_0m"],
     curvature_20m=["curvature_2_0m"],
-    wheel_slip_front_forward=["wheel_slip_fl_forward", "wheel_slip_fr_forward"],
-    wheel_slip_front_lateral=["wheel_slip_fl_sideways", "wheel_slip_fr_sideways"],
+    wheel_slip_front_forward=[
+        "wheel_slip_fl_forward", "wheel_slip_fr_forward"],
+    wheel_slip_front_lateral=[
+        "wheel_slip_fl_sideways", "wheel_slip_fr_sideways"],
     wheel_slip_rear_forward=["wheel_slip_rl_forward", "wheel_slip_rr_forward"],
-    wheel_slip_rear_lateral=["wheel_slip_rl_sideways", "wheel_slip_rr_sideways"],
+    wheel_slip_rear_lateral=[
+        "wheel_slip_rl_sideways", "wheel_slip_rr_sideways"],
 )
+
 
 def train(
         env: RoboRacerEnv | RoboRacerParallelEnvs,
@@ -178,12 +182,8 @@ def train(
     i = start_iter - 1
     stats_history: list[dict[str, float]] = []
     try:
-        # env.reset() lives inside this try (not before it) so a failure
-        # here still reaches the finally below and closes the env instead
-        # of orphaning its Unity worker subprocesses.
         tensordict: td.TensorDict = env.reset()
 
-        # infinite loop until interrupted, unless max_iters bounds it
         for i in itertools.count(start=start_iter):
             # Collect the rollout
             steps = []
@@ -193,7 +193,9 @@ def train(
                 for frame in range(frames_per_rollout):
                     tensordict = env.step(
                         model.get_policy_operator()(tensordict))
-                    steps.append(tensordict)
+                    steps.append(tensordict.select(
+                        [key for key in tensordict.keys() if key[0] != "next"]
+                    ))
                     tensordict = env.step_mdp(tensordict)
 
             stack_rollout_start = time.perf_counter_ns()
@@ -204,15 +206,12 @@ def train(
             with torch.no_grad():
                 # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
                 rollout = gae(rollout)
-
             print("Rollout batch size:", rollout.batch_size)
 
             save_rollout_buffer_start = time.perf_counter_ns()
 
             # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
             flat_rollout = rollout.reshape(-1)
-
-            print(flat_rollout.batch_size)
             num_samples = flat_rollout.shape[0]
 
             epochs_start = time.perf_counter_ns()
@@ -220,7 +219,11 @@ def train(
             loss_logs = []
             grad_norms = []
             for epochs in range(4):  # epochs
+
+                # randomly shuffle the rollout
                 shuffled = flat_rollout[torch.randperm(num_samples)]
+
+                # do minibatch updates
                 for batch_start in range(0, num_samples, batch_size):
                     minibatch = shuffled[batch_start:batch_start + batch_size]
                     optim.zero_grad()
@@ -311,11 +314,12 @@ def train(
             stats_history.append(stats)
             writer.add_scalar("reward/mean", stats["reward_mean"], i)
 
-            
-            writer.add_scalar("reward/progress", stats["reward_progress_mean"], i)
+            writer.add_scalar("reward/progress",
+                              stats["reward_progress_mean"], i)
             writer.add_scalar(
                 "reward/forward_velocity", stats["reward_velocity_forward_mean"], i)
-            writer.add_scalar("reward/collision", stats["reward_collision_mean"], i)
+            writer.add_scalar("reward/collision",
+                              stats["reward_collision_mean"], i)
             writer.add_scalar(
                 "reward/step_penalty", stats["reward_step_penalty_mean"], i)
 

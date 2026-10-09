@@ -1,47 +1,77 @@
+import tensordict
+
 from environment import RoboRacerEnv
-from model import make_model
+from model import load_model
 import torch
-from torch.optim import Adam
-
-from utils import gen_aux_losses
-
-
-def train_aux_head(
-):
-
-    checkpoint = torch.load(
-        "checkpoints/conv1d_fixed_lidar_try_2.pt", map_location="cpu")
-    env = RoboRacerEnv(
-        file_name="TestUnityProject/Test speed/build.app",
-        num_stacked_frames=checkpoint["model_config"]["num_stacked_lidar_frames"],
-        no_graphics=False,
-        seed=1,
-        num_areas=1,
-        worker_id=0
-    )
-    model = make_model(
-        **checkpoint["model_config"]
-    )
-    model.load_state_dict(checkpoint["model"])
-
-    # Freeze the trunk of the model
-    model.get_trunk_operator().requires_grad_(False)
-
-    optimizer = Adam(model.get_aux_head().parameters(), lr=1e-4)
-
-    td = env.reset()
-    while True:
-        # Do a rollout
-        for i in range(512):
-            td = model.forward(td)
-            td = env.step(td)
-            aux_losses = gen_aux_losses(td)
-            loss = sum(aux_losses.values())
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            print(f"Step {i}, loss: {loss.item()}")
+from infer import do_rollout
+import os
+from utils import AUX_HEAD_KEYS
+from sklearn.linear_model import LinearRegression
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import seaborn as sns
+from sklearn.metrics import r2_score, mean_absolute_error
+from matplotlib import pyplot as plt
+import math
 
 
-if __name__ == "__main__":
-    train_aux_head()
+PATH = "results/aux_head_training_data.pt"
+
+if not os.path.exists(PATH):
+    try:
+        model, model_config = load_model(
+            "checkpoints/conv1d_fixed_lidar_try_2.pt")
+        env = RoboRacerEnv(
+            time_scale=100.0,
+            file_name="TestUnityProject/Test speed/build.app",
+            num_stacked_frames=model_config["num_stacked_lidar_frames"],
+            no_graphics=True,
+            num_areas=4,
+            seed=0
+        )
+
+        data = do_rollout(
+            env,
+            model,
+            num_steps=32768,
+            select_keys=[*[("agents", key) for key in AUX_HEAD_KEYS], "hidden_layer"])
+        data = data.reshape(-1)
+        print(
+            f"Saved {len(data)} steps to {PATH}, {data.bytes() / 1024 / 1024:.2f} MB")
+        torch.save(data, PATH)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        env.close()
+else:
+    torch.serialization.add_safe_globals(
+        [tensordict._td.TensorDict, tensordict._reductions._make_td])
+    data = torch.load(PATH)
+
+
+x = data["hidden_layer"].numpy()
+y = pd.DataFrame({
+    key: data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
+})
+
+train_split = 0.8
+
+train_x = x[0:int(len(x) * train_split)]
+train_y = y.iloc[0:int(len(y) * train_split)]
+
+test_x = x[int(len(x) * train_split):]
+test_y = y.iloc[int(len(y) * train_split):]
+
+lr = LinearRegression()
+lr.fit(train_x, train_y)
+
+test_y_hat = lr.predict(test_x)
+
+scores = pd.DataFrame({
+    "target": y.columns,
+    "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
+    "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
+    "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],
+})
+
+scores.to_csv("results/aux_head_regression_scores.csv", index=False)

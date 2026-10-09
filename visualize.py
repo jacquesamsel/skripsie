@@ -60,7 +60,7 @@ class LidarVisualiser:
 
         plt.ion()
         self._fig, axes = plt.subplots(
-            rows, cols, figsize=(3 * cols, 2.5 * rows), squeeze=False)
+            rows, cols, figsize=(6 * cols, 5 * rows), squeeze=False)
         self._fig.canvas.manager.set_window_title("Lidar")
 
         for index, ax in enumerate(axes.flat):
@@ -80,7 +80,7 @@ class LidarVisualiser:
             ))
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_title(str(index), fontsize=8)
+            ax.set_title(f"Lidar of agent {index}", fontsize=8)
 
         self._fig.tight_layout()
         self._fig.canvas.mpl_connect(

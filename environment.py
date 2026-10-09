@@ -7,15 +7,8 @@ import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
 
+from utils import CURVATURE_LOOKAHEAD_KEYS
 
-# One curvature observation, and so one auxiliary curvature head in model.py,
-# per distance in this list.
-CURVATURE_LOOKAHEAD_DISTANCES = [0.5 * i for i in range(1, 17)]
-
-
-def track_curvature_key(metres: float) -> td.NestedKey:
-    """Observation key for the centerline curvature `metres` ahead of the car."""
-    return ("agents", f"track_curvature_{metres:.2f}".replace(".", "_"))
 
 
 # The terms ComposeReward adds up, and the key each one is published under. They sum to
@@ -152,8 +145,8 @@ class RoboRacerEnv(TransformedEnv):
                         (("agents", "linear_acceleration_lateral"),
                          torch.Size([1])),
                         (("agents", "angular_velocity_y"), torch.Size([1])),
-                        *[(track_curvature_key(metres), torch.Size([1]))
-                          for metres in CURVATURE_LOOKAHEAD_DISTANCES],
+                        *[(("agents", key), torch.Size([1]))
+                          for key in CURVATURE_LOOKAHEAD_KEYS],
                         *[
                             (("agents", f"wheel_slip_{direction}_{wheel}"), torch.Size(
                                 [1]))
