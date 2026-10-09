@@ -2,7 +2,11 @@
 #import "@preview/lilaq:0.6.0" as lq
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
 #import "@preview/algorithmic:1.0.7" as algorithmic: algorithm-figure, style-algorithm
+#import "@preview/latex-lookalike:0.1.4"
+#import "@preview/neural-netz:0.3.0" as neural-netz: draw-network
+
 #show: style-algorithm
+#show: latex-lookalike.style-outline
 
 // ============================================================
 // Styling after the Stellenbosch University thesis class
@@ -10,9 +14,13 @@
 // ============================================================
 
 // Colours from imports.tex
+// Switched on where the appendix starts: its level-1 heading is
+// typeset without the "Chapter N" line above the title.
+#let in-appendix = state("in-appendix", false)
+
 #let oracle-colour = rgb("#8B8589") // running header text
 #let rule-colour = rgb("#DCDCDC") // rule below the running header
-#let link-colour = rgb("#666666") // gray!80!black for cites and URLs
+#let link-colour = rgb("#000000") // gray!80!black for cites and URLs
 
 #let argmax = $op("arg max", limits: #true)$
 #let argmin = $op("arg min", limits: #true)$
@@ -90,7 +98,7 @@
     // ]
     //#line(length: 100%, stroke: 0.4pt)
     #v(70pt)
-    #if (it.numbering != none) {
+    #if (it.numbering != none and not in-appendix.at(it.location())) {
       text(size: 22pt, "Chapter " + numbering("1", ..counter(heading).at(it.location())))
     }
 
@@ -620,6 +628,28 @@ $
 
 Of course, in reality, the tasks are not independent, but this method has been shown to work well in practice. The log-variance $log sigma_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
+=== Huber loss
+The Huber loss (with parameter $beta$ or in some literature $k$) is a loss function that is less sensitive to outliers compared to the standard Mean Squared Error (MSE) loss @huber1964robust. It is defined as:
+
+$
+  cal(L)^beta (y, hat(y)) = cases(
+    1/2 (y - hat(y))^2 "if" |y - hat(y)| <= beta,
+    beta |y - hat(y)| - 1/2 beta^2 "otherwise"
+  )
+$
+
+In our case, since we have various loss terms, each relating to a different task where the scale of $y$ differs, we must carefully choose the parameter $beta$ and scale each loss term appropriately.
+
+Rewriting the loss to $cal(L)^beta (y/sigma, hat(y)/sigma)$ allows us to reduce the model's bias towards learning tasks with larger scales, however, the Huber loss is not scale-invariant, so we must choose $beta$ carefully:
+
+$
+  cal(L)^beta (y/sigma, hat(y)/sigma) = (cal(L)^(beta sigma) (y, hat(y))) / sigma^2
+$
+
+@huber_loss_scale_reparameterisation details the proof for this scale reparameterisation of the Huber loss, and shows that the reparameterised $beta$ is proportional to the scale of the data, $sigma$.
+
+In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses a rescaled definition, $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
+
 
 
 
@@ -1012,36 +1042,131 @@ Then, a Catmull-Rom spline is fitted to the points to create a smooth track cent
 
 Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in @track_rendering.
 
-= The model
+= Auxiliary heads
+
+Several auxiliary heads were implemented to predict the following quantities:
 
 #figure(
-  caption: "Simplified model",
-  diagram(
-    node-stroke: 1pt,
-    node((-2.75, -0.5), "Lidar", name: <Lidar>),
-    node((-2.75, 0), "Cur steering angle", name: <Steering>),
-    node((-2.75, 0.5), "Cur throttle angle", name: <Throttle>),
-
-    edge(<Lidar>, <Trunk>, "-|>"),
-    edge(<Steering>, <Trunk>, "-|>"),
-    edge(<Throttle>, <Trunk>, "-|>"),
-    node((-1.25, -0.), "Trunk", height: 30pt, width: 60pt, name: <Trunk>),
-
-    edge(<Trunk>, <Policy>, "-|>"),
-    edge(<Trunk>, <Value>, "-|>"),
-    edge(<Trunk>, <Aux>, "-|>"),
-
-    node((0, -0.75), "Policy", height: 30pt, width: 70pt, name: <Policy>),
-    node((0, 0), "Value head", height: 30pt, width: 70pt, name: <Value>),
-    node((0, 0.75), "Auxiliary head", height: 30pt, width: 70pt, name: <Aux>),
+  stb-table(
+    columns: (1.2fr, 0.5fr, 3fr),
+    align: (center, center, left),
+    header: ([Auxiliary head(s)], [Unit], [Description]),
+    [$v_f$],
+    [m/s],
+    [The car's forward velocity],
+    [$v_l$],
+    [m/s],
+    [The car's lateral velocity (positive is to the left)],
+    [$omega$],
+    [rad/s],
+    [The car's angular velocity around the verical axis (postive is counter-clockwise)],
+    [$v_(s,x)$],
+    [m/s],
+    [The car's wheel slip velocity per wheel $x in {"LF", "RF", "LB", "RB"}$],
+    [$kappa_d$],
+    [$1/m$],
+    [Reciprocal #footnote("The reciprocal of the radius of curvature is used to prevent undefined values when the track is straight.") of the radius of curvature of the track at various points $d$ along the track ahead of the car, $d in {0.5, 1.0, ..., 8.0} m$],
   ),
+  caption: "Auxiliary heads implemented to predict the car's forward velocity $v_f$, lateral velocity $v_l$, and angular velocity $omega$.",
 )
 
+= The model
+
+The model architecture is a simple feedforward neural network. It comprises a block of 4 1D-convolutional layers operating with a kernel size of 8, with time dimension as the channel dimension. Following the convolutional block, there are 3 fully-connected layers in a
+
+#[
+
+  #let get-conv1d-height = channels => {
+    return channels / 10
+  }
+  #let get-fc-height = size => {
+    return size / 30
+  }
+  #let main-net = draw-network(
+    (
+      (type: "input", image: image("../results/lidar_input.png"), label: "LIDAR history"),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(50),
+        depth: 4,
+        show-relu: true,
+        channels: (50,),
+        name: "conv1d",
+        label: "Conv1d",
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(32),
+        depth: 4,
+        show-relu: true,
+        channels: (32,),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(16),
+        depth: 4,
+        show-relu: true,
+        channels: (16,),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(16),
+        depth: 4,
+        show-relu: true,
+        channels: (16,),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (type: "custom", width: 0.4, height: 4, depth: 0.5, label: "Flatten", name: "flat", offset: 1.5),
+      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1),
+      (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
+      (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
+      (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
+      (type: "fc", channels: (27+4,), offset: 0.5, name: "fc4", height: get-fc-height(64), label: "out"),
+    ),
+    connections: (),
+    show-legend: true,
+    legend-title: "Layers",
+    scale: 100%,
+    stroke-thickness: 1,
+    depth-multiplier: 0.3,
+  )
+
+  #let action-net = draw-network(
+    ((type: "input", image: none, channels: (2,), height: 2, depth: 2, label: "Previous steering & throttle"),),
+    scale: 100%,
+    depth-multiplier: 0.3,
+  )
+
+  #figure(
+    caption: "Neural network architecture",
+    cetz.canvas(length: 1cm, {
+      import cetz.draw: *
+      content((0, 0), main-net, anchor: "north-west", name: "main")
+      content((7.6, -6.5), action-net, anchor: "north", name: "act")
+      line((7.6, -6.4), (7.6, -5.05), (8.68, -5.05), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
+    }),
+  )
+]
 = Experiments & results
 
 == Baseline performance <baseline_model>
 
-Hey
+The baseline model was trained in 300 PPO steps, experiencing 512 frames on each of 48 parallel agents, for a total of 16'23" training time per step (i.e. 81.9 hours of simulation time). Every 10 steps (2.73h of simulation time), the model weights were logged to allow inspection of learning characteristics, along with per-step statistics on performance.
+
+=== Auxiliary Head Prediction
+
+Despite not being trained with the explicit task of auxiliary prediction, we are able to extract a proxy to examine the feature representation in the model.
+
+
 
 
 == Normalisation of ego-agent privledged information
@@ -1060,13 +1185,77 @@ An alternative method is @chen2017gradnorm, which dynamically scales the weights
 
 = What I did
 - *Car always going full throttle + full steering*: This is because tanhnormal saturates at 1, so the model cannot learn when the output is close to 1 or -1. This is a problem because the car is always going full throttle, and the steering angle is often close to 1 or -1. The model cannot learn to output values further away. So, the scale of weights & biases was changed to start in the center
-
-== Training curves
+- *LIDAR angle pointing up, causing large lidar values input* - increase wall height, mask "miss" rays to 0
+- *Huber loss is invariant* to scale if the parameter beta is updated:
+$
+  L_beta (x/alpha, hat(x)/alpha) = (L_(alpha*beta) (x, hat(x))) / alpha^2
+$
 
 = Conclusions and recommendations
 #pagebreak()
 #bibliography("./hyagriva.yaml", style: "ieee", title: [Bibliography])
 
+#in-appendix.update(true)
 
+// The appendix chapter itself is unnumbered; its sections are
+// "Appendix A", "Appendix B", ... and deeper levels "A.1", "A.1.1".
+// A pattern string cannot be used here: in "Appendix A" Typst would
+// read the leading "A" as a counting symbol too.
+// References to appendix sections read "Appendix A", not
+// "Section Appendix A".
+#set heading(supplement: none)
 
+#set heading(numbering: (..n) => {
+  let nums = n.pos()
+  if nums.len() == 1 {
+    ""
+  } else if nums.len() == 2 {
+    "Appendix " + numbering("A", nums.at(1))
+  } else {
+    numbering("A.1.1", ..nums.slice(1))
+  }
+})
 
+= Appendix
+== Huber Loss Scale Reparameterisation <huber_loss_scale_reparameterisation>
+$
+  cal(L)^beta (y/alpha, hat(y)/alpha) = cases(
+    1/2 (y/alpha - hat(y)/alpha)^2 "if" |y/alpha - hat(y)/alpha| <= beta,
+    beta |y/alpha - hat(y)/alpha| - 1/2 beta^2 "otherwise"
+  )
+  #linebreak()
+  = cases(
+    1/(2 alpha^2) (y - hat(y))^2 "if" |y - hat(y)| <= alpha beta,
+    beta / alpha |y - hat(y)| - 1/2 beta^2 "otherwise"
+  )
+  #linebreak()
+  = 1/(alpha^2) cases(
+    1/2 (y - hat(y))^2 "if" |y - hat(y)| <= alpha beta,
+    alpha beta |y - hat(y)| - 1/2 (alpha beta)^2 "otherwise"
+  )
+  #linebreak()
+  = (cal(L)^(alpha*beta) (y, hat(y)))/alpha^2
+  #h(1cm)
+  qed
+$
+
+== Auxiliary Head Regression Results
+#set page(flipped: false)
+#let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
+#figure(
+  stb-table(
+    columns: 4,
+    align: (left, center, center, center),
+    header: ([Auxiliary target], [$R^2$ score], [MAE], [$sigma_x$]),
+
+    ..aux_head_regression_scores
+      .slice(1)
+      .sorted(key: row => row.at(1), by: (a, b) => b < a)
+      .map(row => (
+        [#row.at(0)],
+        ..row.slice(1).map(val => [#calc.round(float(val), digits: 4)]), // Number columns rounded
+      ))
+      .flatten(),
+  ),
+  caption: "Regression scores for the auxiliary heads, trained on the pure PPO model's hidden layer output.",
+)
