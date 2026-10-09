@@ -235,15 +235,6 @@ def make_or_load_model(
     time_stride: int | None = None,
     time_kernel: int | None = None,
 ) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
-    model_config = dict(
-        num_stacked_lidar_frames=num_stacked_lidar_frames,
-        n_rays=n_rays,
-        lidar_conv=lidar_conv,
-        ray_kernel=ray_kernel,
-        ray_stride=ray_stride,
-        time_kernel=time_kernel,
-        time_stride=time_stride,
-    )
     if os.path.exists(f"checkpoints/{name}"):
         # get latest checkpoint
         checkpoints = [f for f in os.listdir(
@@ -255,7 +246,7 @@ def make_or_load_model(
         print(f"Loading model from checkpoints/{name}/{latest_checkpoint}")
         return load_model(f"checkpoints/{name}/{latest_checkpoint}")
     else:
-        return make_model(
+        return (*make_model(
             num_stacked_lidar_frames=num_stacked_lidar_frames,
             n_rays=n_rays,
             lidar_conv=lidar_conv,
@@ -264,7 +255,7 @@ def make_or_load_model(
             time_subsample=time_subsample,
             time_stride=time_stride,
             time_kernel=time_kernel
-        ), model_config, 0, None
+        ), 0, None)
 
 
 def make_model(

@@ -63,20 +63,20 @@ def load_aux_head_scaling_factors(path: str) -> dict[str, tuple[float, float]]:
     }
 
 
-def gen_aux_losses(td: TensorDict, scaling_factors: dict[str, tuple[float, float]], reduction: Literal['none', 'mean', 'sum'] = 'mean') -> TensorDict:
+def gen_aux_losses(td: TensorDict, scaling_factors: dict[str, tuple[float, float]]):
     predicted_values = get_aux_head_predicted_values(td)
     true_values = get_aux_head_true_values(td)
-    aux_losses = TensorDict({
+    aux_losses = {
         key: smooth_l1_loss(
             predicted_values[key],
             true_values[key],
-            reduction=reduction,
+            reduction='mean',
             beta=scaling_factors[key][1]  # Use the standard deviation as beta
         ) / scaling_factors[key][1] for key in AUX_HEAD_KEYS
-    }, batch_size=td.batch_size if reduction == 'none' else [])
+    }
     return aux_losses
 
-def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict) -> TensorDict:
+def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict):
     r2_scores = {
         key: r2_score(prediction[key], target[key])
         for key in AUX_HEAD_KEYS

@@ -50,6 +50,10 @@ HYPERPARAMETER_SEARCH_SPACE = [{}] + [
     {key: value for key in group} for value in WEIGHT_VALUES for group in HYPERPARAMETER_GROUPS if group
 ]
 
+def worker():
+    
+
+
 
 if __name__ == "__main__":
     print(HYPERPARAMETER_SEARCH_SPACE)

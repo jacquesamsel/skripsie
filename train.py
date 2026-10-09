@@ -21,7 +21,7 @@ import torch
 import itertools
 import pandas as pd
 
-from utils import AUX_HEAD_KEYS, gen_aux_losses, gen_aux_weights_default_zero, load_aux_head_scaling_factors, rollout_stats
+from utils import AUX_HEAD_KEYS, gen_aux_losses, gen_aux_weights_default_zero, get_aux_head_r2_scores, load_aux_head_scaling_factors, rollout_stats
 
 
 def train(
@@ -38,7 +38,7 @@ def train(
         time_stride: int | None = None,
         max_iters: int | None = None,
         num_threads: int = 16,
-) -> tuple[ActorValueAuxOperator, dict[str, float]]:
+) -> ActorValueAuxOperator:
     torch.set_num_threads(num_threads)
     random.seed(seed)
     torch.manual_seed(seed)
@@ -58,6 +58,7 @@ def train(
     entropy_coeff = 0.0005
     frames_per_rollout = 512
     batch_size = 2048
+    minibatches_per_epoch = 4
 
     model, model_config, start_iter, optim_state_dict = make_or_load_model(
         name=name,
@@ -102,10 +103,10 @@ def train(
         terminated=("agents", "terminated"),
     )
 
-    aux_weights_scaling_factors = load_aux_head_scaling_factors("results/aux_head_scaling_factors.json")
+    aux_weights_scaling_factors = load_aux_head_scaling_factors(
+        "results/aux_head_scaling_factors.json")
 
     i = start_iter - 1
-    stats_history: list[dict[str, float]] = []
     try:
         tensordict: td.TensorDict = env.reset()
 
@@ -120,7 +121,8 @@ def train(
                         model.get_policy_operator()(tensordict))
 
                     # Don't store next-step observations in the rollout
-                    steps.append(tensordict.exclude(("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
+                    steps.append(tensordict.exclude(
+                        ("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
                     tensordict = env.step_mdp(tensordict)
 
             stack_rollout_start = time.perf_counter_ns()
@@ -141,10 +143,8 @@ def train(
 
             epochs_start = time.perf_counter_ns()
 
-            loss_logs = []
-            grad_norms = []
+            logs = []
             for epochs in range(4):  # epochs
-
                 # randomly shuffle the rollout
                 shuffled = flat_rollout[torch.randperm(num_samples)]
 
@@ -161,7 +161,10 @@ def train(
 
                     loss: td.TensorDict = loss_module(minibatch)
 
-                    aux_losses = gen_aux_losses(minibatch, aux_weights_scaling_factors)
+                    aux_losses = gen_aux_losses(
+                        minibatch, aux_weights_scaling_factors)
+                    r2_scores = get_aux_head_r2_scores(
+                        minibatch["aux"], minibatch["agents"])
 
                     ppo_loss = loss["loss_entropy"] + \
                         loss["loss_critic"] + loss["loss_objective"]
@@ -178,17 +181,26 @@ def train(
                         model.parameters(), 6.0).item()
                     optim.step()
 
-                    # log the stuff
-                    loss_logs.append(loss.detach().apply(
-                        lambda x: x.float().mean(), batch_size=[]))
-                    loss_logs[-1]["total_loss"] = total_loss.detach().float()
-                    for x in aux_losses.keys():
-                        loss_logs[-1][f"aux_{x}"] = aux_losses[x].mean().detach().float()
-                    grad_norms.append(grad_norm)
+                    # Do logging for this minibatch
+                    logs.append(
+                        {
+                            "total_loss": total_loss.detach().item(),
+                            "grad_norm": grad_norm,
+                        }
+                        | {f"loss/{k}": loss[k].detach().item() for k in loss.keys(leaves_only=True)}
+                        | {
+                            f"loss/aux_{k}": aux_losses[k].mean().detach().item() for k in AUX_HEAD_KEYS
+                        }
+                        | {
+                            f"aux/r2_score_{k}": r2_scores[k].detach().item() for k in r2_scores
+                        }
+                    )
 
             # average the per-minibatch logs over the whole iteration
-            avg_loss = torch.stack(loss_logs).apply(
-                lambda x: x.float().mean(dim=0), batch_size=[])
+            avg_logs = pd.DataFrame(logs).mean().to_dict()
+
+            for log in avg_logs:
+                writer.add_scalar(log, avg_logs[log], i)
 
             end_time = time.perf_counter_ns()
 
@@ -210,33 +222,7 @@ def train(
                 if stage != "total":
                     writer.add_scalar(f"time/{stage}", seconds, i)
 
-            writer.add_scalar("loss/total", avg_loss["total_loss"].item(), i)
-            writer.add_scalar("loss/entropy", avg_loss["entropy"].item(), i)
-            writer.add_scalar(
-                "loss/actor", avg_loss["loss_objective"].item(), i)
-            writer.add_scalar(
-                "loss/critic", avg_loss["loss_critic"].item(), i)
-            writer.add_scalar(
-                "loss/mean_ratio", avg_loss["mean_ratio"].item(), i)
-            writer.add_scalar(
-                "loss/clip_fraction", avg_loss["clip_fraction"].item(), i)
-            writer.add_scalar(
-                "loss/kl_approx", avg_loss["kl_approx"].item(), i)
-            writer.add_scalar(
-                "loss/max_ratio", avg_loss["max_ratio"].item(), i)
-
-            # log the aux losses
-            for key, value in loss_logs[-1].items():
-                if key.startswith("aux_"):
-                    writer.add_scalar(f"loss/aux/{key[4:]}", value, i)
-
-            # pre-clip norms over all minibatches of this iteration
-            writer.add_scalar(
-                "grad_norm/mean", sum(grad_norms) / len(grad_norms), i)
-            writer.add_scalar("grad_norm/max", max(grad_norms), i)
-
             stats = rollout_stats(rollout)
-            stats_history.append(stats)
             writer.add_scalar("reward/mean", stats["reward_mean"], i)
 
             writer.add_scalar("reward/progress",
@@ -277,13 +263,9 @@ def train(
         while not env.is_closed:
             time.sleep(0.1)
 
-    trailing = stats_history[-10:]
-    avg_stats = {k: sum(d[k] for d in trailing) / len(trailing)
-                 for k in trailing[0]} if trailing else {}
-
 
 if __name__ == "__main__":
-    SEED = 44
+    SEED = 42
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
         num_envs=1,
