@@ -885,6 +885,8 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 
 == F1Tenth Gym
 
+The F1Tenth Gym is a python package that provides an environment for training and evaluating reinforcement learning algorithms.
+
 == AutoDrive, Unity, and MLAgents
 #figure(
   columns(2)[
@@ -1070,9 +1072,27 @@ Several auxiliary heads were implemented to predict the following quantities:
   caption: "Auxiliary heads implemented to predict the car's forward velocity $v_f$, lateral velocity $v_l$, and angular velocity $omega$.",
 )
 
-= The model
+== The model
 
-The model architecture is a simple feedforward neural network. It comprises a block of 4 1D-convolutional layers operating with a kernel size of 8, with time dimension as the channel dimension. Following the convolutional block, there are 3 fully-connected layers in a
+The model is a feedforward neural network. Its input is a stack of the 50 most
+recent LIDAR scans (101 rays each), plus the previous action (steering and
+throttle). Since the network has no recurrent state, the stacked scans are the
+only source of temporal information.
+
+The scans are processed by four 1D convolutional layers with ReLU activations.
+The convolutions slide along the ray axis and treat the 50 time steps as input
+channels, so the first layer combines the whole history at each angular
+position and turns it into a set of learned feature channels. The remaining
+three layers work on these features and only add spatial context along the ray
+axis. The output is flattened, concatenated with the
+previous action, and passed through three fully connected layers (128, 72 and
+64 units) with ReLU activations and a final layer normalization.
+
+The 64-dimensional output is shared by all heads. The last layer ("out" in
+@neural_net_architecture) is a linear layer that produces the outputs of every head at once:
+4 for the policy (mean and scale for steering and throttle), 1 for the value
+estimate, and 27 for the auxiliary prediction targets, which are only used
+as training signals.
 
 #[
 
@@ -1086,9 +1106,9 @@ The model architecture is a simple feedforward neural network. It comprises a bl
     (
       (
         type: "input",
-        image: image("../results/lidar_input.png"),
+        image: rotate(90deg)[#image("../results/lidar_input.png", width: 4cm, height: 4cm)],
         label: "LIDAR history",
-        channels: (50, 101),
+        channels: (101, 50),
       ),
       (
         type: "conv",
@@ -1096,7 +1116,7 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         height: get-conv1d-height(50),
         depth: 4,
         show-relu: true,
-        channels: (50,),
+        channels: ("", 50),
         legend: "Conv1d",
         name: "conv1d",
       ),
@@ -1106,7 +1126,7 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         height: get-conv1d-height(32),
         depth: 4,
         show-relu: true,
-        channels: (32,),
+        channels: ("", 32),
         name: "conv1d",
         offset: 0.5,
       ),
@@ -1116,7 +1136,7 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         height: get-conv1d-height(16),
         depth: 4,
         show-relu: true,
-        channels: (16,),
+        channels: ("", 16),
         name: "conv1d",
         offset: 0.5,
       ),
@@ -1126,7 +1146,7 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         height: get-conv1d-height(16),
         depth: 4,
         show-relu: true,
-        channels: (16,),
+        channels: ("", 16),
         name: "conv1d",
         offset: 0.5,
       ),
@@ -1139,9 +1159,9 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         name: "flat",
         offset: 1.5,
         legend: "Flatten",
-        fill: red,
+        fill: green,
       ),
-      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1, fill: blue),
+      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1, fill: teal),
       (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
       (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
       (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
@@ -1166,7 +1186,7 @@ The model architecture is a simple feedforward neural network. It comprises a bl
       content((8.95, 0), text(size: 8.5pt, weight: "bold")[Previous action], anchor: "south", name: "act")
       line((8.95, -0.1), (8.95, -1.28), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
     }),
-  )
+  )<neural_net_architecture>
 ]
 = Experiments & results
 
