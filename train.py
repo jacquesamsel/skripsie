@@ -24,6 +24,8 @@ import torch
 import itertools
 import pandas as pd
 
+from utils import gen_aux_losses
+
 # rollout_data.csv's column names for each aux target, pooled where a target
 # is predicted separately for two wheels that should nonetheless share one
 # normalisation scale (front: fl+fr, rear: rl+rr).
@@ -41,7 +43,7 @@ AUX_TARGET_COLUMNS = dict(
 )
 
 def train(
-        env,
+        env: RoboRacerEnv | RoboRacerParallelEnvs,
         velocity_forward_weight: float,
         velocity_lateral_weight: float,
         curvature_weights: dict[float, float],
@@ -231,36 +233,7 @@ def train(
 
                     loss: td.TensorDict = loss_module(minibatch)
 
-                    aux_losses = td.TensorDict(dict(
-                        velocity_forward=smooth_l1_loss(
-                            minibatch["aux", "velocity_forward"], minibatch["agents", "velocity_forward"]),
-                        velocity_lateral=smooth_l1_loss(
-                            minibatch["aux", "velocity_lateral"], minibatch["agents", "velocity_lateral"]),
-                        **{
-                            curvature_aux_name(metres): smooth_l1_loss(
-                                minibatch["aux", curvature_aux_name(metres)],
-                                minibatch[track_curvature_key(metres)])
-                            for metres in CURVATURE_LOOKAHEAD_DISTANCES
-                        },
-                        wheel_slip_lf_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lf_forward"], minibatch["agents", "wheel_slip_forward_front_left"]),
-                        wheel_slip_lf_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lf_lateral"], minibatch["agents", "wheel_slip_lateral_front_left"]),
-                        wheel_slip_lr_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lr_forward"], minibatch["agents", "wheel_slip_forward_back_left"]),
-                        wheel_slip_lr_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_lr_lateral"], minibatch["agents", "wheel_slip_lateral_back_left"]),
-                        wheel_slip_rf_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rf_forward"], minibatch["agents", "wheel_slip_forward_front_right"]),
-                        wheel_slip_rf_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rf_lateral"], minibatch["agents", "wheel_slip_lateral_front_right"]),
-                        wheel_slip_rr_forward=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rr_forward"], minibatch["agents", "wheel_slip_forward_back_right"]),
-                        wheel_slip_rr_lateral=smooth_l1_loss(
-                            minibatch["aux", "wheel_slip_rr_lateral"], minibatch["agents", "wheel_slip_lateral_back_right"]),
-                        angular_velocity_y=smooth_l1_loss(
-                            minibatch["aux", "angular_velocity_y"], minibatch["agents", "angular_velocity_y"])
-                    ))
+                    aux_losses = gen_aux_losses(minibatch)
 
                     ppo_loss = loss["loss_entropy"] + \
                         loss["loss_critic"] + loss["loss_objective"]
@@ -372,6 +345,8 @@ def train(
         save_checkpoint(i)
         print(f"Checkpoint saved at iteration {i}")
         env.close()
+        while not env.is_closed:
+            time.sleep(0.1)
 
     trailing = stats_history[-10:]
     avg_stats = {k: sum(d[k] for d in trailing) / len(trailing)
