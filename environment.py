@@ -7,24 +7,7 @@ import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 import tensordict as td
 
-from utils import CURVATURE_LOOKAHEAD_KEYS
-
-
-
-# The terms ComposeReward adds up, and the key each one is published under. They sum to
-# ("agents", "reward") exactly, so a reward curve can be read back as the contributions
-# that made it (see rollout_stats in stats.py, which reports the mean of each).
-#
-# Published by the env rather than re-derived downstream: the weights live in
-# ComposeReward, so anything computing "how much of this came from progress" from the
-# raw observations would be a second copy of the formula, free to drift from the reward
-# the agent was actually trained on.
-REWARD_TERM_KEYS: dict[str, td.NestedKey] = {
-    "progress": ("agents", "reward_progress"),
-    "velocity_forward": ("agents", "reward_velocity_forward"),
-    "step_penalty": ("agents", "reward_step_penalty"),
-    "collision": ("agents", "reward_collision"),
-}
+from utils import CURVATURE_LOOKAHEAD_KEYS, REWARD_TERM_KEYS
 
 
 class RoboRacerEnv(TransformedEnv):

@@ -224,6 +224,49 @@ class ActorValueAuxOperator(SafeSequential):
         return self.module[3]
 
 
+def make_or_load_model(
+    name: str,
+    num_stacked_lidar_frames: int,
+    n_rays: int,
+    lidar_conv: Literal["conv1d", "conv2d"],
+    ray_kernel: int,
+    ray_stride: int,
+    time_subsample: int = 1,
+    time_stride: int | None = None,
+    time_kernel: int | None = None,
+) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
+    model_config = dict(
+        num_stacked_lidar_frames=num_stacked_lidar_frames,
+        n_rays=n_rays,
+        lidar_conv=lidar_conv,
+        ray_kernel=ray_kernel,
+        ray_stride=ray_stride,
+        time_kernel=time_kernel,
+        time_stride=time_stride,
+    )
+    if os.path.exists(f"checkpoints/{name}"):
+        # get latest checkpoint
+        checkpoints = [f for f in os.listdir(
+            f"checkpoints/{name}") if f.endswith(".pt")]
+        if not checkpoints:
+            raise ValueError(f"No checkpoints found in checkpoints/{name}")
+        latest_checkpoint = max(checkpoints, key=lambda f: int(
+            f.split("_")[-1].split(".")[0]))
+        print(f"Loading model from checkpoints/{name}/{latest_checkpoint}")
+        return load_model(f"checkpoints/{name}/{latest_checkpoint}")
+    else:
+        return make_model(
+            num_stacked_lidar_frames=num_stacked_lidar_frames,
+            n_rays=n_rays,
+            lidar_conv=lidar_conv,
+            ray_kernel=ray_kernel,
+            ray_stride=ray_stride,
+            time_subsample=time_subsample,
+            time_stride=time_stride,
+            time_kernel=time_kernel
+        ), model_config, 0, None
+
+
 def make_model(
     num_stacked_lidar_frames: int,
     n_rays: int,
@@ -233,7 +276,7 @@ def make_model(
     time_subsample: int = 1,
     time_stride: int | None = None,
     time_kernel: int | None = None,
-) -> ActorValueAuxOperator:
+) -> tuple[ActorValueAuxOperator, dict[str, Any]]:
     trunk_tensordict_model = TensorDictModule(
         TrunkModel(
             num_stacked_lidar_frames=num_stacked_lidar_frames,
@@ -314,8 +357,9 @@ def save_model(
     model_config: dict,
     optim: dict[str, Any],
     iter: int,
-    path: str,
+    name: str,
 ):
+    path = f"checkpoints/{name}/iteration_{iter:05d}.pt"
     os.makedirs(os.path.dirname(path), exist_ok=True)
     checkpoint = {
         "model": model.state_dict(),
@@ -326,9 +370,12 @@ def save_model(
     torch.save(checkpoint, path)
 
 
-def load_model(path: str) -> ActorValueAuxOperator:
+
+
+def load_model(path: str) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
     checkpoint = torch.load(path, map_location="cpu")
     model_config = checkpoint["model_config"]
-    model = make_model(**model_config)
+    optim_state_dict = checkpoint["optim"]
+    model, _ = make_model(**model_config)
     model.load_state_dict(checkpoint["model"])
-    return model, model_config
+    return model, model_config, checkpoint["iter"], optim_state_dict

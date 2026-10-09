@@ -2,14 +2,11 @@ from typing import Literal
 
 from torch.utils.tensorboard import SummaryWriter
 import time
-from model import ActorValueAuxOperator, curvature_aux_name, make_model
+from model import ActorValueAuxOperator, make_model, make_or_load_model, save_model
 from environment import (
-    CURVATURE_LOOKAHEAD_DISTANCES,
     RoboRacerEnv,
-    RoboRacerParallelEnvs,
-    track_curvature_key,
+    RoboRacerParallelEnvs
 )
-from stats import rollout_stats
 import tensordict as td
 from torchrl.objectives.value import GAE
 from torchrl.objectives import ClipPPOLoss
@@ -24,38 +21,12 @@ import torch
 import itertools
 import pandas as pd
 
-from utils import gen_aux_losses
-
-# rollout_data.csv's column names for each aux target, pooled where a target
-# is predicted separately for two wheels that should nonetheless share one
-# normalisation scale (front: fl+fr, rear: rl+rr).
-AUX_TARGET_COLUMNS = dict(
-    velocity_forward=["velocity_forward"],
-    velocity_lateral=["velocity_lateral"],
-    angular_velocity_y=["yaw_rate"],
-    curvature_05m=["curvature_0_5m"],
-    curvature_10m=["curvature_1_0m"],
-    curvature_20m=["curvature_2_0m"],
-    wheel_slip_front_forward=[
-        "wheel_slip_fl_forward", "wheel_slip_fr_forward"],
-    wheel_slip_front_lateral=[
-        "wheel_slip_fl_sideways", "wheel_slip_fr_sideways"],
-    wheel_slip_rear_forward=["wheel_slip_rl_forward", "wheel_slip_rr_forward"],
-    wheel_slip_rear_lateral=[
-        "wheel_slip_rl_sideways", "wheel_slip_rr_sideways"],
-)
+from utils import AUX_HEAD_KEYS, gen_aux_losses, gen_aux_weights_default_zero, load_aux_head_scaling_factors, rollout_stats
 
 
 def train(
         env: RoboRacerEnv | RoboRacerParallelEnvs,
-        velocity_forward_weight: float,
-        velocity_lateral_weight: float,
-        curvature_weights: dict[float, float],
-        wheel_slip_front_forward_weight: float,
-        wheel_slip_front_lateral_weight: float,
-        wheel_slip_rear_forward_weight: float,
-        wheel_slip_rear_lateral_weight: float,
-        angular_velocity_y_weight: float,
+        aux_weights: dict[str, float],
         num_stacked_lidar_frames: int,
         n_rays: int,
         lidar_conv: Literal["conv1d", "conv2d"],
@@ -69,37 +40,12 @@ def train(
         num_threads: int = 16,
 ) -> tuple[ActorValueAuxOperator, dict[str, float]]:
     torch.set_num_threads(num_threads)
-
-    # Fixes model init, action sampling, and minibatch shuffling so that
-    # trials/runs using the same seed are only distinguished by their
-    # hyperparameters, not by incidental RNG noise.
     random.seed(seed)
     torch.manual_seed(seed)
 
-    # Keyed by lookahead distance in metres; a distance left out of
-    # curvature_weights gets weight 0, i.e. its head is left untrained.
-    unknown_distances = sorted(
-        set(curvature_weights) - set(CURVATURE_LOOKAHEAD_DISTANCES))
-    if unknown_distances:
+    if any(aux_weights.get(name) == None for name in AUX_HEAD_KEYS):
         raise ValueError(
-            f"curvature_weights has no such lookahead distances: {unknown_distances}. "
-            f"Known distances (metres): {CURVATURE_LOOKAHEAD_DISTANCES}")
-
-    aux_weights = {
-        "velocity_forward": velocity_forward_weight,
-        "velocity_lateral": velocity_lateral_weight,
-        **{curvature_aux_name(metres): curvature_weights.get(metres, 0.0)
-           for metres in CURVATURE_LOOKAHEAD_DISTANCES},
-        "wheel_slip_lf_forward": wheel_slip_front_forward_weight,
-        "wheel_slip_rf_forward": wheel_slip_front_forward_weight,
-        "wheel_slip_lf_lateral": wheel_slip_front_lateral_weight,
-        "wheel_slip_rf_lateral": wheel_slip_front_lateral_weight,
-        "wheel_slip_lr_forward": wheel_slip_rear_forward_weight,
-        "wheel_slip_rr_forward": wheel_slip_rear_forward_weight,
-        "wheel_slip_lr_lateral": wheel_slip_rear_lateral_weight,
-        "wheel_slip_rr_lateral": wheel_slip_rear_lateral_weight,
-        "angular_velocity_y": angular_velocity_y_weight,
-    }
+            f"aux_weights must contain all keys in AUX_HEAD_KEYS: {AUX_HEAD_KEYS}")
 
     writer = SummaryWriter(log_dir=f"runs/{name}")
 
@@ -113,7 +59,8 @@ def train(
     frames_per_rollout = 512
     batch_size = 2048
 
-    model_config = dict(
+    model, model_config, start_iter, optim_state_dict = make_or_load_model(
+        name=name,
         num_stacked_lidar_frames=num_stacked_lidar_frames,
         n_rays=n_rays,
         lidar_conv=lidar_conv,
@@ -122,11 +69,9 @@ def train(
         time_kernel=time_kernel,
         time_stride=time_stride,
     )
-    model: ActorValueAuxOperator = make_model(**model_config)
-
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-    start_iter = 0
+    if optim_state_dict is not None:
+        optim.load_state_dict(optim_state_dict)
 
     gae = GAE(
         gamma=gamma,
@@ -157,6 +102,8 @@ def train(
         terminated=("agents", "terminated"),
     )
 
+    aux_weights_scaling_factors = load_aux_head_scaling_factors("results/aux_head_scaling_factors.json")
+
     i = start_iter - 1
     stats_history: list[dict[str, float]] = []
     try:
@@ -171,9 +118,9 @@ def train(
                 for frame in range(frames_per_rollout):
                     tensordict = env.step(
                         model.get_policy_operator()(tensordict))
-                    steps.append(tensordict.select(
-                        [key for key in tensordict.keys() if key[0] != "next"]
-                    ))
+
+                    # Don't store next-step observations in the rollout
+                    steps.append(tensordict.exclude(("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
                     tensordict = env.step_mdp(tensordict)
 
             stack_rollout_start = time.perf_counter_ns()
@@ -214,7 +161,7 @@ def train(
 
                     loss: td.TensorDict = loss_module(minibatch)
 
-                    aux_losses = gen_aux_losses(minibatch)
+                    aux_losses = gen_aux_losses(minibatch, aux_weights_scaling_factors)
 
                     ppo_loss = loss["loss_entropy"] + \
                         loss["loss_critic"] + loss["loss_objective"]
@@ -317,14 +264,14 @@ def train(
                     f"action/{action_name}", rollout["action", action_name].flatten(), i)
 
             if i % 10 == 0:
-                save_checkpoint(i)
+                save_model(model, model_config, optim.state_dict(), i, name)
 
             if max_iters is not None and i - start_iter + 1 >= max_iters:
                 break
     except KeyboardInterrupt:
         print("Interrupted — saving checkpoint before exit")
     finally:
-        save_checkpoint(i)
+        save_model(model, model_config, optim.state_dict(), i, name)
         print(f"Checkpoint saved at iteration {i}")
         env.close()
         while not env.is_closed:
@@ -334,43 +281,23 @@ def train(
     avg_stats = {k: sum(d[k] for d in trailing) / len(trailing)
                  for k in trailing[0]} if trailing else {}
 
-    # Time-normalised area under the reward-per-iteration curve (mean over
-    # every iteration, not just the trailing window) -- rewards hyperparameters
-    # that learn fast across the whole run, not just ones with a good final
-    # plateau that got there slowly.
-    all_rewards = [s["reward_mean"] for s in stats_history]
-    avg_stats["reward_auc"] = sum(
-        all_rewards) / len(all_rewards) if all_rewards else 0.0
-    if all_rewards:
-        writer.add_scalar("reward/auc", avg_stats["reward_auc"], i)
-
-    return model, avg_stats
-
 
 if __name__ == "__main__":
     SEED = 44
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
-        num_envs=8,
+        num_envs=1,
         file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
         num_stacked_frames=50,
         no_graphics=True,
-        num_areas=6,
+        num_areas=1,
         time_scale=100.0,
         start_worker_id=0,
         seed=SEED,
     )
     train(
         env,
-        velocity_forward_weight=0.0,
-        velocity_lateral_weight=0.0,
-        curvature_weights={metres: 0.0
-                           for metres in CURVATURE_LOOKAHEAD_DISTANCES},
-        wheel_slip_front_forward_weight=0.0,
-        wheel_slip_front_lateral_weight=0.0,
-        wheel_slip_rear_forward_weight=0.0,
-        wheel_slip_rear_lateral_weight=0.0,
-        angular_velocity_y_weight=0.0,
+        aux_weights=gen_aux_weights_default_zero({}),
         num_stacked_lidar_frames=50,  # 25Hz => 2s of history
         n_rays=101,
         lidar_conv="conv1d",

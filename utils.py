@@ -1,6 +1,6 @@
 from typing import Literal
 
-from tensordict import TensorDict
+from tensordict import NestedKey, TensorDict
 from torch.nn.functional import smooth_l1_loss
 import json
 from torcheval.metrics.functional import r2_score
@@ -26,6 +26,13 @@ AUX_HEAD_KEYS = [
     "angular_velocity_y"
 ]
 
+REWARD_TERM_KEYS: dict[str, NestedKey] = {
+    "progress": ("agents", "reward_progress"),
+    "velocity_forward": ("agents", "reward_velocity_forward"),
+    "step_penalty": ("agents", "reward_step_penalty"),
+    "collision": ("agents", "reward_collision"),
+}
+
 
 def get_aux_head_true_values(td: TensorDict) -> dict[str, float]:
     return {
@@ -37,6 +44,12 @@ def get_aux_head_true_values(td: TensorDict) -> dict[str, float]:
 def get_aux_head_predicted_values(td: TensorDict) -> dict[str, float]:
     return {
         key: td["aux", key]
+        for key in AUX_HEAD_KEYS
+    }
+
+def gen_aux_weights_default_zero(aux_weights_override: dict[str, float]) -> dict[str, float]:
+    return {
+        key: aux_weights_override.get(key, 0.0)
         for key in AUX_HEAD_KEYS
     }
 
@@ -72,24 +85,6 @@ def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict) -> Tensor
 
 
 def rollout_stats(rollout: TensorDict) -> dict[str, float]:
-    """Summary stats for a collected rollout, used as the score a hyperparameter
-    search reads off without a separate eval pass (see train.py).
-
-    Reward and post-step observations live under "next" (the env.step()
-    convention GAE/ClipPPOLoss also read their reward/done/terminated keys
-    through).
-
-    Three groups come back:
-
-    - "reward_mean" and one "reward_<term>_mean" per entry of REWARD_TERM_KEYS.
-      The terms are the reward broken into what it was made of, in reward units,
-      and they sum to reward_mean.
-    - "progress_mean" and "velocity_forward_mean": the raw quantities two of
-      those terms are computed from, in metres per step and m/s. Useful
-      precisely because they do not move when a weight changes.
-    - two collision rates, over different denominators. See below.
-    """
-    from environment import REWARD_TERM_KEYS
 
     next_td = rollout["next"]
     terminated = next_td["agents", "terminated"]

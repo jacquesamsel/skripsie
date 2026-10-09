@@ -1,7 +1,10 @@
-import optuna
+import os
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
 from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
 
 HYPERPARAMETER_GROUPS = [
+    [],
     ["velocity_forward"],
     ["velocity_lateral"],
     [
@@ -28,7 +31,7 @@ HYPERPARAMETER_GROUPS = [
         "wheel_slip_rf_lateral"
     ],
     [
-        "wheel_slip_lb_forward"
+        "wheel_slip_lb_forward",
         "wheel_slip_rb_forward"
     ],
     [
@@ -40,6 +43,13 @@ HYPERPARAMETER_GROUPS = [
     ]
 ]
 
+WEIGHT_VALUES = [0.5, 0.1, 1]
+NUM_TRIALS_PER_GROUP = 5
+
+HYPERPARAMETER_SEARCH_SPACE = [{}] + [
+    {key: value for key in group} for value in WEIGHT_VALUES for group in HYPERPARAMETER_GROUPS if group
+]
+
 
 if __name__ == "__main__":
-    for i in range(len(HYPERPARAMETER_GROUPS)):
+    print(HYPERPARAMETER_SEARCH_SPACE)
