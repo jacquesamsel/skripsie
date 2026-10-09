@@ -1,8 +1,8 @@
-import json
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
+import platform
 
 from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
 
@@ -18,10 +18,10 @@ HYPERPARAMETER_GROUPS = {
     "curvature_close": curvature_keys(0.0, 3.0),
     "curvature_medium": curvature_keys(3.0, 6.0),
     "curvature_far": curvature_keys(6.0, 8.0),
-    "wheel_slip_front_forward": ["wheel_slip_lf_forward", "wheel_slip_rf_forward"],
-    "wheel_slip_front_lateral": ["wheel_slip_lf_lateral", "wheel_slip_rf_lateral"],
-    "wheel_slip_rear_forward": ["wheel_slip_lb_forward", "wheel_slip_rb_forward"],
-    "wheel_slip_rear_lateral": ["wheel_slip_lb_lateral", "wheel_slip_rb_lateral"],
+    "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
+    "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
+    "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
+    "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
     "angular_velocity_y": ["angular_velocity_y"],
 }
 
@@ -29,6 +29,11 @@ WEIGHT_VALUES = [0.1, 0.5, 1.0]
 SEEDS = [0, 1, 2, 3, 4]
 MAX_WORKERS = 3
 RUNS_DIR = Path("run_done_flags")
+
+NUM_ENVS = 8
+MAX_WORKERS = 3
+
+_SLOT = None
 
 
 @dataclass(frozen=True)
@@ -69,17 +74,42 @@ def worker(trial: Trial):
     from environment import RoboRacerParallelEnvs
     from train import train
     from utils import gen_aux_weights_default_zero
+    is_mac = platform.system() == "Darwin"
+    if _SLOT is None:
+        raise RuntimeError(
+            "Worker slot not set. Use the 'mp' context to spawn workers.")
 
-    env = RoboRacerParallelEnvs(num_envs=8, seed=trial.seed)
-    train(
-        env,
-        aux_weights=gen_aux_weights_default_zero(trial.params),
-        name=trial.name,
-        n_rays=101,
-        lidar_conv="conv1d",
+    env = RoboRacerParallelEnvs(
+        file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
+        num_envs=1,
+        num_areas=1,
+        num_stacked_frames=50,
+        seed=trial.seed,
+        start_worker_id=_SLOT * NUM_ENVS
     )
+    try:
+        train(
+            env,
+            aux_weights=gen_aux_weights_default_zero(trial.params),
+            name=trial.name,
+            n_rays=101,
+            ray_kernel=8,
+            ray_stride=1,
+            seed=trial.seed,
+            lidar_conv="conv1d",
+            max_iters=2
+        )
+    finally:
+        env.close()
     trial.done_marker.touch()
     return trial.name
+
+
+def _init_worker(counter):
+    global _SLOT
+    with counter.get_lock():
+        _SLOT = counter.value % MAX_WORKERS
+        counter.value += 1
 
 
 def main():
@@ -90,7 +120,13 @@ def main():
     print(f"{len(pending)}/{len(trials)} trials to run")
 
     ctx = mp.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS, mp_context=ctx) as ex:
+    counter = ctx.Value('i', 0)
+    with ProcessPoolExecutor(
+        max_workers=MAX_WORKERS,
+        mp_context=ctx,
+        initializer=_init_worker,
+        initargs=(counter,)
+    ) as ex:
         futures = {ex.submit(worker, t): t for t in pending}
         for fut in as_completed(futures):
             t = futures[fut]
