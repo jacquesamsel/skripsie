@@ -1084,7 +1084,12 @@ The model architecture is a simple feedforward neural network. It comprises a bl
   }
   #let main-net = draw-network(
     (
-      (type: "input", image: image("../results/lidar_input.png"), label: "LIDAR history"),
+      (
+        type: "input",
+        image: image("../results/lidar_input.png"),
+        label: "LIDAR history",
+        channels: (50, 101),
+      ),
       (
         type: "conv",
         widths: (0.5,),
@@ -1092,8 +1097,8 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         depth: 4,
         show-relu: true,
         channels: (50,),
+        legend: "Conv1d",
         name: "conv1d",
-        label: "Conv1d",
       ),
       (
         type: "conv",
@@ -1125,12 +1130,22 @@ The model architecture is a simple feedforward neural network. It comprises a bl
         name: "conv1d",
         offset: 0.5,
       ),
-      (type: "custom", width: 0.4, height: 4, depth: 0.5, label: "Flatten", name: "flat", offset: 1.5),
-      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1),
+      (
+        type: "custom",
+        width: 0.4,
+        height: 4,
+        depth: 0.5,
+        label: "Flatten",
+        name: "flat",
+        offset: 1.5,
+        legend: "Flatten",
+        fill: red,
+      ),
+      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1, fill: blue),
       (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
       (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
       (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
-      (type: "fc", channels: (27+4,), offset: 0.5, name: "fc4", height: get-fc-height(64), label: "out"),
+      (type: "fc", channels: (27 + 4 + 1,), offset: 0.5, name: "fc4", height: get-fc-height(32), label: "out"),
     ),
     connections: (),
     show-legend: true,
@@ -1140,19 +1155,16 @@ The model architecture is a simple feedforward neural network. It comprises a bl
     depth-multiplier: 0.3,
   )
 
-  #let action-net = draw-network(
-    ((type: "input", image: none, channels: (2,), height: 2, depth: 2, label: "Previous steering & throttle"),),
-    scale: 100%,
-    depth-multiplier: 0.3,
-  )
-
   #figure(
     caption: "Neural network architecture",
     cetz.canvas(length: 1cm, {
       import cetz.draw: *
       content((0, 0), main-net, anchor: "north-west", name: "main")
-      content((7.6, -6.5), action-net, anchor: "north", name: "act")
-      line((7.6, -6.4), (7.6, -5.05), (8.68, -5.05), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
+      // Second input: the previous action, concatenated with the flattened
+      // conv features. Coordinates are in cm, measured from the top-left of
+      // the network image; (8.95, -1.28) is the top face of the "Concat" block.
+      content((8.95, 0), text(size: 8.5pt, weight: "bold")[Previous action], anchor: "south", name: "act")
+      line((8.95, -0.1), (8.95, -1.28), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
     }),
   )
 ]
