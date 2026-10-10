@@ -29,7 +29,7 @@ def train(
         lidar_conv: Literal["conv1d", "conv2d"],
         ray_kernel: int,
         ray_stride: int,
-        name: str,
+        name: str | None,
         seed: int,
         time_kernel: int | None = None,
         time_stride: int | None = None,
@@ -164,9 +164,9 @@ def train(
                     loss["loss_critic"] + loss["loss_objective"]
                 aux_loss = sum(
                     0.5 * (
-                        aux_weights[k] * aux_losses[k].mean(0)
-                    ).sum()
-                    for k in aux_weights
+                        aux_weights[k] * aux_losses[k]
+                    )
+                    for k in aux_weights if aux_weights[k] > 0.0
                 )
 
                 total_loss = (ppo_loss + aux_loss).mean()
@@ -243,7 +243,7 @@ def train(
             writer.add_histogram(
                 f"action/{action_name}", rollout["action", action_name].flatten(), i)
 
-        if i % 10 == 0:
+        if i % 10 == 0 and name is not None:
             save_model(model, model_config, optim.state_dict(), i, name)
 
 
