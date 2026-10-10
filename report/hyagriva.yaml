@@ -1,3 +1,93 @@
+olofsson2021crashdatabases:
+  type: article
+  title: Using Crash Databases to Predict Effectiveness of New Autonomous Vehicle Maneuvers for Lane-Departure Injury Reduction
+  author:
+    - Olofsson, Björn
+    - Nielsen, Lars
+  date: 2021
+  page-range: 3479-3490
+  serial-number:
+    doi: 10.1109/TITS.2020.2983553
+  parent:
+    type: periodical
+    title: IEEE Transactions on Intelligent Transportation Systems
+    issue: 6
+    volume: 22
+
+VanDriel2010congestion:
+  type: article
+  title: The Impact of a Congestion Assistant on Traffic Flow Efficiency and Safety in Congested Traffic Caused by a Lane Drop
+  author:
+    - Driel, Cornelie J. G. Van
+    - Arem, Bart Van
+  date: 2010
+  page-range: 197-208
+  url: https://doi.org/10.1080/15472450.2010.516226
+  serial-number:
+    doi: 10.1080/15472450.2010.516226
+  parent:
+    type: periodical
+    title: Journal of Intelligent Transportation Systems
+    publisher: Taylor & Francis
+    issue: 4
+    volume: 14
+
+ignlinski2017autonomous-vehicles-ghg:
+  type: article
+  title: Analysis of the Potential of Autonomous Vehicles in Reducing the Emissions of Greenhouse Gases in Road Transport
+  author:
+  - Igliński, Hubert
+  - Babiak, Maciej
+  date: 2017
+  page-range: 353-358
+  url: https://www.sciencedirect.com/science/article/pii/S1877705817326073
+  serial-number:
+    doi: https://doi.org/10.1016/j.proeng.2017.06.061
+    issn: 1877-7058
+  note: 12th international scientific conference of young scientists on sustainable, modern and safe transport
+  abstract: Continuous and dynamic growth in demand for road transport, especially in developing countries, causes increase of greenhouse gases (GHG) emissions. At the same time the emissions of toxic components of exhaust gases harmful to human health and the environment enhance – particulate matter, nitrogen oxides, carbon monoxide and others. In particular, GHG emission and increase their concentration in the atmosphere, where road transport is the largest issuer in the transport sector, become one of the most important global problems. So far actions towards reducing energy consumption and emissions have not caused a decrease in global emissions. One of the key reasons for this is the presence of Jevons paradox, where the combined demand for transport grew faster than underwent the efficiency improvement of energy consumption and emissions reduction. One of the main reason for this is that vehicles offered on the market (especially cars) are characterized by an increase in weight and engine power. Broad implementation of autonomous vehicle (AV) can be a turning point in terms of reducing emissions of GHG. The aim of authors of this paper is to analyze the potential for AV to reduce GHG emissions from road transport. The analysis includes not only technical and technological issues, but also organizational and in the management of transport demand.
+  parent:
+    type: periodical
+    title: Procedia Engineering
+    volume: 192
+
+rafiee2022makesusefulauxiliarytasks:
+  type: misc
+  title: 'What makes useful auxiliary tasks in reinforcement learning: investigating the effect of the target policy'
+  author:
+  - Rafiee, Banafsheh
+  - Jin, Jun
+  - Luo, Jun
+  - White, Adam
+  date: 2022
+  url: https://arxiv.org/abs/2204.00565
+  serial-number:
+    arxiv: '2204.00565'
+
+alain2018understandingintermediatelayersusing:
+  type: misc
+  title: Understanding intermediate layers using linear classifier probes
+  author:
+  - Alain, Guillaume
+  - Bengio, Yoshua
+  date: 2018
+  url: https://arxiv.org/abs/1610.01644
+  serial-number:
+    arxiv: '1610.01644'
+
+chen2020interpretableendtoendurbanautonomous:
+  type: misc
+  title: Interpretable End-to-end Urban Autonomous Driving with Latent Deep Reinforcement Learning
+  author:
+  - Chen, Jianyu
+  - Li, Shengbo Eben
+  - Tomizuka, Masayoshi
+  date: 2020
+  url: https://arxiv.org/abs/2001.08726
+  serial-number:
+    arxiv: '2001.08726'
+
+
 bellman1957:
   type: article
   title: A Markovian Decision Process
@@ -21,7 +111,8 @@ sutton2018:
 kaelbling1998:
   type: article
   title: Planning and acting in partially observable stochastic domains
-  author: ["Kaelbling, Leslie Pack", "Littman, Michael L.", "Cassandra, Anthony R."]
+  author:
+    ["Kaelbling, Leslie Pack", "Littman, Michael L.", "Cassandra, Anthony R."]
   date: 1998
   page-range: 99-134
   parent:
@@ -149,10 +240,10 @@ lecun1998:
   type: article
   title: Gradient-based learning applied to document recognition
   author:
-  - Lecun, Y.
-  - Bottou, L.
-  - Bengio, Y.
-  - Haffner, P.
+    - Lecun, Y.
+    - Bottou, L.
+    - Bengio, Y.
+    - Haffner, P.
   date: 1998
   page-range: 2278-2324
   serial-number:
@@ -191,7 +282,6 @@ kendall2018multitask-cvpr:
     type: Proceedings
     title: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)
     publisher: IEEE
-
 
 kendall2017uncertainties:
   type: Article
@@ -346,7 +436,6 @@ hullermeier2013inductive:
     isbn: "978-1-4419-9863-7"
   url: https://doi.org/10.1007/978-1-4419-9863-7_927
 
-
 schulman2017ppo:
   type: Misc
   title: Proximal Policy Optimization Algorithms
@@ -378,30 +467,30 @@ lillicrap2015continuous:
   url: https://ar5iv.arxiv.org/html/1509.02971
 
 clipper2:
-    type: repository
-    title: "Clipper2: Polygon Clipping, Offsetting & Triangulation in C++, C# and Delphi"
-    author: "Johnson, Angus"
-    date: 2022
-    url:
-        value: https://github.com/AngusJohnson/Clipper2
-        date: 2026-10-08
-    note: "Boost Software License 1.0"
-    publisher: GitHub
+  type: repository
+  title: "Clipper2: Polygon Clipping, Offsetting & Triangulation in C++, C# and Delphi"
+  author: "Johnson, Angus"
+  date: 2022
+  url:
+    value: https://github.com/AngusJohnson/Clipper2
+    date: 2026-10-08
+  note: "Boost Software License 1.0"
+  publisher: GitHub
 
 vatti1992:
-    type: article
-    title: A generic solution to polygon clipping
-    author: "Vatti, Bala R."
-    date: 1992-07
-    page-range: 56-63
-    doi: 10.1145/129902.129906
-    url: https://dl.acm.org/doi/10.1145/129902.129906
-    parent:
-        type: periodical
-        title: Communications of the ACM
-        volume: 35
-        issue: 7
-        publisher: ACM
+  type: article
+  title: A generic solution to polygon clipping
+  author: "Vatti, Bala R."
+  date: 1992-07
+  page-range: 56-63
+  doi: 10.1145/129902.129906
+  url: https://dl.acm.org/doi/10.1145/129902.129906
+  parent:
+    type: periodical
+    title: Communications of the ACM
+    volume: 35
+    issue: 7
+    publisher: ACM
 
 huber1964robust:
   type: Article

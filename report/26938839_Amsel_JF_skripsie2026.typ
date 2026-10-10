@@ -191,7 +191,8 @@
 
   #set page(background: image("stb-thesis-frntp.pdf", width: 110%, height: 107%, fit: "stretch"))
 
-  #title("Auxiliary learning for autonomous racing")
+
+  #block(title("Backseat driver: Auxiliary learning for autonomous racing"), width: 400pt)
 
   by
 
@@ -300,9 +301,14 @@
 = Introduction
 
 == Background and motivation
-Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes
+Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes for a demanding testbed to develop and evaluate autonomous driving algorithms. Studying autonomous racing is a proxy for development of autonomous driving algorithms, which have the potential to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg.
+
+Generally, there exists two broad approaches to autonomous driving: end-to-end learning, where a model is trained to map sensor inputs directly to control outputs, and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
+
+Auxiliary learning is a technique involving training a model to perform additional (auxiliary) tasks alongside the primary task, in the hope that these tasks will help the model learn representations that are useful for the primary task. In some cases, it can be used to improve the performance of reinforcement learning models by providing additional supervisory signals during training that improve the model's learned representations @rafiee2022makesusefulauxiliarytasks, while also aiding in interpretability of the learned representations  @chen2020interpretableendtoendurbanautonomous.
 
 == Problem statement & objectives
+
 
 
 
@@ -1198,9 +1204,6 @@ The baseline model was trained in 300 PPO steps, experiencing 512 frames on each
 
 Despite not being trained with the explicit task of auxiliary prediction, we are able to extract a proxy to examine the feature representation in the model.
 
-
-
-
 == Normalisation of ego-agent privledged information
 
 Prior to applying auxiliary learning, the privileged information must be normalised. The auxiliary loss is a sum over the individual prediction targets, so a target with a larger numerical range contributes larger errors and gradients, and can dominate the shared representation at the expense of the others. Training with unnormalised targets makes hyperparameter tuning @vanhasselt2016, and training more difficult @lecun1998.
@@ -1222,6 +1225,7 @@ An alternative method is @chen2017gradnorm, which dynamically scales the weights
 $
   L_beta (x/alpha, hat(x)/alpha) = (L_(alpha*beta) (x, hat(x))) / alpha^2
 $
+- *Regression based on the hidden layer output of the PPO model*: The PPO model is trained to predict the value function and policy, so the hidden layer output contains information about the state of the environment. This information can be used to predict the auxiliary targets. The regression results show that the hidden layer output contains information about the auxiliary targets, and that this information can be extracted by a simple linear regression model. @alain2018understandingintermediatelayersusing
 
 = Conclusions and recommendations
 #pagebreak()
