@@ -251,7 +251,7 @@
 
 #pagebreak()
 
-= Notation & acronyms
+= Notation
 #table(
   columns: (1.5fr, 2fr),
   gutter: 8pt,
@@ -291,6 +291,25 @@
   [Gaussian probability density function with mean $mu$ and variance $sigma^2$ with evaluation point $y$],
 )
 
+= Acronyms and abbreviations
+
+#let acronyms = (
+  ("LiDAR", "Light Detection and Ranging"),
+  ("RL", "Reinforcement Learning"),
+  ("MDP", "Markov Decision Process"),
+  ("POMDP", "Partially Observable Markov Decision Process"),
+  ("PPO", "Proximal Policy Optimization"),
+)
+
+#table(
+  columns: (1.5fr, 2fr),
+  gutter: 8pt,
+  stroke: none,
+  ..acronyms.sorted(key: item => item.at(1)).flatten()
+)
+
+
+
 #pagebreak()
 
 #set page(numbering: "1")
@@ -303,15 +322,17 @@
 == Background and motivation
 Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes for a demanding testbed to develop and evaluate autonomous driving algorithms. Studying autonomous racing is a proxy for development of autonomous driving algorithms, which have the potential to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg.
 
-Generally, there exists two broad approaches to autonomous driving: end-to-end learning, where a model is trained to map sensor inputs directly to control outputs, and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
+Generally, there exist two broad approaches to autonomous driving: end-to-end learning, where a model is trained to map sensor inputs directly to control outputs, and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
 
 Auxiliary learning is a technique involving training a model to perform additional (auxiliary) tasks alongside the primary task, in the hope that these tasks will help the model learn representations that are useful for the primary task. In some cases, it can be used to improve the performance of reinforcement learning models by providing additional supervisory signals during training that improve the model's learned representations @rafiee2022makesusefulauxiliarytasks, while also aiding in interpretability of the learned representations  @chen2020interpretableendtoendurbanautonomous.
 
 == Problem statement & objectives
 
+An end-to-end RL agent that drives from LiDAR alone has to learn a representation of privledged information it can’t directly observe in the real world (e.g. its own velocity and slip, the curvature ahead, and its opponent's location in the case of head-to-head (H2H) racing). The agent may struggle to learn these representations early in training, when it has not yet learned to drive well enough to explore the environment effectively, which can lead to slow convergence.
 
+However, since the privledged information is available in simulation, we can use auxiliary learning to provide additional supervisory signals to the agent during training, which may help it learn better representations of the privledged information and improve its performance.
 
-
+The objectives of this Skripsie are to (a) select an appropriate simulation environment for autonomous racing, (b) implement a baseline end-to-end RL agent that drives from LiDAR alone, (c) gain an understanding of what representations the baseline agent natively encodes, (d) implement auxiliary learning to provide additional supervisory signals to the agent during training, and (e) evaluate the performance of the auxiliary learning agent against the baseline agent.
 
 = Related literature
 
@@ -487,31 +508,17 @@ $
 Then, the _policy gradient_ can be expressed as
 
 $
-  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(t)]
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(tau)]
 $
 
-where $G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k$ is the discounted reward-to-go. Replacing $G(tau)$ by $G_t$ leaves the expectation unchanged, since action $a_t$ cannot influence rewards $r_k$ with $k < t$, and it reduces variance#footnote([Strictly, the exact gradient of the discounted objective carries an extra factor $gamma^t$ on each term. Practical implementations omit it, which is the standard convention.]).
-
-Generally, policy gradient methods use the following algorithm to learn the policy $pi_theta$:
-
-#todo([Add algorithm table here.])
-#figure(
-  table(
-    columns: 1,
-    [
-
-    ],
-  ),
-  caption: [Policy gradient algorithm for learning a policy $pi_theta$ with parameters $theta$.
-  ],
-)
+where $G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k$ is the discounted reward-to-go#footnote([Strictly, the exact gradient of the discounted objective carries an extra factor $gamma^t$ on each term. Practical implementations omit it, which is the standard convention.]). Replacing $G(tau)$ by $G_t$ leaves the expectation unchanged, since action $a_t$ cannot influence rewards $r_k$ with $k < t$, and it reduces variance.
 
 === REINFORCE
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$, the policy gradient can be estimated in a Monte-Carlo fashion:
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $l_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
-  hat(nabla_theta J)(theta) = 1/T sum_(t=0)^(T-1) log(pi_theta (a_t | o_t)) dot G_t
+  hat(nabla_theta J)(theta) = 1/N sum_(i=1)^N 1/T sum_(t=0)^(l_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
 $
 
 In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
@@ -663,6 +670,66 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
 = System overview
 
 // Add a subsystem diagram
+
+#figure(
+  cetz.canvas(length: 1cm, {
+    import cetz.draw: *
+    set-style(stroke: 1pt, content: (padding: 0pt))
+
+    let lbl(body) = text(size: 9pt, body)
+
+    // --- Unity (outer container) ---------------------------------
+    rect((0, 0), (9.5, 6.5), name: "unity")
+    content((0.3, 6.2), anchor: "north-west", text(weight: "bold", size: 11pt)[Unity])
+
+    // --- Unity subsystems ----------------------------------------
+    rect((0.5, 3.4), (4.0, 4.9), name: "track")
+    content("track", lbl[Track generation])
+
+    rect((5.5, 3.4), (9.0, 4.9), name: "vehicle")
+    content("vehicle", lbl[Vehicle control])
+
+    rect((5.5, 0.6), (9.0, 2.1), name: "sensor")
+    content("sensor", lbl[Sensor simulation])
+
+    // --- Python agent --------------------------------------------
+    rect((12, 0), (15.5, 6.5), name: "agent")
+    content((13.75, 6.2), anchor: "north", text(weight: "bold", size: 11pt)[Python agent])
+    content((13.75, 3.25), align(
+      center + horizon,
+      lbl[Policy network #linebreak() (PPO + auxiliary #linebreak() heads)],
+    ))
+
+    // --- Arrows inside Unity -------------------------------------
+    let arrow = (end: ">", fill: black, scale: 0.7)
+
+    // Track geometry is what the LiDAR rays hit
+    line("track.south", (2.25, 1.35), "sensor.west", mark: arrow)
+    content((2.25, 2.4), anchor: "east", padding: 3pt, lbl[Track walls])
+
+    // Vehicle pose is needed to cast the rays
+    line("vehicle.south", "sensor.north", mark: arrow)
+    content((7.25, 2.75), anchor: "west", padding: 4pt, lbl[Pose])
+
+    // Track defines where the car is spawned and its curvature
+    line("track.east", "vehicle.west", mark: arrow)
+    content((4.75, 4.15), anchor: "south", padding: 3pt, lbl[Spawn])
+
+    // --- Arrows between Unity and the agent ----------------------
+    // Actions: agent -> vehicle control
+    line((12, 4.15), (9.0, 4.15), mark: arrow)
+    content((10.75, 4.15), anchor: "south", padding: 3pt, lbl[Actions])
+
+    // Observations: sensor simulation -> agent
+    line((9.0, 1.6), (12, 1.6), mark: arrow)
+    content((10.75, 1.6), anchor: "south", padding: 3pt, lbl[LiDAR scans])
+
+    // Privileged information: Unity -> agent (training only)
+    line((9.0, 0.9), (12, 0.9), mark: arrow, stroke: (dash: "dashed"))
+    content((10.75, 0.9), anchor: "north", padding: 3pt, lbl[Privileged info])
+  }),
+  caption: [Subsystem diagram: the Unity simulation and the Python agent.],
+)
 
 == RoboRacer
 
