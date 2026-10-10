@@ -72,7 +72,7 @@ def build_trials():
 
 def worker(trial: Trial):
     from environment import RoboRacerParallelEnvs
-    from train import train
+    from train import train, TrainParams
     from utils import gen_aux_weights_default_zero
     is_mac = platform.system() == "Darwin"
     if _SLOT is None:
@@ -90,16 +90,18 @@ def worker(trial: Trial):
     try:
         train(
             env,
-            aux_weights=gen_aux_weights_default_zero(trial.params),
-            num_stacked_lidar_frames=50,
-            name=trial.name,
-            n_rays=101,
-            ray_kernel=8,
-            ray_stride=1,
-            seed=trial.seed,
-            lidar_conv="conv1d",
-            max_iters=300,
-            num_threads=8
+            params=TrainParams(
+                aux_weights=gen_aux_weights_default_zero(trial.params),
+                num_stacked_lidar_frames=50,
+                name=trial.name,
+                n_rays=101,
+                ray_kernel=8,
+                ray_stride=1,
+                seed=trial.seed,
+                lidar_conv="conv1d",
+                max_iters=300,
+                num_threads=8
+            )
         )
     finally:
         env.close()
@@ -117,6 +119,14 @@ def _init_worker(counter):
     with counter.get_lock():
         _SLOT = counter.value % MAX_WORKERS
         counter.value += 1
+
+    # Pin this worker (and the Unity child it spawns) to a slice of cores so
+    # Unity's native thread pools (which size themselves off detected CPU
+    # count, not -job-worker-count) don't each try to grab every core.
+    total_cpus = os.cpu_count() or MAX_WORKERS
+    cores_per_worker = max(1, total_cpus // MAX_WORKERS)
+    start_core = _SLOT * cores_per_worker
+    os.sched_setaffinity(0, range(start_core, start_core + cores_per_worker))
 
 
 def main():
