@@ -26,12 +26,12 @@ HYPERPARAMETER_GROUPS = {
 }
 
 WEIGHT_VALUES = [0.1, 0.5, 1.0]
-SEEDS = [0, 1, 2, 3, 4]
-MAX_WORKERS = 3
+SEEDS = [0, 1, 2]
+MAX_WORKERS = 4
 RUNS_DIR = Path("run_done_flags")
 
-NUM_ENVS = 1
-MAX_WORKERS = 3
+NUM_ENVS = 8
+MAX_WORKERS = 4
 
 _SLOT = None
 
@@ -82,7 +82,7 @@ def worker(trial: Trial):
     env = RoboRacerParallelEnvs(
         file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
         num_envs=NUM_ENVS,
-        num_areas=1,
+        num_areas=6,
         num_stacked_frames=50,
         seed=trial.seed,
         start_worker_id=_SLOT * NUM_ENVS
@@ -98,7 +98,7 @@ def worker(trial: Trial):
             ray_stride=1,
             seed=trial.seed,
             lidar_conv="conv1d",
-            max_iters=2
+            max_iters=300
         )
     finally:
         env.close()
