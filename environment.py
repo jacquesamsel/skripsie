@@ -69,7 +69,7 @@ class RoboRacerEnv(TransformedEnv):
                         ("agents", agent_name, key)
                         for agent_name in agent_names],
                     out_key=("agents", key), dim=-2, del_keys=True
-                ) for key in ["lidar", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}", "done", "terminated", "truncated"]],
+                ) for key in ["lidar", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}", "occupancy_grid-OneHot", "done", "terminated", "truncated"]],
                 # Never read. Has to be dropped *before* the reward is stacked, not
                 # after: Stack(del_keys=True) prunes a per-agent subdict once it takes
                 # the last key out of it, but ExcludeTransform leaves the empty subdict
@@ -86,8 +86,13 @@ class RoboRacerEnv(TransformedEnv):
                 ),
                 RenameTransform(
                     in_keys=[
-                        ("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}")],
-                    out_keys=[("agents", "vector")]
+                        ("agents", f"VectorSensor_size{self.VECTOR_SENSOR_SIZE}"), ("agents", "occupancy_grid-OneHot")],
+                    out_keys=[("agents", "vector"), ("agents", "occupancy_grid")]
+                ),
+                UnaryTransform(
+                    fn=lambda occupancy_grid: occupancy_grid.transpose(-2, -3).transpose(0, 1),
+                    in_keys=[("agents", "occupancy_grid")],
+                    out_keys=[("agents", "occupancy_grid")],
                 ),
                 # Reshape the lidar tensor from (num_areas, ray*block) to (num_areas, ray, block)
                 UnaryTransform(

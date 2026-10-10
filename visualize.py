@@ -1,8 +1,39 @@
 import math
 from collections import deque
+from collections.abc import Sequence
 
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from matplotlib.colors import to_rgb
+from matplotlib.patches import Patch
+
+
+def _blit_frame(fig, background, artists):
+    """Pushes already-updated artists onto the unchanged background.
+
+    Returns the background to hand back next frame: the first call -- and the
+    first after a resize, which drops it to None -- has to draw the whole
+    figure once to capture it. Backends that cannot blit (the inline ones in a
+    notebook, say) get a plain redraw instead, which is slower but correct.
+    """
+    canvas = fig.canvas
+
+    if not getattr(canvas, "supports_blit", False):
+        canvas.draw_idle()
+        canvas.flush_events()
+        return background
+
+    if background is None:
+        canvas.draw()
+        background = canvas.copy_from_bbox(fig.bbox)
+
+    canvas.restore_region(background)
+    for artist in artists:
+        artist.axes.draw_artist(artist)
+    canvas.blit(fig.bbox)
+    canvas.flush_events()
+    return background
 
 
 class LidarVisualiser:
@@ -43,7 +74,8 @@ class LidarVisualiser:
             for image, cell in zip(self._images, distances):
                 image.set_data(cell)
 
-        self._blit()
+        self._background = _blit_frame(
+            self._fig, self._background, self._images)
 
     def close(self):
         plt.close(self._fig)
@@ -87,23 +119,151 @@ class LidarVisualiser:
             "resize_event", lambda _event: setattr(self, "_background", None))
         self._fig.show()
 
-    def _blit(self):
-        canvas = self._fig.canvas
 
-        if not getattr(canvas, "supports_blit", False):
-            canvas.draw_idle()
-            canvas.flush_events()
-            return
+class OccupancyGridVisualiser:
+    """Live grid of occupancy-grid images, one cell per agent/env.
 
-        if self._background is None:
-            canvas.draw()
-            self._background = canvas.copy_from_bbox(self._fig.bbox)
+    Takes the (..., n_types, breadth, height) one-hot occupancy grid Unity's
+    GridSensor produces -- one channel per detectable tag, Walls and Player on
+    the RoboRacer car -- and draws each type in its own colour over a blank
+    background where the sensor found nothing. The channel ordering is the
+    sensor's m_DetectableTags order, so pass type_names in that same order to
+    label the legend.
 
-        canvas.restore_region(self._background)
-        for image in self._images:
-            image.axes.draw_artist(image)
-        canvas.blit(self._fig.bbox)
-        canvas.flush_events()
+    Same contract as LidarVisualiser: the leading batch dims (env, area) are
+    flattened to one subplot each, the figure is built on the first render()
+    and the batch shape is assumed constant from then on.
+
+    As infer.py's rollout hook:
+
+        visualiser = OccupancyGridVisualiser(type_names=["walls", "car"])
+        ...
+        visualiser.render(tensordict["agents", "occupancy_grid"])
+    """
+
+    # one per object type, in channel order; cycled if a sensor ever carries
+    # more tags than there are colours here
+    COLOURS = (
+        "tab:blue", "tab:red", "tab:green", "tab:orange", "tab:purple",
+        "tab:brown", "tab:pink", "tab:olive", "tab:cyan",
+    )
+    EMPTY_COLOUR = "white"
+
+    def __init__(self, type_names: Sequence[str] | None = None):
+        """type_names labels the legend, one per channel; defaults to the
+        channel index when the tags aren't known."""
+        self._type_names = None if type_names is None else list(type_names)
+
+        self._fig = None
+        self._images = []
+        self._background = None
+
+    def render(self, occupancy_grid: torch.Tensor):
+        """Draws one frame from a (..., n_types, breadth, height) grid tensor.
+
+        The first call builds the figure, every later call only pushes new
+        pixel data through the existing images and blits them, so nothing is
+        re-laid-out per frame.
+        """
+        # (..., n_types, breadth, height) -> (n_cells, n_types, breadth, height)
+        grid = occupancy_grid.detach().float().cpu().numpy().reshape(
+            -1, *occupancy_grid.shape[-3:])
+        cells = self._to_rgb(grid)
+
+        if self._fig is None:
+            self._build(cells, n_types=grid.shape[1])
+        else:
+            for image, cell in zip(self._images, cells):
+                image.set_data(cell)
+
+        self._background = _blit_frame(
+            self._fig, self._background, self._images)
+
+    def close(self):
+        plt.close(self._fig)
+        self._fig = None
+
+    def _to_rgb(self, grid):
+        """(n_cells, n_types, breadth, height) -> (n_cells, height, breadth, 3).
+
+        Each type's colour is blended over the empty background weighted by its
+        own channel, rather than the channels being argmaxed: a strictly
+        one-hot cell comes out as that type's flat colour either way, but this
+        also shows a cell two types share (or one the sensor only partly
+        filled) shaded between the colours involved instead of rounding it to
+        whichever channel happened to win.
+
+        Mapping to RGB here rather than handing imshow a label image and a
+        ListedColormap keeps the per-frame work to one set_data() of finished
+        pixels, and leaves the "no detection" background a colour of its own
+        instead of a palette entry that a real type could be confused with.
+
+        The axes are swapped on the way out, and _build draws with
+        origin="lower", so the sensor's forward axis runs up the image and its
+        lateral axis across it -- i.e. the car sits at the bottom centre
+        looking up the page, the way its gizmo shows in the editor.
+        """
+        palette = np.array(
+            [to_rgb(self.COLOURS[index % len(self.COLOURS)])
+             for index in range(grid.shape[1])])
+
+        # (n_cells, breadth, height, n_types), so the matmul below contracts
+        # the channels against the palette
+        weights = np.moveaxis(grid, 1, -1)
+        occupied = np.clip(weights.sum(axis=-1, keepdims=True), 0.0, 1.0)
+        rgb = weights @ palette + (1.0 - occupied) * to_rgb(self.EMPTY_COLOUR)
+
+        # channels summing past 1 (overlapping types) would otherwise push the
+        # blend out of range, which imshow reads as saturated rather than clipping
+        return np.clip(rgb, 0.0, 1.0).transpose(0, 2, 1, 3)
+
+    def _build(self, cells, n_types):
+        """Creates the figure on the first render (or the first after a close())."""
+        self._images = []
+        self._background = None
+
+        n_cells = cells.shape[0]
+        cols = math.ceil(math.sqrt(n_cells))
+        rows = math.ceil(n_cells / cols)
+
+        plt.ion()
+        self._fig, axes = plt.subplots(
+            rows, cols, figsize=(4 * cols, 4 * rows), squeeze=False)
+        self._fig.canvas.manager.set_window_title("Occupancy grid")
+
+        for index, ax in enumerate(axes.flat):
+            if index >= n_cells:
+                ax.axis("off")
+                continue
+            self._images.append(ax.imshow(
+                cells[index],
+                origin="lower",
+                aspect="equal",
+                interpolation="nearest",
+                # excluded from the normal draw so it isn't baked into the
+                # blitting background
+                animated=True,
+            ))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f"Occupancy grid of agent {index}", fontsize=8)
+
+        self._fig.legend(
+            handles=[
+                Patch(
+                    facecolor=self.COLOURS[index % len(self.COLOURS)],
+                    label=self._type_name(index))
+                for index in range(n_types)],
+            loc="upper right", fontsize=8)
+        self._fig.tight_layout()
+        self._fig.canvas.mpl_connect(
+            "resize_event", lambda _event: setattr(self, "_background", None))
+        self._fig.show()
+
+    def _type_name(self, index):
+        if self._type_names is None or index >= len(self._type_names):
+            return f"type {index}"
+        return self._type_names[index]
 
 
 class RewardVisualiser:

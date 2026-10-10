@@ -8,7 +8,7 @@ from utils import get_aux_head_true_values
 import tqdm
 from environment import RoboRacerEnv, RoboRacerParallelEnvs
 from model import load_model, make_model
-from visualize import LidarVisualiser, RewardVisualiser
+from visualize import LidarVisualiser, OccupancyGridVisualiser, RewardVisualiser
 from model import ActorValueAuxOperator
 
 
@@ -19,11 +19,13 @@ def do_rollout(
         hide_progress: bool = False,
         select_keys: list[td.NestedKey] | None = None,
         visualise_lidar: bool = False,
+        visualise_occupancy_grid: bool = False
 ) -> td.TensorDict:
     tensordict = env.reset()
     steps: list[td.TensorDict] = []
 
     lidar_visualiser = LidarVisualiser() if visualise_lidar else None
+    occupancy_grid_visualiser = OccupancyGridVisualiser() if visualise_occupancy_grid else None
 
     with torch.no_grad():
         for step in tqdm.trange(num_steps, disable=hide_progress):
@@ -31,6 +33,8 @@ def do_rollout(
             tensordict = env.step(tensordict)
             if visualise_lidar:
                 lidar_visualiser.render(tensordict["agents", "stacked_lidar"])
+            if visualise_occupancy_grid:
+                occupancy_grid_visualiser.render(tensordict["agents", "occupancy_grid"])
             steps.append(
                 tensordict if select_keys is None else tensordict.select(*select_keys))
             tensordict = env.step_mdp(tensordict)
@@ -38,20 +42,21 @@ def do_rollout(
 
 
 if __name__ == "__main__":
-    model, model_config = load_model("checkpoints/conv1d_fixed_lidar_try_2.pt")
+    model, model_config, _, _ = load_model("checkpoints/baseline_w0_s0/iteration_00250.pt")
 
     is_mac = platform.system() == "Darwin"
     env = RoboRacerEnv(
-        file_name="TestUnityProject/Test speed/build.app" if is_mac
-        else "linux_build/linux_build.x86_64",
+        file_name=None,#"TestUnityProject/Test speed/build.app" if is_mac
+        #else "linux_build/linux_build.x86_64",
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
         no_graphics=False,
         time_scale=1.0,
-        num_areas=1,
+        num_areas=2,
         seed=43,
     )
     try:
-        do_rollout(env, model, num_steps=512, visualise_lidar=True)
+        rollout = do_rollout(env, model, num_steps=2048, visualise_occupancy_grid=True)
+        print(rollout["agents", "occupancy_grid"].shape)
     except KeyboardInterrupt:
         pass
     finally:
