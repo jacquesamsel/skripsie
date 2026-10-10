@@ -105,6 +105,10 @@ def train(
     tensordict: td.TensorDict = env.reset()
     start_time = time.perf_counter_ns()
 
+    save_every = 10
+    if params.name is not None:
+        save_model(model, model_config, optim.state_dict(), start_iter, params.name)
+
     for i in itertools.count(start=start_iter) if params.max_iters is None else range(start_iter, params.max_iters):
         # Collect the rollout
         steps = []
@@ -244,8 +248,9 @@ def train(
                 writer.add_histogram(
                     f"action/{action_name}", rollout["action", action_name].flatten(), i)
 
-        if i % 10 == 0 and params.name is not None:
-            save_model(model, model_config, optim.state_dict(), i, params.name)
+        iters_done = i + 1
+        if iters_done % save_every == 0 and params.name is not None:
+            save_model(model, model_config, optim.state_dict(), iters_done, params.name)
     return time.perf_counter_ns() - start_time
 
 
@@ -254,7 +259,7 @@ if __name__ == "__main__":
     SEED = 42
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
-        num_envs=1,
+        num_envs=8,
         file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
         num_stacked_frames=50,
         no_graphics=True,
@@ -270,8 +275,9 @@ if __name__ == "__main__":
                 aux_weights=gen_aux_weights_default_zero({}),
                 name=None,
                 seed=SEED,
-                max_iters=256,
+                rollout_length=512,
                 num_threads=16,
+                show_rollout_progress=True
             )
         )
     finally:
