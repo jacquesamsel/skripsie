@@ -1018,6 +1018,17 @@ where each environment contains 6 training areas (and so 6 agents) that step in 
   caption: "Parameters varied in the training performance grid search."
 ) <training_performance_variables>
 
+#[
+  #let training_performance_results = csv("results/")
+#figure(
+  stb-table(
+    columns: 4,
+    align: center,
+    header: ("Concurrent trainers", "Python threads", "Parallel envs", "Throughput (env timesteps/sec)"),
+  )
+)
+]
+
 == Track generation
 
 During model training, having a variety of tracks is important to prevent overfitting to a single track. This improves generalisation to unseen tracks, allowing the model to learn a more robust policy.
