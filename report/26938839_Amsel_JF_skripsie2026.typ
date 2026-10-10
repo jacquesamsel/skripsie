@@ -1012,7 +1012,7 @@ where each environment contains 6 training areas (and so 6 agents) that step in 
     align: (left, center, left),
     header: ("Parameter", "Values considered", "Description"),
     [`concurrent_trainers`],
-    [${2, 4, 8}$],
+    [${2, 4, 8, 12}$],
     [Number of independent models training simultaneously, each in its own process.],
     [`python_threads`],
     [${8, 16}$],
@@ -1026,7 +1026,7 @@ where each environment contains 6 training areas (and so 6 agents) that step in 
 
 #[
   #let training_performance_results = (
-    csv("../bench_results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
+    csv("../results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
   )
 
   #let row-to-content = row => (
@@ -1045,7 +1045,7 @@ where each environment contains 6 training areas (and so 6 agents) that step in 
       header: (
         "Concurrent trainers",
         "Python threads",
-        "Parallel envs",
+        [Parallel envs#footnote("It was not possible to run 16 parallel envs on 12 trainers, because the machine ran out of memory.")],
         "Throughput (timesteps/sec)",
         "Speedup v realtime",
       ),
