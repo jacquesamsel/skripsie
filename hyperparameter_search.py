@@ -98,7 +98,8 @@ def worker(trial: Trial):
             ray_stride=1,
             seed=trial.seed,
             lidar_conv="conv1d",
-            max_iters=300
+            max_iters=300,
+            num_threads=8
         )
     finally:
         env.close()
@@ -107,6 +108,11 @@ def worker(trial: Trial):
 
 
 def _init_worker(counter):
+    import os
+    n = "4"
+    os.environ["OMP_NUM_THREADS"] = n
+    os.environ["MKL_NUM_THREADS"] = n
+    os.environ["OPENBLAS_NUM_THREADS"] = n
     global _SLOT
     with counter.get_lock():
         _SLOT = counter.value % MAX_WORKERS
