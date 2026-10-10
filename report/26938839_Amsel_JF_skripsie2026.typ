@@ -1011,22 +1011,50 @@ where each environment contains 6 training areas (and so 6 agents) that step in 
     columns: 3,
     align: (left, center, left),
     header: ("Parameter", "Values considered", "Description"),
-    [`concurrent_trainers`], [${2, 4, 8}$], [Number of independent models training simultaneously, each in its own process.],
-    [`python_threads`], [${8, 16}$], [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
-    [`parallel_envs`], [${4, 8, 16}$], [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
+    [`concurrent_trainers`],
+    [${2, 4, 8}$],
+    [Number of independent models training simultaneously, each in its own process.],
+    [`python_threads`],
+    [${8, 16}$],
+    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
+    [`parallel_envs`],
+    [${4, 8, 16}$],
+    [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
   ),
-  caption: "Parameters varied in the training performance grid search."
+  caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
 
 #[
-  #let training_performance_results = csv("results/")
-#figure(
-  stb-table(
-    columns: 4,
-    align: center,
-    header: ("Concurrent trainers", "Python threads", "Parallel envs", "Throughput (env timesteps/sec)"),
+  #let training_performance_results = (
+    csv("../bench_results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
   )
-)
+
+  #let row-to-content = row => (
+    (
+      row.at(1),
+      row.at(2),
+      row.at(3),
+      [#calc.round(float(row.at(8)), digits: 2)],
+      [#calc.round(float(row.at(8)) / 25, digits: 2)],
+    )
+  )
+  #figure(
+    stb-table(
+      columns: 5,
+      align: center,
+      header: (
+        "Concurrent trainers",
+        "Python threads",
+        "Parallel envs",
+        "Throughput (timesteps/sec)",
+        "Speedup v realtime",
+      ),
+      ..training_performance_results.slice(0, 4).map(row-to-content).flatten(),
+      ..range(5).map(idx => sym.dots.v),
+      ..training_performance_results.slice(-4).map(row-to-content).flatten(),
+    ),
+    caption: "Training performance results, sorted by throughput.",
+  )
 ]
 
 == Track generation
