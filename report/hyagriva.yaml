@@ -141,6 +141,46 @@ jaderberg2017unreal:
     doi: 10.48550/arXiv.1611.05397
   url: https://arxiv.org/abs/1611.05397
 
+thomas2014bias:
+  type: article
+  title: Bias in Natural Actor-Critic Algorithms
+  author: Thomas, Philip
+  date: 2014
+  editor:
+  - Xing, Eric P.
+  - Jebara, Tony
+  page-range: 441-448
+  url: https://proceedings.mlr.press/v32/thomas14.html
+  abstract: We show that several popular discounted reward natural actor-critics, including the popular NAC-LSTD and eNAC algorithms, do not generate unbiased estimates of the natural policy gradient as claimed. We derive the first unbiased discounted reward natural actor-critics using batch and iterative approaches to gradient estimation. We argue that the bias makes the existing algorithms more appropriate for the average reward setting. We also show that, when Sarsa(lambda) is guaranteed to converge to an optimal policy, the objective function used by natural actor-critics is concave, so policy gradient methods are guaranteed to converge to globally optimal policies as well.
+  parent:
+    type: proceedings
+    title: Proceedings of the 31st International Conference on Machine Learning
+    publisher:
+      name: PMLR
+      location: Beijing, China
+    issue: 1
+    volume: 32
+    parent:
+      type: proceedings
+      title: Proceedings of Machine Learning Research
+
+
+schulman2018highdimensionalcontinuouscontrolusing:
+  type: misc
+  title: High-Dimensional Continuous Control Using Generalized Advantage Estimation
+  author:
+  - Schulman, John
+  - Moritz, Philipp
+  - Levine, Sergey
+  - Jordan, Michael
+  - Abbeel, Pieter
+  date: 2018
+  url: https://arxiv.org/abs/1506.02438
+  serial-number:
+    arxiv: '1506.02438'
+
+
+
 lample2017fps:
   type: article
   title: Playing FPS Games with Deep Reinforcement Learning

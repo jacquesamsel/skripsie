@@ -281,12 +281,13 @@
   [$hat(X)$], [Estimator for random variable $X$],
   [$hat(x)$], [Sample estimate of random variable $X$],
   [$A^pi (s, a) = Q^pi (s, a) - V^pi (s)$], [Advantage function for policy $pi$ at state $s$ and action $a$],
-  [$RR$], [The set of real numbers],
-  [$EE[X]$], [Expected value of random variable $X$],
   [$"Var"(X)$], [Variance of random variable $X$],
   [$rho_0 (s)$], [Initial state distribution],
   [$X ~ Y$], [Random variable $X$ is distributed according to distribution $Y$],
   [$X dot(~) Y$], [Random variable $X$ is approximately distributed according to distribution $Y$],
+  [$RR$], [The set of real numbers],
+  [$EE[X]$], [Expected value of random variable $X$],
+  [$EE_(x~p)[f(x)]$], [Expected value of function $f(x)$ when x is distributed according to p],
   [$N(y; mu; sigma^2)$],
   [Gaussian probability density function with mean $mu$ and variance $sigma^2$ with evaluation point $y$],
 )
@@ -430,30 +431,30 @@ This property holds for the states, but generally not for the observations: a si
 Value functions are a central concept in reinforcement learning, providing a measure of how good it is for the agent to be in a particular state or to take a particular action.
 The state-value function,
 $
-  V_pi (s) = EE_pi [G_t | S_t = s]
+  V^pi (s) = EE_pi [G_t | S_t = s]
 $ <state_value_function>
 
 represents the expected discounted return $G_t$ the agent can achieve starting from state $s$ and following policy $pi$ thereafter. The action-value function,
 $
-  Q_pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
+  Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
 represents the expected discounted return the agent can achieve starting from state $s$, taking action $a$, and following policy $pi$ thereafter.
 The advantage function,
 $
-  A_pi (s, a) = Q_pi (s, a) - V_pi (s)
+  A^pi (s, a) = Q^pi (s, a) - V^pi (s)
 $ <advantage_function>
 measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state.
 
 These state-value and action-value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
 
 $
-  V_pi (s) = EE_pi [R_{t+1} + gamma V_pi (S_{t+1}) | S_t = s]
+  V^pi (s) = EE_pi [R_{t+1} + gamma V^pi (S_{t+1}) | S_t = s]
 $ <state_value_bellman_equation>
 
 and the Bellman equation for the action-value function is given by:
 
 $
-  Q_pi (s, a) = EE_pi [R_{t+1} + gamma Q_pi (S_{t+1}, A_{t+1}) | S_t = s, A_t = a]
+  Q^pi (s, a) = EE_pi [R_{t+1} + gamma Q^pi (S_{t+1}, A_{t+1}) | S_t = s, A_t = a]
 $ <action_value_bellman_equation>
 
 These Bellman equations @state_value_bellman_equation and @action_value_bellman_equation provide a recursive relationship that allows the agent to update its value estimates based on the observed rewards and the estimated values of successor states.
@@ -476,7 +477,7 @@ There exist two broad classes of RL algorithms: value-based methods and policy-b
 
 == Policy gradient methods
 
-Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_T, o_T, a_T, r_T) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
+Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
 $
   J(theta) = EE_(tau tilde p_theta) [G_0]
   = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
@@ -496,7 +497,10 @@ $ <policy_gradient_theorem>
 
 Considering that the probability of a trajectory can be factorised as
 $
-  p_theta (tau) = p(s_0) product_(t=0)^(T-1) underbrace(p(s_(t+1) | s_t, a_t), cal(P)) dot pi_theta (a_t | o_t) dot underbrace(p(o_t | s_t), cal(Z)) dot underbrace(p(r_t | s_t, a_t, s_(t+1), o_t), cal(R)),
+  p_theta (tau) = p(s_0) product_(t=0)^(T-1)
+  underbrace(p(o_t | s_t), cal(Z)) dot pi_theta (a_t | o_t) dot
+  underbrace(p(r_t | s_t, a_t, s_(t+1), o_t), cal(R)) dot
+  underbrace(p(s_(t+1) | s_t, a_t), cal(P))
 $
 
 since $p(s_0)$, $cal(P)$, $cal(Z)$ and $cal(R)$ do not depend on $theta$, their gradients vanish, so
@@ -511,42 +515,64 @@ $
   nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(tau)]
 $
 
-where $G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k$ is the discounted reward-to-go#footnote([Strictly, the exact gradient of the discounted objective carries an extra factor $gamma^t$ on each term. Practical implementations omit it, which is the standard convention.]). Replacing $G(tau)$ by $G_t$ leaves the expectation unchanged, since action $a_t$ cannot influence rewards $r_k$ with $k < t$, and it reduces variance.
+Write $G(tau) = G_0$. Splitting the return at time $t$,
+$
+  G_0 = sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t,
+  quad G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k,
+$
+where $G_t$ is the discounted _reward-to-go_,
+
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) (sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t)]
+$
+
+However, since the expectation of the fixed past-reward terms is zero, they can be removed from the policy gradient without introducing bias. This can be seen by conditioning on the history $h_t = (s_0, o_0, a_0, r_0, dots, s_(t-1), o_(t-1), a_(t-1), r_(t-1), s_t, o_t)$:
+
+$
+  EE_(a_t tilde pi_theta) [nabla_theta log pi_theta (a_t | o_t) | h_t]
+  = sum_a nabla_theta pi_theta (a | o_t)
+  = nabla_theta sum_a pi_theta (a | o_t)
+  = nabla_theta 1 = 0,
+$
+The past-reward terms therefore vanish in expectation, leaving
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
+$
+Removing these zero-mean terms typically reduces the variance of the
+Monte Carlo estimate. In practice the factor $gamma^t$ is usually dropped;
+this yields a biased estimate of $nabla_theta J(theta)$ for $gamma < 1$
+@thomas2014bias.
 
 === REINFORCE
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $l_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
-  hat(nabla_theta J)(theta) = 1/N sum_(i=1)^N 1/T sum_(t=0)^(l_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
+  hat(nabla_theta J)(theta) = 1/(N dot overline(T)) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
 $
 
-In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
+where $overline(T)$ is the average trajectory length. In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
 $
-  cal(L)_"REINFORCE" = -1/T sum_(t=0)^(T-1) log(pi_theta (a_t | o_t)) dot G_t
+  cal(L)_"REINFORCE" = -1/(N dot overline(T)) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
 $
 
 Although REINFORCE is simple to implement, it has several drawbacks. First, it has high variance in its gradient estimates, which can lead to slow convergence and instability during training. Second, it does not make use of a value function to estimate the expected return, which can further increase variance. Finally, it is an on-policy algorithm, meaning that it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
 
 === Proximal Policy Optimization (PPO)
-PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V_pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_ that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
+PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
 
-Recall that the advantage function is the difference between the action-value and state-value functions:
-
+Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalized Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
+In PPO, the clipped surrogate objective is given by
 $
-  A^pi (s, a) = Q^pi (s, a) - V^pi (s),
+  cal(L)_"PPO" = -1/(N dot overline(T)) sum_(i=1)^N sum_(t=0)^(T_i-1) min(r_t (theta) dot hat(A)_t, "clip"(r_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
 $
 
-where $V^pi (s) = EE_(a tilde pi)[Q^pi (s, a)]$ is the expected return of the
-policy from state $s$. The advantage therefore measures how much better
-(positive) or worse (negative) an action is than the policy's average action
-in that state. In training, $hat(A)_t$ is computed from observed rewards and
-the learned $V_phi$, for example with Generalized Advantage Estimation.
+where $r_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
 
 
 == Auxiliary learning in RL
 
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_pi_theta [G_t]$. Auxiliary learning is the practice of augmenting the primary task with additional _auxiliary tasks_ that are related to the primary task, and for which additional learning signals can be obtained. The auxiliary tasks may be supervised or unsupervised, and may involve predicting future states, rewards, or other quantities of interest.
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_pi_theta [G_0]$. Auxiliary learning is the practice of augmenting the primary task with additional _auxiliary tasks_ that are related to the primary task, and for which additional learning signals can be obtained. The auxiliary tasks may be supervised or unsupervised, and may involve predicting future states, rewards, or other quantities of interest.
 
 Auxiliary learning builds on multi-task learning principles described in @caruana1997multitask. In some cases, it has been shown to improve generalization by using the training signals of related tasks as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]): by learning to solve related tasks, the model is encouraged to learn representations that are useful for the primary task.
 
@@ -970,6 +996,28 @@ The F1Tenth Gym is a python package that provides an environment for training an
   caption: "AutoDrive-insired Unity environment, showing the RoboRacer vehicle, its LIDAR rays, and forward track prediction sampling points.",
 ) <track_rendering>
 
+Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. Because each experiment requires many training runs, we first measured how to best use this hardware, so that experiments would finish in a practicable time. The goal was to maximise _aggregate_ training throughput: the total number of environment timesteps collected and learned from per second, summed across all models training simultaneously.
+
+We performed a grid search over the three parameters in @training_performance_variables, giving $3 times 2 times 3 = 18$ configurations. For each configuration, `concurrent_trainers` identical training processes were launched at the same time, each with the same `python_threads` and `parallel_envs`. Every process ran for five PPO iterations (each a 256-frame rollout followed by four epochs of minibatch updates) with checkpointing and TensorBoard logging disabled, so that only computation was measured. To prevent the trainers from contending for the same cores, each process, together with the Unity environments it spawns, was pinned to its own equal-sized slice of the CPU's logical cores.
+
+For each trainer we measured the mean wall-clock time per iteration, and converted it to throughput in environment timesteps per second:
+
+$ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
+
+where each environment contains 6 training areas (and so 6 agents) that step in parallel. We report throughput per trainer, and summed across all concurrent trainers. The per-trainer figure shows how much each model slows down as the machine gets busier, while the summed figure shows the point at which adding trainers stops paying off.
+
+#figure(
+  stb-table(
+    columns: 3,
+    align: (left, center, left),
+    header: ("Parameter", "Values considered", "Description"),
+    [`concurrent_trainers`], [${2, 4, 8}$], [Number of independent models training simultaneously, each in its own process.],
+    [`python_threads`], [${8, 16}$], [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
+    [`parallel_envs`], [${4, 8, 16}$], [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
+  ),
+  caption: "Parameters varied in the training performance grid search."
+) <training_performance_variables>
+
 == Track generation
 
 During model training, having a variety of tracks is important to prevent overfitting to a single track. This improves generalisation to unseen tracks, allowing the model to learn a more robust policy.
@@ -1293,6 +1341,7 @@ $
   L_beta (x/alpha, hat(x)/alpha) = (L_(alpha*beta) (x, hat(x))) / alpha^2
 $
 - *Regression based on the hidden layer output of the PPO model*: The PPO model is trained to predict the value function and policy, so the hidden layer output contains information about the state of the environment. This information can be used to predict the auxiliary targets. The regression results show that the hidden layer output contains information about the auxiliary targets, and that this information can be extracted by a simple linear regression model. @alain2018understandingintermediatelayersusing
+- By default, BLAS spawns 128 threads. Did hyperparameter tuning to find the best combination of (num_pytorch_threads, num_parallel_trainers, num_envs_per_trainer). Also Unity spawns 128 GC threads, which can be controlled via `"-job-worker-count", str(num_unity_threads), "-gc-helper-count", str(num_unity_threads)`
 
 = Conclusions and recommendations
 #pagebreak()
