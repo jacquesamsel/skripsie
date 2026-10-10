@@ -270,7 +270,7 @@ if __name__ == "__main__":
                 aux_weights=gen_aux_weights_default_zero({}),
                 name=None,
                 seed=SEED,
-                max_iters=512,
+                max_iters=256,
                 num_threads=16,
             )
         )

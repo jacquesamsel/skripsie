@@ -1,6 +1,6 @@
-"""Sweep concurrent-training throughput over (num_workers, n_python_threads, num_envs).
+"""Sweep concurrent-training throughput over (num_workers, n_python_threads, num_envs, num_areas).
 
-Edit WORKER_COUNTS / THREAD_COUNTS / ENV_COUNTS below, then: python bench_perf.py
+Edit WORKER_COUNTS / THREAD_COUNTS / ENV_COUNTS / NUM_AREAS below, then: python bench_perf.py
 
 For each grid point, num_workers identical training processes run concurrently
 (same thread count and env count each) for MAX_ITERS iterations, with no
@@ -24,18 +24,18 @@ from itertools import product
 from pathlib import Path
 
 MAX_ITERS = 5
-NUM_AREAS = 6
-PORT_STRIDE = 100  # worker-id ports reserved per slot; must exceed any config's num_envs
-TOTAL_CPUS = os.cpu_count() or 1
+PORT_STRIDE = 20  # worker-id ports reserved per slot; must exceed any config's num_envs
+TRIAL_PORT_STRIDE = 256  # must exceed PORT_STRIDE * max(WORKER_COUNTS)
 FRAMES_PER_ROLLOUT = 256  # must match the hardcoded value in train.py
 
-WORKER_COUNTS = [2, 4, 8, 12]
-THREAD_COUNTS = [8, 16]
-ENV_COUNTS = [4, 8]
+WORKER_COUNTS = [8]
+THREAD_COUNTS = [16]
+ENV_COUNTS = [8]
+NUM_AREAS = [6, 8, 12, 24]
 
 BENCH_DIR = Path("bench_results")
 LOG_DIR = BENCH_DIR / "logs"
-CSV_PATH = BENCH_DIR / "bench_perf.csv"
+CSV_PATH = Path("results/bench_perf.csv")
 
 
 @dataclass(frozen=True)
@@ -43,18 +43,11 @@ class Trial:
     num_workers: int
     n_python_threads: int
     num_envs: int
-    num_areas: int = NUM_AREAS
+    num_areas: int
 
 
-def run_worker(trial: Trial, slot: int, log_path: Path) -> float:
+def run_worker(trial: Trial, slot: int, trial_index: int, log_path: Path) -> float:
     """Runs in its own spawned process. Returns seconds/iter."""
-    # Pin this process (and the Unity child it spawns) to a slice of cores so
-    # Unity's native thread pools (which size themselves off detected CPU
-    # count, not -job-worker-count) don't each try to grab all TOTAL_CPUS.
-    cores_per_worker = max(1, TOTAL_CPUS // trial.num_workers)
-    start_core = slot * cores_per_worker
-    os.sched_setaffinity(0, range(start_core, start_core + cores_per_worker))
-
     n = str(trial.n_python_threads)
     os.environ["OMP_NUM_THREADS"] = n
     os.environ["MKL_NUM_THREADS"] = n
@@ -73,7 +66,14 @@ def run_worker(trial: Trial, slot: int, log_path: Path) -> float:
             num_areas=trial.num_areas,
             num_stacked_frames=50,
             seed=0,
-            start_worker_id=slot * PORT_STRIDE,
+            # A port tied only to slot number would be reused by every trial;
+            # a worker that dies mid-handshake can leak its Unity socket (see
+            # mlagents_envs's atexit _close() failing on an unset
+            # _communicator), which would then permanently fail that same
+            # slot in every later trial. Folding in trial_index gives every
+            # trial its own port range, so a leak costs one port, not the
+            # rest of the sweep.
+            start_worker_id=trial_index * TRIAL_PORT_STRIDE + slot * PORT_STRIDE,
         )
         try:
             elapsed_ns = train(
@@ -94,13 +94,13 @@ def run_worker(trial: Trial, slot: int, log_path: Path) -> float:
     return elapsed / MAX_ITERS
 
 
-def run_trial(trial: Trial) -> dict | None:
+def run_trial(trial: Trial, trial_index: int) -> dict | None:
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=trial.num_workers, mp_context=ctx) as ex:
         futures = {
             ex.submit(
-                run_worker, trial, slot,
-                LOG_DIR / f"w{trial.num_workers}_t{trial.n_python_threads}_e{trial.num_envs}_slot{slot}.log",
+                run_worker, trial, slot, trial_index,
+                LOG_DIR / f"w{trial.num_workers}_t{trial.n_python_threads}_e{trial.num_envs}_a{trial.num_areas}_slot{slot}.log",
             ): slot
             for slot in range(trial.num_workers)
         }
@@ -158,26 +158,31 @@ def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     completed = load_completed_trials()
+    # Index into the full (w, t, e, a) grid, not into the filtered/resumed list below:
+    # it's used as a port offset (see TRIAL_PORT_STRIDE), and it has to stay stable
+    # across resumed runs so a trial never reuses a port some earlier run may have
+    # leaked under the same index.
+    all_combos = list(product(WORKER_COUNTS, THREAD_COUNTS, ENV_COUNTS, NUM_AREAS))
     trials = [
-        Trial(num_workers=w, n_python_threads=t, num_envs=e)
-        for w, t, e in product(WORKER_COUNTS, THREAD_COUNTS, ENV_COUNTS)
+        (all_combos.index((w, t, e, a)), Trial(num_workers=w, n_python_threads=t, num_envs=e, num_areas=a))
+        for w, t, e, a in all_combos
         # workers=8/envs=16 spawns 128 concurrent Unity instances, which
         # drove this machine into swap and crashed every worker mid-step,
         # then poisoned every later trial via leaked mlagents ports.
         if (w, e) != (8, 16)
     ]
     trials = [
-        t for t in trials
+        (idx, t) for idx, t in trials
         if (t.num_workers, t.n_python_threads, t.num_envs, t.num_areas) not in completed
     ]
     if not trials:
         print("All trials already present in", CSV_PATH)
         return
 
-    for i, trial in enumerate(trials, 1):
+    for i, (trial_index, trial) in enumerate(trials, 1):
         print(f"[{i}/{len(trials)}] workers={trial.num_workers} "
-              f"threads={trial.n_python_threads} envs={trial.num_envs} ...", flush=True)
-        result = run_trial(trial)
+              f"threads={trial.n_python_threads} envs={trial.num_envs} areas={trial.num_areas} ...", flush=True)
+        result = run_trial(trial, trial_index)
         if result is None:
             print("  all workers failed, skipping")
             continue

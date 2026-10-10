@@ -1,10 +1,11 @@
+import atexit
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 import platform
 
-from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES
+from utils import CURVATURE_LOOKAHEAD_KEYS, CURVATURE_LOOKAHEAD_DISTANCES, AUX_HEAD_KEYS
 
 
 def curvature_keys(lo, hi):
@@ -23,17 +24,21 @@ HYPERPARAMETER_GROUPS = {
     "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
     "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
     "angular_velocity_y": ["angular_velocity_y"],
+    "all": AUX_HEAD_KEYS
 }
 
-WEIGHT_VALUES = [0.1, 0.5, 1.0]
+WEIGHT_VALUES = [0.1, 0.3, 1.0]
 SEEDS = [0, 1, 2]
-MAX_WORKERS = 4
+MAX_WORKERS = 8
 RUNS_DIR = Path("run_done_flags")
 
 NUM_ENVS = 8
-MAX_WORKERS = 4
+MAX_WORKERS = 8
+NUM_PYTHON_THREADS = 16
+NUM_AREAS=12
 
 _SLOT = None
+_ENV = None
 
 
 @dataclass(frozen=True)
@@ -70,48 +75,60 @@ def build_trials():
     return trials
 
 
+def _get_env(seed):
+    """Lazily creates this worker process's env and keeps it alive across trials.
+
+    Spinning up the Unity processes is the expensive part, so each worker builds
+    its env once (seeded from whichever trial happens to create it) and every
+    later trial on this worker just resets it via train()'s own env.reset() call.
+    """
+    global _ENV
+    if _ENV is None:
+        from environment import RoboRacerParallelEnvs
+        is_mac = platform.system() == "Darwin"
+        _ENV = RoboRacerParallelEnvs(
+            file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
+            num_envs=NUM_ENVS,
+            num_areas=NUM_AREAS,
+            num_stacked_frames=50,
+            seed=seed,
+            start_worker_id=_SLOT * NUM_ENVS
+        )
+        atexit.register(_ENV.close)
+    return _ENV
+
+
 def worker(trial: Trial):
-    from environment import RoboRacerParallelEnvs
     from train import train, TrainParams
     from utils import gen_aux_weights_default_zero
-    is_mac = platform.system() == "Darwin"
     if _SLOT is None:
         raise RuntimeError(
             "Worker slot not set. Use the 'mp' context to spawn workers.")
 
-    env = RoboRacerParallelEnvs(
-        file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
-        num_envs=NUM_ENVS,
-        num_areas=6,
-        num_stacked_frames=50,
-        seed=trial.seed,
-        start_worker_id=_SLOT * NUM_ENVS
-    )
-    try:
-        train(
-            env,
-            params=TrainParams(
-                aux_weights=gen_aux_weights_default_zero(trial.params),
-                num_stacked_lidar_frames=50,
-                name=trial.name,
-                n_rays=101,
-                ray_kernel=8,
-                ray_stride=1,
-                seed=trial.seed,
-                lidar_conv="conv1d",
-                max_iters=300,
-                num_threads=8
-            )
+    env = _get_env(trial.seed)
+    train(
+        env,
+        params=TrainParams(
+            aux_weights=gen_aux_weights_default_zero(trial.params),
+            num_stacked_lidar_frames=50,
+            name=trial.name,
+            n_rays=101,
+            ray_kernel=8,
+            ray_stride=1,
+            seed=trial.seed,
+            lidar_conv="conv1d",
+            max_iters=600,
+            rollout_length=256,
+            num_threads=NUM_PYTHON_THREADS
         )
-    finally:
-        env.close()
+    )
     trial.done_marker.touch()
     return trial.name
 
 
 def _init_worker(counter):
     import os
-    n = "4"
+    n = str(NUM_PYTHON_THREADS)
     os.environ["OMP_NUM_THREADS"] = n
     os.environ["MKL_NUM_THREADS"] = n
     os.environ["OPENBLAS_NUM_THREADS"] = n
@@ -119,14 +136,6 @@ def _init_worker(counter):
     with counter.get_lock():
         _SLOT = counter.value % MAX_WORKERS
         counter.value += 1
-
-    # Pin this worker (and the Unity child it spawns) to a slice of cores so
-    # Unity's native thread pools (which size themselves off detected CPU
-    # count, not -job-worker-count) don't each try to grab every core.
-    total_cpus = os.cpu_count() or MAX_WORKERS
-    cores_per_worker = max(1, total_cpus // MAX_WORKERS)
-    start_core = _SLOT * cores_per_worker
-    os.sched_setaffinity(0, range(start_core, start_core + cores_per_worker))
 
 
 def main():
