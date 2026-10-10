@@ -69,16 +69,15 @@ def gen_aux_losses(td: TensorDict, scaling_factors: dict[str, tuple[float, float
     aux_losses = {
         key: smooth_l1_loss(
             predicted_values[key],
-            true_values[key],
+            (true_values[key] - scaling_factors[key][0]) / scaling_factors[key][1],
             reduction='mean',
-            beta=scaling_factors[key][1]  # Use the standard deviation as beta
-        ) / scaling_factors[key][1] for key in AUX_HEAD_KEYS
+        ) for key in AUX_HEAD_KEYS
     }
     return aux_losses
 
-def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict):
+def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict, scaling_factors: dict[str, tuple[float, float]]):
     r2_scores = {
-        key: r2_score(prediction[key], target[key])
+        key: r2_score(prediction[key], (target[key] - scaling_factors[key][0]) / scaling_factors[key][1])
         for key in AUX_HEAD_KEYS
     }
     return r2_scores
