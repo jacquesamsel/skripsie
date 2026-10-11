@@ -168,7 +168,7 @@ def train(
                 ppo_loss = loss["loss_entropy"] + \
                     loss["loss_critic"] + loss["loss_objective"]
                 aux_loss = sum(
-                    0.5 * (
+                    (
                         params.aux_weights[k] * aux_losses[k]
                     )
                     for k in params.aux_weights if params.aux_weights[k] > 0.0
