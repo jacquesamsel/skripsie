@@ -624,6 +624,25 @@ ng1999policy:
       type: proceedings
       title: ICML '99
 
+kirchdorfer2026investigatingoptimaluw:
+  type: article
+  title: "Investigating Uncertainty Weighting for Multi-Task Learning: Insights and Analytical Alternative"
+  author:
+    - "Kirchdorfer, Lukas"
+    - "Sesterhenn, Tobias"
+    - "Bartelt, Christian"
+    - "Stuckenschmidt, Heiner"
+    - "Schott, Lukas"
+    - "Köhler, Jan M."
+  date: 2025-12-23
+  serial-number:
+    doi: "10.1007/s11263-025-02625-x"
+  url: "https://doi.org/10.1007/s11263-025-02625-x"
+  parent:
+    type: periodical
+    title: "International Journal of Computer Vision"
+    volume: 134
+    issue: 8
 
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses

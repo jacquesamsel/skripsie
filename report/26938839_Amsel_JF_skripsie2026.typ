@@ -301,6 +301,9 @@
   ("MDP", "Markov Decision Process"),
   ("POMDP", "Partially Observable Markov Decision Process"),
   ("PPO", "Proximal Policy Optimization"),
+  ("MSE", "Mean Squared Error"),
+  ("RMSE", "Root Mean Squared Error"),
+  ("MAE", "Mean Absolute Error"),
 )
 
 #table(
@@ -636,7 +639,7 @@ to maximise the expected return of $r_t^"total"$ with the same policy gradient
 machinery as before.
 
 Unlike auxiliary losses, this changes the objective being optimised: the agent
-now solves a different MDP, whose optimal policy need not coincide with
+now solves a different (PO)MDP, whose optimal policy need not be the same as
 $pi^*$ for the primary reward. Poorly chosen auxiliary rewards can therefore
 lead the agent to exploit them at the expense of the primary task (_reward
 hacking_). The exception is _potential-based shaping_, where the auxiliary
@@ -653,15 +656,13 @@ still when the auxiliary rewards are themselves sparse or delayed.
 
 == Loss scaling
 
-When composing the $L_"total"$, the question naturally arises: what should be the values of the weights ${w_1, ..., w_N}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $L_"total"$), we must use another technique.
+When composing the $L_"total"$, the question naturally arises: what should be the values of the weights ${w^((1)), ..., w^((N))}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $cal(L)_"total"$), we must use another technique.
 
 === Hyperparameter tuning
 
-Naïvely, one may empirically estimate the optimal weights using hyperparameter tuning tools such as Optuna @akiba2019optuna. However, when it is expensive to train a model, this method of search quickly becomes impractical, since every candidate set of weights requires its own training run.
+One may empirically estimate the optimal weights using hyperparameter tuning tools such as Optuna @akiba2019optuna, or a simple grid search. However, when it is expensive to train a model, this method of search quickly becomes impractical, since every candidate set of weights requires its own training run.
 
-Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the validation score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna.
-
-A second way to cut cost is to stop unpromising trials early. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill trials that perform more exploration early on.
+Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill RL trials that perform more exploration early on, so are not ideal for such scenarios.
 
 Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
@@ -672,30 +673,34 @@ Two kinds of uncertainty can be modelled in a model's predictions @kendall2017un
 
 Aleatoric uncertainty has two forms:
 - _Data-dependent_ or _Heteroscedastic_: the noise changes from input to input (e.g. a blurry image is harder to make inference from than a clear one).
-- _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task ($L_1, ..., L_N$).
+- _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task
 
-Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only.
+Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only @kendall2018multitask-cvpr.
 
 Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
 $
-  Y_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
+  hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
 $
 
 The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
 
 $
-  L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||^2 + log sigma_i
+  L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||_2^2 + log sigma_i
 $
 
-Then, assuming the tasks are independent, the total loss is the sum of the individual losses:
+
+A similar derivation can be made for L1 loss functions by assuming the predictions are $Y_i dot(~) "Laplace"(f_i (x), b_i)$:
+
 $
-  L_"total" = sum_(i=1)^N L_i = sum_(i=1)^N (1/(2 sigma_i^2) ||y_i - f_i (x)||^2 + log sigma_i)
+  L_i = -log p(y_i | f_i (x)) = 1/(b_i) ||y_i - f_i (x)||_1 + log b_i
 $
 
-Of course, in reality, the tasks are not independent, but this method has been shown to work well in practice. The log-variance $log sigma_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
+Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
-=== Huber loss
-The Huber loss (with parameter $beta$ or in some literature $k$) is a loss function that is less sensitive to outliers compared to the standard Mean Squared Error (MSE) loss @huber1964robust. It is defined as:
+Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this Skripsie, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
+
+== Huber loss
+The Huber loss (with parameter $beta$ or in some literature $k$) is a loss function that is less sensitive to outliers compared to the standard Mean Squared Error (MSE) L2 loss @huber1964robust. It is defined as:
 
 $
   cal(L)^beta (y, hat(y)) = cases(
@@ -707,12 +712,6 @@ $
 In our case, since we have various loss terms, each relating to a different task where the scale of $y$ differs, we must carefully choose the parameter $beta$ and scale each loss term appropriately.
 
 Rewriting the loss to $cal(L)^beta (y/sigma, hat(y)/sigma)$ allows us to reduce the model's bias towards learning tasks with larger scales, however, the Huber loss is not scale-invariant, so we must choose $beta$ carefully:
-
-$
-  cal(L)^beta (y/sigma, hat(y)/sigma) = (cal(L)^(beta sigma) (y, hat(y))) / sigma^2
-$
-
-@huber_loss_scale_reparameterisation details the proof for this scale reparameterisation of the Huber loss, and shows that the reparameterised $beta$ is proportional to the scale of the data, $sigma$.
 
 In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses a rescaled definition, $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
 
@@ -1495,30 +1494,7 @@ $
 })
 
 = Appendix
-== Huber Loss Scale Reparameterisation <huber_loss_scale_reparameterisation>
-$
-  cal(L)^beta (y/alpha, hat(y)/alpha) = cases(
-    1/2 (y/alpha - hat(y)/alpha)^2 "if" |y/alpha - hat(y)/alpha| <= beta,
-    beta |y/alpha - hat(y)/alpha| - 1/2 beta^2 "otherwise"
-  )
-  #linebreak()
-  = cases(
-    1/(2 alpha^2) (y - hat(y))^2 "if" |y - hat(y)| <= alpha beta,
-    beta / alpha |y - hat(y)| - 1/2 beta^2 "otherwise"
-  )
-  #linebreak()
-  = 1/(alpha^2) cases(
-    1/2 (y - hat(y))^2 "if" |y - hat(y)| <= alpha beta,
-    alpha beta |y - hat(y)| - 1/2 (alpha beta)^2 "otherwise"
-  )
-  #linebreak()
-  = (cal(L)^(alpha*beta) (y, hat(y)))/alpha^2
-  #h(1cm)
-  qed
-$
-
 == Auxiliary Head Regression Results
-#set page(flipped: false)
 #let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
 #figure(
   stb-table(
