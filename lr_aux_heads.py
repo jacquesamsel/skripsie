@@ -78,7 +78,7 @@ for iter_name, model_name in tqdm.tqdm(trainings_to_do):
             f"Checkpoint for {model_name} at iteration {iter_name} not found.")
         continue
 
-    print(f"Found {model_name} with iteration {iter_name}")
+    #print(f"Found {model_name} with iteration {iter_name}")
     model, model_config, _, _ = load_model(model_path)
 
     # Do forward pass to get the aux head outputs
@@ -108,7 +108,7 @@ for iter_name, model_name in tqdm.tqdm(trainings_to_do):
         "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],
     })
     all_scores.append(scores)
-    print(scores)
+    #print(scores)
 
 scores = pd.concat(all_scores, ignore_index=True)
 scores.to_csv("results/aux_head_regression_scores.csv", index=False)
