@@ -1494,27 +1494,6 @@ $
 })
 
 = Appendix
-== Auxiliary Head Regression Results
-#let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
-#figure(
-  stb-table(
-    columns: 4,
-    align: (left, center, center, center),
-    header: ([Auxiliary target], [$R^2$ score], [MAE], [$sigma_x$]),
-
-    ..aux_head_regression_scores
-      .slice(1)
-      .sorted(key: row => row.at(1), by: (a, b) => b < a)
-      .map(row => (
-        [#row.at(0)],
-        ..row.slice(1).map(val => [#calc.round(float(val), digits: 4)]), // Number columns rounded
-      ))
-      .flatten(),
-  ),
-  caption: "Regression scores for the auxiliary heads, trained on the pure PPO model's hidden layer output.",
-)
-
-
 == WheelCollider properties <wheel_collider_properties>
 
 #figure(
@@ -1558,6 +1537,18 @@ $
   ),
   caption: "Relevant parameters of the WheelCollider model. * = forward & sideways",
 )
+
+#pagebreak()
+#set page(flipped: true)
+== Auxiliary Head Regression Results
+#[
+  #let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
+
+  #figure(
+    
+  )
+]
+#set page(flipped: false)
 
 #pagebreak()
 == Training Performance Benchmark Results <training_performance_results>
