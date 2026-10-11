@@ -52,11 +52,10 @@ if __name__ == "__main__":
         no_graphics=False,
         time_scale=1.0,
         num_areas=2,
-        seed=43,
+        seed=45,
     )
     try:
-        rollout = do_rollout(env, model, num_steps=2048, visualise_occupancy_grid=True)
-        print(rollout["agents", "occupancy_grid"].shape)
+        rollout = do_rollout(env, model, num_steps=2048)
     except KeyboardInterrupt:
         pass
     finally:
