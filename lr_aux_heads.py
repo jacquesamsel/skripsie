@@ -37,7 +37,7 @@ if not os.path.exists(PATH):
         data = do_rollout(
             env,
             model,
-            num_steps=100,
+            num_steps=2048,
             select_keys=[*[("agents", key) for key in ["stacked_lidar", "steering_angle", "throttle", *AUX_HEAD_KEYS]]])
         data = data.reshape(-1)
         torch.save(data, PATH)
@@ -59,39 +59,26 @@ def get_iter_name(i: int):
 
 ITERATIONS = [600]
 MODEL_NAMES = os.listdir("checkpoints")
-os.makedirs("results/trunk_outputs", exist_ok=True)
+
+all_scores = []
 for iteration in ITERATIONS:
     iter_name = get_iter_name(iteration)
     weights_file_name = f"iteration_{iter_name}.pt"
 
     for model_name in MODEL_NAMES:
         model_path = Path("checkpoints") / model_name / weights_file_name
-        trunk_outputs_path = Path(
-            "results/trunk_outputs") / f"{model_name}_{iter_name}.pt"
 
-        if not trunk_outputs_path.exists():
-            if model_path.exists():
-                print(f"Found {model_name} with iteration {iter_name}")
-                model, model_config, _, _ = load_model(model_path)
-
-                # Do forwars pass to get the aux head outputs
-                with torch.no_grad():
-                    trunk_outputs = model.get_trunk_operator().forward(data).select("hidden_layer")
-                    torch.save(trunk_outputs, trunk_outputs_path)
-
-
-all_scores = []
-for model_name in MODEL_NAMES:
-    for iteration in ITERATIONS:
-        iter_name = get_iter_name(iteration)
-        trunk_outputs_path = Path(
-            "results/trunk_outputs") / f"{model_name}_{iter_name}.pt"
-        if trunk_outputs_path.exists():
-            trunk_outputs = torch.load(trunk_outputs_path)
-        else:
+        if not model_path.exists():
             print(
-                f"Trunk outputs for {model_name} at iteration {iter_name} not found.")
+                f"Checkpoint for {model_name} at iteration {iter_name} not found.")
             continue
+
+        print(f"Found {model_name} with iteration {iter_name}")
+        model, model_config, _, _ = load_model(model_path)
+
+        # Do forward pass to get the aux head outputs
+        with torch.no_grad():
+            trunk_outputs = model.get_trunk_operator().forward(data).select("hidden_layer")
 
         x = trunk_outputs["hidden_layer"].numpy()
         y = pd.DataFrame({
@@ -116,6 +103,7 @@ for model_name in MODEL_NAMES:
             "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],
         })
         all_scores.append(scores)
+        print(scores)
 
 scores = pd.concat(all_scores, ignore_index=True)
 scores.to_csv("results/aux_head_regression_scores.csv", index=False)
