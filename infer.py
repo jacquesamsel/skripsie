@@ -42,7 +42,7 @@ def do_rollout(
 
 
 if __name__ == "__main__":
-    model, model_config, _, _ = load_model("checkpoints/baseline_w0_s0/iteration_00250.pt")
+    model, model_config, _, _ = load_model("checkpoints/baseline_w0_s0/iteration_00600.pt")
 
     is_mac = platform.system() == "Darwin"
     env = RoboRacerEnv(

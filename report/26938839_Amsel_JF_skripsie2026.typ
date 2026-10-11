@@ -1006,6 +1006,8 @@ $ "throughput" = ("rollout length" times "parallel envs" times "areas per env") 
 
 where each environment contains 6 training areas (and so 6 agents) that step in parallel. We report throughput per trainer, and summed across all concurrent trainers. The per-trainer figure shows how much each model slows down as the machine gets busier, while the summed figure shows the point at which adding trainers stops paying off.
 
+Bu default, Unity spawns `n_cpus` threads for its garbage collector, which can be modified by passing the `-gc-helper-count` argument when launching the executable. This value was set to 8.
+
 #figure(
   stb-table(
     columns: 3,
