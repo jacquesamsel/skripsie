@@ -4,6 +4,7 @@
 #import "@preview/algorithmic:1.0.7" as algorithmic: algorithm-figure, style-algorithm
 #import "@preview/latex-lookalike:0.1.4"
 #import "@preview/neural-netz:0.3.0" as neural-netz: draw-network
+#import "@preview/simple-plot:1.1.0": hline, note, plot, vline
 
 #show: style-algorithm
 #show: latex-lookalike.style-outline
@@ -691,8 +692,6 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
 
 
 
-
-
 = System overview
 
 // Add a subsystem diagram
@@ -984,9 +983,100 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 
 == F1Tenth Gym
 
-The F1Tenth Gym is a python package that provides an environment for training and evaluating reinforcement learning algorithms.
+The F1Tenth Gym is a python package that provides an environment for training and evaluating autonomous racing agents in simulation @okelly2020f1tenthgym. It is built on top of the OpenAI Gym framework and features a simple bicycle model, which lumps tyre forces per axle and has no wheel-level states, so quantities such as per-wheel slip are unavailable. The F1Tenth Gym is therefore unsuitable for methods like ours that require per-wheel information.
 
-== AutoDrive, Unity, and MLAgents
+== Unity
+Unity is a game engine developed by Unity Technologies which provides a platform wherein simulations can be built and run, simplifying interations with Nvidia's PhysX physics engine and other low-level libraries.
+
+Unity was chosen over the F1Tenth Gym because its `WheelCollider` component exposes the per-wheel slip quantities that are used as privileged information for the auxiliary heads in #todo("WHERE"), and because it allows the tyre and suspension parameters to be varied between episodes. It features built-in LiDAR simulation, occupancy grid generation, and an inferface built for agent training (MLAgents).
+
+=== Vehicle model
+==== The WheelCollider <sec_wheelcollider>
+Unity simulates vehicle dynamics with PhysX. Each wheel of the RoboRacer is
+modelled as a `WheelCollider`, which simulates the wheel's suspension,
+rotation and tyre friction @unitydocsWheelFrictionCurve. The parameters used
+are listed in @wheel_collider_properties.
+
+The tyre model is built on the idea of _slip_: how much the tyre slides over
+the road instead of rolling on it. A wheel slips when it spins faster than
+the car moves (wheelspin), turns slower than the car moves (braking), or is
+dragged sideways (cornering). Slip is expressed as a ratio, so a freely
+rolling wheel has a slip of 0 and a locked wheel has a slip of 1#footnote[
+  In the standard definition, the longitudinal slip ratio is
+  $s = (omega r - v) / max(|omega r|, |v|)$, where $omega$ is the wheel's
+  spin rate, $r$ its radius and $v$ the wheel's forward speed over the
+  ground. Unity does not document its exact formula, so this is the
+  standard definition that its friction curve approximates.
+].
+
+A tyre needs some slip to produce force. The `WheelCollider` computes the
+force from the slip using a friction curve (@wheel_friction_curve). Force
+rises with slip until it reaches a peak, the _extremum_, which is the
+tyre's maximum grip. Beyond the peak, the tyre begins to slide and the force
+falls to a lower, constant value, the _asymptote_. Pushing the car harder
+therefore gives less force, not more, which is a regime a racing agent must
+learn to avoid. The curve is defined separately for the forward direction
+(accelerating and braking) and the sideways direction (cornering). Note that in real life, at low slip values, the rubber stretches instead of actually sliding on the road. This is modelled by the rising part of the curve at low slip values.
+
+
+
+@unitydocsWheelFrictionCurve
+
+#[
+  #let asymptote-slip = 0.25
+  #let asymptote-value = 0.58
+  #let extremum-slip = 0.15
+  #let extremum-value = 0.9
+  #let stiffness = 1.0
+  #let wheel-curve(xe, ve, xa, va, k: 1) = x => {
+    if x < 0 {
+      0
+    } else if x < xe {
+      let t = x / xe
+      k * ve * (2 * t - t * t)
+    } else if x < xa {
+      let t = (x - xe) / (xa - xe)
+      k * (ve + (va - ve) * (3 * t * t - 2 * t * t * t))
+    } else {
+      k * va
+    }
+  }
+
+  #figure(
+    plot(
+      xmin: 0,
+      xmax: 0.4,
+      ymin: 0,
+      ymax: 1,
+      width: 400pt,
+      xlabel: "Slip ratio",
+      ylabel: "Friction coefficient",
+      minor-grid-step: 0.01,
+      samples: 1000,
+      show-grid: "major",
+      xtick: (0, 0.1, 0.2, 0.3, 0.4),
+      ytick: (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+      vline(asymptote-slip, stroke: (dash: "dashed")),
+      note(rotate(90deg, "Asymptote slip"), (asymptote-slip + 0.01, 0.2), anchor: "center"),
+      vline(extremum-slip, stroke: (dash: "dashed")),
+      note(rotate(90deg, "Extremum slip"), (extremum-slip + 0.01, 0.2), anchor: "center"),
+      hline(asymptote-value, stroke: (dash: "dashed")),
+      note("Asymptote value", (0.01, asymptote-value - 0.04), anchor: "west"),
+      hline(extremum-value, stroke: (dash: "dashed")),
+      note("Extremum value", (0.01, extremum-value - 0.04), anchor: "west"),
+      (
+        fn: wheel-curve(extremum-slip, extremum-value, asymptote-slip, asymptote-value, k: stiffness),
+        stroke: blue + 1.5pt,
+        label-pos: 0.8,
+      ),
+    ),
+    caption: [Approximated WheelCollider friction curves for the RoboRacer#footnote("The values parameters detailed in this chart are the default values configured in the AutoDrive simulator for the F1TENTH vehicle.")],
+  )<wheel_friction_curve>
+]
+
+
+
+== AutoDrive and MLAgents
 #figure(
   columns(2)[
     #image("figures/autodrive_isometric_birds_eye.png", width: 200pt, height: 175pt)
@@ -1026,38 +1116,7 @@ Bu default, Unity spawns `n_cpus` threads for its garbage collector, which can b
   caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
 
-#[
-  #let training_performance_results = (
-    csv("../results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
-  )
-
-  #let row-to-content = row => (
-    (
-      row.at(1),
-      row.at(2),
-      row.at(3),
-      [#calc.round(float(row.at(8)), digits: 2)],
-      [#calc.round(float(row.at(8)) / 25, digits: 2)],
-    )
-  )
-  #figure(
-    stb-table(
-      columns: 5,
-      align: center,
-      header: (
-        "Concurrent trainers",
-        "Python threads",
-        [Parallel envs#footnote("It was not possible to run 16 parallel envs on 12 trainers, because the machine ran out of memory.")],
-        "Throughput (timesteps/sec)",
-        "Speedup v realtime",
-      ),
-      ..training_performance_results.slice(0, 4).map(row-to-content).flatten(),
-      ..range(5).map(idx => sym.dots.v),
-      ..training_performance_results.slice(-4).map(row-to-content).flatten(),
-    ),
-    caption: "Training performance results, sorted by throughput.",
-  )
-]
+// HERE
 
 == Track generation
 
@@ -1452,3 +1511,82 @@ $
   ),
   caption: "Regression scores for the auxiliary heads, trained on the pure PPO model's hidden layer output.",
 )
+
+
+== WheelCollider properties <wheel_collider_properties>
+
+#figure(
+  stb-table(
+    columns: 3,
+    align: (left, left, left),
+    header: ("Property", "Description", "Value for RoboRacer"),
+    [`radius`],
+    [Radius of the wheel],
+    [5.8 cm],
+    [`width`],
+    [Radius of the wheel],
+    [5.8 cm],
+    [`mass`],
+    [Mass of each wheel; determines its rotational inertia],
+    [109 g],
+    [`suspension_distance`],
+    [Maximum travel of the suspension along the wheel's local Y axis],
+    [5 cm],
+    [`suspension_spring`],
+    [Spring stiffness pulling the wheel toward its target position],
+    [500 N/m],
+    [`suspension_damper`],
+    [Damping that resists the speed of suspension movement],
+    [100 (N·s/m)],
+    [`extremum_slip`\*],
+    [Slip at which the friction curve peaks (maximum grip)],
+    [0.15 fwd / 0.01 side],
+    [`extremum_value`\*],
+    [Friction at the peak of the curve],
+    [0.9 fwd / 1 side],
+    [`asymptote_slip`\*],
+    [Slip beyond which the tyre is fully sliding],
+    [0.25 fwd / 0.1 side],
+    [`asymptote_value`\*],
+    [Friction while sliding],
+    [0.58 fwd / 0.5 side],
+    [`stiffness`\*],
+    [Multiplier applied to the whole friction curve],
+    [0.8 fwd / 1 side],
+  ),
+  caption: "Relevant parameters of the WheelCollider model. * = forward & sideways",
+)
+
+#pagebreak()
+== Training Performance Benchmark Results <training_performance_results>
+
+#[
+  #let training_performance_results = (
+    csv("../results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
+  )
+
+  #let row-to-content = row => (
+    (
+      row.at(1),
+      row.at(2),
+      row.at(3),
+      [#calc.round(float(row.at(8)), digits: 2)],
+      [#calc.round(float(row.at(8)) / 25, digits: 2)x],
+    )
+  )
+  #figure(
+    stb-table(
+      columns: 5,
+      align: (center, center, center, right, right),
+      header: (
+        "Concurrent trainers",
+        "Python threads",
+        [Parallel envs#footnote("It was not possible to run 16 parallel envs on 12 trainers, because the machine ran out of memory.")],
+        "Throughput (timesteps/sec)",
+        [Speedup vs realtime#footnote("Assuming 25 Hz decision frequency")],
+      ),
+      ..training_performance_results.map(row-to-content).flatten(),
+    ),
+    caption: "Training performance results, sorted by throughput.",
+  )
+]

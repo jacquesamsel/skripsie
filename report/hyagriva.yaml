@@ -36,8 +36,8 @@ ignlinski2017autonomous-vehicles-ghg:
   type: article
   title: Analysis of the Potential of Autonomous Vehicles in Reducing the Emissions of Greenhouse Gases in Road Transport
   author:
-  - Igliński, Hubert
-  - Babiak, Maciej
+    - Igliński, Hubert
+    - Babiak, Maciej
   date: 2017
   page-range: 353-358
   url: https://www.sciencedirect.com/science/article/pii/S1877705817326073
@@ -53,40 +53,39 @@ ignlinski2017autonomous-vehicles-ghg:
 
 rafiee2022makesusefulauxiliarytasks:
   type: misc
-  title: 'What makes useful auxiliary tasks in reinforcement learning: investigating the effect of the target policy'
+  title: "What makes useful auxiliary tasks in reinforcement learning: investigating the effect of the target policy"
   author:
-  - Rafiee, Banafsheh
-  - Jin, Jun
-  - Luo, Jun
-  - White, Adam
+    - Rafiee, Banafsheh
+    - Jin, Jun
+    - Luo, Jun
+    - White, Adam
   date: 2022
   url: https://arxiv.org/abs/2204.00565
   serial-number:
-    arxiv: '2204.00565'
+    arxiv: "2204.00565"
 
 alain2018understandingintermediatelayersusing:
   type: misc
   title: Understanding intermediate layers using linear classifier probes
   author:
-  - Alain, Guillaume
-  - Bengio, Yoshua
+    - Alain, Guillaume
+    - Bengio, Yoshua
   date: 2018
   url: https://arxiv.org/abs/1610.01644
   serial-number:
-    arxiv: '1610.01644'
+    arxiv: "1610.01644"
 
 chen2020interpretableendtoendurbanautonomous:
   type: misc
   title: Interpretable End-to-end Urban Autonomous Driving with Latent Deep Reinforcement Learning
   author:
-  - Chen, Jianyu
-  - Li, Shengbo Eben
-  - Tomizuka, Masayoshi
+    - Chen, Jianyu
+    - Li, Shengbo Eben
+    - Tomizuka, Masayoshi
   date: 2020
   url: https://arxiv.org/abs/2001.08726
   serial-number:
-    arxiv: '2001.08726'
-
+    arxiv: "2001.08726"
 
 bellman1957:
   type: article
@@ -147,8 +146,8 @@ thomas2014bias:
   author: Thomas, Philip
   date: 2014
   editor:
-  - Xing, Eric P.
-  - Jebara, Tony
+    - Xing, Eric P.
+    - Jebara, Tony
   page-range: 441-448
   url: https://proceedings.mlr.press/v32/thomas14.html
   abstract: We show that several popular discounted reward natural actor-critics, including the popular NAC-LSTD and eNAC algorithms, do not generate unbiased estimates of the natural policy gradient as claimed. We derive the first unbiased discounted reward natural actor-critics using batch and iterative approaches to gradient estimation. We argue that the bias makes the existing algorithms more appropriate for the average reward setting. We also show that, when Sarsa(lambda) is guaranteed to converge to an optimal policy, the objective function used by natural actor-critics is concave, so policy gradient methods are guaranteed to converge to globally optimal policies as well.
@@ -164,22 +163,19 @@ thomas2014bias:
       type: proceedings
       title: Proceedings of Machine Learning Research
 
-
 schulman2018highdimensionalcontinuouscontrolusing:
   type: misc
   title: High-Dimensional Continuous Control Using Generalized Advantage Estimation
   author:
-  - Schulman, John
-  - Moritz, Philipp
-  - Levine, Sergey
-  - Jordan, Michael
-  - Abbeel, Pieter
+    - Schulman, John
+    - Moritz, Philipp
+    - Levine, Sergey
+    - Jordan, Michael
+    - Abbeel, Pieter
   date: 2018
   url: https://arxiv.org/abs/1506.02438
   serial-number:
-    arxiv: '1506.02438'
-
-
+    arxiv: "1506.02438"
 
 lample2017fps:
   type: article
@@ -545,6 +541,46 @@ huber1964robust:
   page-range: 73-101
   serial-number:
     doi: "10.1214/aoms/1177703732"
+
+pacejka1992magicformula:
+  type: article
+  title: THE MAGIC FORMULA TYRE MODEL
+  author:
+    - Pacejka, Hans B.
+    - Bakker, Egbert
+  date: 1992
+  page-range: 1-18
+  url: https://doi.org/10.1080/00423119208969994
+  serial-number:
+    doi: 10.1080/00423119208969994
+  parent:
+    type: periodical
+    title: Vehicle System Dynamics
+    publisher: Taylor & Francis
+    issue: sup001
+    volume: 21
+
+unitydocsWheelFrictionCurve:
+  type: Web
+  title: "Unity Documentation"
+  url: https://docs.unity3d.com/6000.5/Documentation/ScriptReference/WheelFrictionCurve.html
+  accessed: 2026-10-11
+
+okelly2020f1tenthgym:
+  type: article
+  title: 'F1TENTH: An Open-source Evaluation Environment for Continuous Control and Reinforcement Learning'
+  author:
+  - O’Kelly, Matthew
+  - Zheng, Hongrui
+  - Karthik, Dhruv
+  - Mangharam, Rahul
+  date: 2020
+  page-range: 77-89
+  parent:
+    type: proceedings
+    title: NeurIPS 2019 Competition and Demonstration Track
+    organization: PMLR
+
 
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
