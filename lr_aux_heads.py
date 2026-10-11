@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt
 import math
 import platform
 from pathlib import Path
+import tqdm
 
 
 PATH = "results/baseline_rollout.pt"
@@ -57,53 +58,57 @@ def get_iter_name(i: int):
     return f"{i:05d}"
 
 
-ITERATIONS = [600]
+
+ITERATIONS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
 MODEL_NAMES = os.listdir("checkpoints")
 
 all_scores = []
-for iteration in ITERATIONS:
-    iter_name = get_iter_name(iteration)
+
+trainings_to_do = [
+    (get_iter_name(iteration), model_name) for iteration in ITERATIONS for model_name in MODEL_NAMES
+]
+
+for iter_name, model_name in tqdm.tqdm(trainings_to_do):
+
     weights_file_name = f"iteration_{iter_name}.pt"
+    model_path = Path("checkpoints") / model_name / weights_file_name
 
-    for model_name in MODEL_NAMES:
-        model_path = Path("checkpoints") / model_name / weights_file_name
+    if not model_path.exists():
+        print(
+            f"Checkpoint for {model_name} at iteration {iter_name} not found.")
+        continue
 
-        if not model_path.exists():
-            print(
-                f"Checkpoint for {model_name} at iteration {iter_name} not found.")
-            continue
+    print(f"Found {model_name} with iteration {iter_name}")
+    model, model_config, _, _ = load_model(model_path)
 
-        print(f"Found {model_name} with iteration {iter_name}")
-        model, model_config, _, _ = load_model(model_path)
+    # Do forward pass to get the aux head outputs
+    with torch.no_grad():
+        trunk_outputs = model.get_trunk_operator().forward(data).select("hidden_layer")
 
-        # Do forward pass to get the aux head outputs
-        with torch.no_grad():
-            trunk_outputs = model.get_trunk_operator().forward(data).select("hidden_layer")
+    x = trunk_outputs["hidden_layer"].numpy()
+    y = pd.DataFrame({
+        key: data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
+    })
 
-        x = trunk_outputs["hidden_layer"].numpy()
-        y = pd.DataFrame({
-            key: data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
-        })
+    train_split = 0.8
+    train_cuttoff_idx = int(len(x) * train_split)
+    train_x, test_x = x[:train_cuttoff_idx], x[train_cuttoff_idx:]
+    train_y, test_y = y.iloc[:train_cuttoff_idx], y.iloc[train_cuttoff_idx:]
 
-        train_split = 0.8
-        train_cuttoff_idx = int(len(x) * train_split)
-        train_x, test_x = x[:train_cuttoff_idx], x[train_cuttoff_idx:]
-        train_y, test_y = y.iloc[:train_cuttoff_idx], y.iloc[train_cuttoff_idx:]
+    lr = LinearRegression()
+    lr.fit(train_x, train_y)
 
-        lr = LinearRegression()
-        lr.fit(train_x, train_y)
+    test_y_hat = lr.predict(test_x)
 
-        test_y_hat = lr.predict(test_x)
-
-        scores = pd.DataFrame({
-            "model_name": model_name,
-            "target": y.columns,
-            "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
-            "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
-            "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],
-        })
-        all_scores.append(scores)
-        print(scores)
+    scores = pd.DataFrame({
+        "model_name": model_name,
+        "target": y.columns,
+        "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
+        "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
+        "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],
+    })
+    all_scores.append(scores)
+    print(scores)
 
 scores = pd.concat(all_scores, ignore_index=True)
 scores.to_csv("results/aux_head_regression_scores.csv", index=False)
