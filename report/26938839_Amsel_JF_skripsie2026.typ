@@ -571,59 +571,85 @@ $
 where $r_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
 
 
-== Auxiliary learning in RL
+== Auxiliary Learning in RL
 
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_pi_theta [G_0]$. Auxiliary learning is the practice of augmenting the primary task with additional _auxiliary tasks_ that are related to the primary task, and for which additional learning signals can be obtained. The auxiliary tasks may be supervised or unsupervised, and may involve predicting future states, rewards, or other quantities of interest.
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. _Auxiliary learning_ augments this with _auxiliary tasks_ whose learning signals are used only to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and their outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
+formulations: auxiliary *losses*, which leave the RL objective unchanged and
+shape only the shared representation, and auxiliary *rewards*, which modify the
+objective itself and can therefore change the optimal policy.
 
-Auxiliary learning builds on multi-task learning principles described in @caruana1997multitask. In some cases, it has been shown to improve generalization by using the training signals of related tasks as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]): by learning to solve related tasks, the model is encouraged to learn representations that are useful for the primary task.
+=== Auxiliary Losses
 
-Previous work has shown that auxiliary learning can improve sample efficiency in supervised learning contexts #todo([citation needed]), and in reinforcement-learning contexts @jaderberg2017unreal, especially when the reward signal is sparse or delayed.
-
-We shall discuss two formulations of auxiliary learning in RL: (1) auxiliary loss functions, and (2) auxiliary rewards. Some other formulations such as UNsupervised REinforcement and Auxiliary Learning (UNREAL) @jaderberg2017unreal, which uses unsupervised auxiliary tasks to improve representation learning, may seem different, but can be formulated in formulation (1).
-
-=== 1st formulation (auxiliary loss)
-Auxiliary learning is the practice of augmenting the loss function with heads for auxiliary tasks. For example, the model may be trained to simultaneously (a) produce a distribution over actions, and (b) estimate estimate the state $S_t$ which is partially observed in its observation $O_t$. Auxiliary learning has been empirically shown to improve sample efficiency in "complex enough" environments, and in certain situations, average reward too.
-#text("https://ieeexplore.ieee.org/document/10166271/", fill: red)
-
-
-
-#figure(
-  caption: "1st formulation of auxiliary learning in RL",
-  diagram(
-    node-stroke: 1pt,
-    node((-1.25, -0.), align(top + left)[Environment], height: 60pt, width: 120pt),
-    node((-1.5, 0), $S_t$, shape: circle, name: <S_t>),
-    edge(<S_t>, <O_t>, "-|>"),
-    node((-1, 0), $O_t$, shape: circle, name: <O_t>),
-    edge(<O_t>, <Model>, "-|>"),
-    node(
-      (0, 0),
-      [Model #linebreak() (parameters $theta$)],
-      width: 90pt,
-      height: 60pt,
-      corner-radius: 0pt,
-      name: <Model>,
-    ),
-    edge(<Model>, <hatS_t>, "-|>"),
-    node((1, -0.5), $hat(S_t)$, name: <hatS_t>),
-    edge(<Model>, <A_t>, "-|>"),
-    node((1, 0.5), $A_t$, name: <A_t>, shape: circle),
-  ),
-)
-
-The loss function can then be written as
-$
-  L_"total" = L_"policy" (A_t, G_t) + L_"aux" (S_t, hat(S_t))
-$
-
-Then, during a gradient update step, the parameters $theta$ are updated using information from both loss heads.
+In this formulation, the agent is trained on a weighted sum of the primary
+loss and $K$ auxiliary losses. Each loss is computed by a separate _auxiliary head_ that
+reads from a representation shared with the policy. Writing the parameters as
+$theta = (theta_"s", theta_pi, theta_"a"^((1)), dots, theta_"a"^((K)))$, where
+$theta_"s"$ are the shared (encoder) parameters, $theta_pi$ the policy head
+and $theta_"a"^((k))$ the $k$-th auxiliary head, the total loss is
 
 $
-  theta_(t+1) = theta_(t) + alpha dot Delta_theta L_"total" =
+  cal(L)_"total" (theta) =
+  cal(L)_"primary" (theta_"s", theta_pi)
+  + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)) (theta_"s", theta_"a"^((k))),
 $
 
-=== 2nd formulation (auxiliary rewards)
-Auxiliary learning can also be formulated as an additional task the agent receives rewards for performing (well). This formulation has the drawback that gradient information is discarded.
+where $w^((k)) >= 0$ weights each auxiliary task relative to the primary loss
+(only relative weights matter, so the primary weight is fixed to 1). The
+gradients with respect to each parameter group are
+
+$
+  nabla_(theta_pi) cal(L)_"total" = nabla_(theta_pi) cal(L)_"primary",
+  #linebreak()
+  nabla_(theta_"a"^((k))) cal(L)_"total" = w^((k)) nabla_(theta_"a"^((k))) cal(L)_"aux"^((k)),
+  quad
+  nabla_(theta_"s") cal(L)_"total" =
+  nabla_(theta_"s") cal(L)_"primary"
+  + sum_(k=1)^K w^((k)) nabla_(theta_"s") cal(L)_"aux"^((k)).
+$
+
+Only the shared parameters $theta_"s"$ receive gradients from both the primary
+and auxiliary losses, which is how the auxiliary tasks influence the policy:
+they shape the representation it is built on
+
+The primary loss, such as $cal(L)_"PPO"$, is still a policy-gradient surrogate
+with a high-variance gradient estimate. Auxiliary losses, by contrast, are
+usually ordinary supervised or self-supervised objectives (for example
+predicting the next observation, or the immediate reward), so their gradients
+are exact and low-variance, and do not depend on the reward being observed
+#todo([citation]). This is what makes them useful when rewards are sparse or
+delayed. Their cost is that the auxiliary and primary gradients can conflict
+on the shared parameters, $theta_"s"$ so the weights $w^((k))$ must be chosen
+with care.
+
+=== Auxiliary Rewards/Shaped Rewards
+Alternatively, the auxiliary task can be incorporated into the reward. The
+agent is given the modified reward
+
+$
+  r_t^"total" = r_t^"primary" + sum_(k=1)^K w^((k)) r_(t)^("aux", (k)),
+$
+
+where each $r_t^("aux", (k))$ rewards behaviour that is expected to help with
+the primary task, such as an intrinsic curiosity bonus
+@pathak2017curiositydriven or progress towards a subgoal. The policy is then trained
+to maximise the expected return of $r_t^"total"$ with the same policy gradient
+machinery as before.
+
+Unlike auxiliary losses, this changes the objective being optimised: the agent
+now solves a different MDP, whose optimal policy need not coincide with
+$pi^*$ for the primary reward. Poorly chosen auxiliary rewards can therefore
+lead the agent to exploit them at the expense of the primary task (_reward
+hacking_). The exception is _potential-based shaping_, where the auxiliary
+reward has the form $gamma Phi(s_(t+1)) - Phi(s_t)$ for some potential function
+$Phi$, which is guaranteed to leave the optimal policy unchanged
+@ng1999policy.
+
+The auxiliary rewards do influence the policy, but only indirectly through the
+return $G_t$, and therefore through the same high-variance score-function
+estimator as the primary reward. No exact gradient is available, and the agent
+must work out through its own exploration which auxiliary rewards actually
+contribute to the primary task. This credit-assignment problem is harder
+still when the auxiliary rewards are themselves sparse or delayed.
 
 == Loss scaling
 
