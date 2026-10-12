@@ -1,3 +1,4 @@
+import math
 from typing import Any, Literal
 
 import torch
@@ -7,6 +8,51 @@ import tensordict as td
 from torchrl.modules.tensordict_module.sequence import SafeSequential
 from utils import AUX_HEAD_KEYS
 import os
+
+
+class FollowTheGap:
+    def __init__(self, n_rays: int, lidar_range: float, lidar_fov: float, car_width: float, safety_margin: float):
+        self.n_rays = n_rays
+        self.lidar_range = lidar_range  # meters per unit
+        self.lidar_fov = lidar_fov * (math.pi / 180)  # radians
+        self.car_width = car_width  # meters
+        self.safety_margin = safety_margin
+
+    def __call__(self, lidar: torch.Tensor, steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
+        *batch_shape, n_frames, n_rays = lidar.shape
+        if n_rays != self.n_rays:
+            raise ValueError(
+                f"Expected {self.n_rays} lidar rays, got {n_rays}")
+
+        # get rid of the n_frames
+        lidar = lidar[..., -1, :]  # (*batch_shape, n_rays)
+
+        # ray angles in radians from -lidar_fov/2 to +lidar_fov/2, with 0 being straight ahead
+        angles = torch.linspace(-self.lidar_fov/2, self.lidar_fov/2, n_rays)
+        ang_res = angles[1] - angles[0]
+        idxs = torch.arange(n_rays)
+
+        # closest obstacle (*batch_shape, 1)
+        dist_min, idx_min = lidar.min(dim=-1, keepdim=True)
+        safety_bubble_radius = self.car_width/2 + self.safety_margin
+
+        # angular half-width of the safety bubble, in radians
+        half_angle = torch.atan2(safety_bubble_radius,
+                                 dist_min)  # (*batch_shape, 1)
+
+        safety_bubble_idx_radius = half_angle / ang_res
+
+        # zero-out lidar values in that angular slice
+        in_bubble = (idxs - idx_min).abs() <= safety_bubble_idx_radius
+        lidar = lidar.masked_fill(
+            in_bubble,
+            torch.Tensor(0)
+        )
+
+
+        # find largest continuous free gap
+
+        
 
 
 class TrunkModel(torch.nn.Module):
@@ -359,8 +405,6 @@ def save_model(
         "iter": iter
     }
     torch.save(checkpoint, path)
-
-
 
 
 def load_model(path: str) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
