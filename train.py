@@ -73,7 +73,7 @@ def train(
     gae = GAE(
         gamma=gamma,
         lmbda=lmbda,
-        value_network=model.get_value_operator(),
+        value_network=None,
         average_gae=True,
         vectorized=True,
         time_dim=0,  # the rollout is stacked along the first dimension, so time_dim=0
@@ -121,7 +121,7 @@ def train(
 
                 # Don't store next-step observations in the rollout
                 steps.append(tensordict.exclude(
-                    ("next", "agents", "lidar_stack"), ("next", "agents", "lidar")))
+                    ("next", "agents", "stacked_lidar"), ("next", "agents", "lidar")))
                 tensordict = env.step_mdp(tensordict)
 
         stack_rollout_start = time.perf_counter_ns()
@@ -129,8 +129,16 @@ def train(
         rollout = torch.stack(steps, dim=0)
         print(f"Rollout size: {rollout.bytes()} bytes")
         gae_start = time.perf_counter_ns()
+
         with torch.no_grad():
-            # rollout is [T, num_envs, num_agents, ...], matching time_dim=0 above
+            value_op = model.get_value_operator()
+            # V(s_t) for t = 0..T-1
+            values = value_op(rollout.select(*value_op.in_keys))["state_value"]
+            # V(s_T): the observation after the last step is the root of `tensordict`
+            last_value = value_op(tensordict.select(*value_op.in_keys))["state_value"]
+
+            rollout["state_value"] = values
+            rollout["next", "state_value"] = torch.cat([values[1:], last_value.unsqueeze(0)], dim=0)
             rollout = gae(rollout)
         print("Rollout batch size:", rollout.batch_size)
 
@@ -175,6 +183,43 @@ def train(
                 )
 
                 total_loss = (ppo_loss + aux_loss).mean()
+
+                grad_logs = {}
+                if batch_start == 0:
+                    h = minibatch["hidden_layer"]
+                    g_policy = torch.autograd.grad(
+                        loss["loss_objective"], h, retain_graph=True)[0].flatten()
+                    g_value = torch.autograd.grad(
+                        loss["loss_critic"], h, retain_graph=True)[0].flatten()
+                    grad_logs = {
+                        "grad/norm_policy": g_policy.norm().item(),
+                        "grad/norm_value": g_value.norm().item(),
+                        "grad/cos_value_policy": torch.nn.functional.cosine_similarity(
+                            g_value, g_policy, dim=0).item(),
+                    }
+                    active_aux_keys = [
+                        k for k in params.aux_weights if params.aux_weights[k] > 0.0]
+                    g_aux_total = torch.zeros_like(g_policy)
+                    for k in active_aux_keys:
+                        g_aux = torch.autograd.grad(
+                            params.aux_weights[k] * aux_losses[k], h, retain_graph=True)[0].flatten()
+                        grad_logs |= {
+                            f"grad/norm_aux_{k}": g_aux.norm().item(),
+                            f"grad/cos_aux_policy_{k}": torch.nn.functional.cosine_similarity(
+                                g_aux, g_policy, dim=0).item(),
+                            f"grad/cos_aux_value_{k}": torch.nn.functional.cosine_similarity(
+                                g_aux, g_value, dim=0).item(),
+                        }
+                        g_aux_total += g_aux
+                    if active_aux_keys:
+                        grad_logs |= {
+                            "grad/norm_aux": g_aux_total.norm().item(),
+                            "grad/cos_aux_policy": torch.nn.functional.cosine_similarity(
+                                g_aux_total, g_policy, dim=0).item(),
+                            "grad/cos_aux_value": torch.nn.functional.cosine_similarity(
+                                g_aux_total, g_value, dim=0).item(),
+                        }
+
                 total_loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), 6.0).item()
@@ -193,6 +238,7 @@ def train(
                     | {
                         f"aux/r2_score_{k}": r2_scores[k].detach().item() for k in r2_scores
                     }
+                    | grad_logs
                 )
 
         # average the per-minibatch logs over the whole iteration
