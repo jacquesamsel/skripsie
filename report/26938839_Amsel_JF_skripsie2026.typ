@@ -335,50 +335,42 @@ Auxiliary learning is a technique involving training a model to perform addition
 
 An end-to-end RL agent that drives from LiDAR alone has to learn a representation of privledged information it can’t directly observe in the real world (e.g. its own velocity and slip, the curvature ahead, and its opponent's location in the case of head-to-head (H2H) racing). The agent may struggle to learn these representations early in training, when it has not yet learned to drive well enough to explore the environment effectively, which can lead to slow convergence.
 
-However, since the privledged information is available in simulation, we can use auxiliary learning to provide additional supervisory signals to the agent during training, which may help it learn better representations of the privledged information and improve its performance.
+However, since the privledged information is available in simulation, we can use auxiliary learning to provide additional supervisory signals to the agent during training, which may help it learn better representations of the privledged information and improve its performance or training speed.
 
 The objectives of this Skripsie are to (a) select an appropriate simulation environment for autonomous racing, (b) implement a baseline end-to-end RL agent that drives from LiDAR alone, (c) gain an understanding of what representations the baseline agent natively encodes, (d) implement auxiliary learning to provide additional supervisory signals to the agent during training, and (e) evaluate the performance of the auxiliary learning agent against the baseline agent.
 
 = Related literature
 
-== Markov Decision Processes (MDPs)
-A Markov Decision Process (MDP) is a mathematical framework for modelling problems in which an agent must make a series of decisions in an environment. At each time step $t$, the environment is in some state $s_t in cal(S)$, which is a _complete_ description of the environment at time $t$. The agent, however, only partially observes the environment; its observation $o_t in cal(O)$, where $cal(O)$ is the observation space, is a function of the state $s_t$. In this case, the environment is said to be _partially observable_, and the problem is formally a _partially observable_ MDP (POMDP). The information available in the state $s_t$ that is not available in the observation $o_t$ is called _privileged information_.
+== Partially Observable Markov Decision Processes (POMDPs)
+Many control and robotics problems require an agent to make a sequence of
+decisions in an environment, where each decision influences what happens next
+and where the agent can sense only part of the environment. We model such
+problems as a _partially observable Markov decision process_ (POMDP) defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$
+@kaelbling1998, whose interaction loop is shown in @mdp_interation_diagram.
 
-Based on its observation $o_t$, the agent chooses an action $a_t in cal(A)$. How the agent chooses is described by its _policy_, $pi$: a rule that tells the agent what to do in every situation it might encounter. One can think of the policy as the agent's strategy or rulebook: given the current observation, it returns the action the agent will take. For example, a policy for a self-driving car might say "if I observe a red light ahead, brake". The policy may also be stochastic, assigning a probability to each action rather than always picking the same one; we write $a_t ~ pi(dot | o_t)$ to mean the action is sampled from the policy. Note that we consider the policy to map observations to actions, compared to the classical mapping of states to actions in @bellman1957 and @kaelbling1998, since the agent cannot act on information it does not have. The policy is not part of the MDP itself: the policy describes the agent's behaviour, while the MDP describes the environment in which the agent operates.
+At each time step $t$, the environment is in a state $s_t in cal(S)$, where
+$cal(S)$ is the state space. The state is a complete description of the
+environment. The first state is sampled from an initial state distribution,
+$s_0 ~ rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation
+$o_t in cal(O)$ drawn from the observation function,
+$o_t ~ cal(Z)(dot | s_t)$, where $cal(O)$ is the observation space. The information in $s_t$ that is missing from
+$o_t$ is called _privileged information_. For example, a car may observe its lidar measurements, but not the road surface conditions directly.
 
-Once the agent takes an action $a_t$, the environment responds by transitioning to a new state $s_(t+1) in cal(S)$, emitting a reward to the agent, $r_t in RR$, and a new observation $o_(t+1) in cal(O)$. The reward is a scalar value that indicates how good the outcome of the agent's action is. It is a function of the action taken, and both the current state and the successor state: $r_t = R(s_(t), a_t, s_(t+1))$. Note that the reward depends on the true state, not on the agent's observation of it.
-
-The agent may experience a "life" within the same MDP many times over, and each time it does so is called an _episode_. An episode starts with the environment in some initial state $s_0 ~ rho_0$, and ends when the agent reaches a terminal state, or after a fixed number of time steps. The agent's objective is to learn a policy that maximises the expected _discounted return_, $EE_pi [G_0]$, where
-
-$ G_t = sum_(i=t)^T gamma^(i-t) r_i $
-
-is the discounted return from time step $t$, $T$ is the time step at which the episode terminates, and the expectation is taken over all trajectories that can arise from $rho_0$, the environment's dynamics, and the policy $pi$. The policy that achieves this maximum is called the _optimal policy_, $pi^*$.
-
-The discount factor $gamma in [0, 1]$ controls how much the agent values future rewards relative to immediate ones. The return can be thought of as a weighted sum of all future rewards, in which a reward received $k$ steps from now is worth only $gamma^k$ times as much as the same reward received immediately. A $gamma$ close to $0$ makes the agent short-sighted, while a $gamma$ close to $1$ makes it value long-term outcomes almost as much as immediate ones.
-
-Formally, a POMDP is defined by a tuple $(cal(S), cal(A), cal(O), cal(P), cal(Z), R, rho_0, gamma)$, where
-
-- *$cal(S)$* is the state space, which is the set of all possible states the environment can be in.
-
-- *$cal(A)$* is the action space, which is the set of all possible actions the agent can take. An action $a_t in cal(A)$ is a decision made by the agent at time $t$ that (may) affect the environment.
-
-- *$cal(O)$* is the observation space, which is the set of all possible observations the agent can receive.
-
-- *$cal(P): cal(S) times cal(A) -> Delta(cal(S))$* is the transition function, which defines the probability of transitioning to a successor state $s_(t+1)$ given the current state $s_t$ and action $a_t$, formally $s_(t+1) ~ cal(P)(dot | s_t, a_t)$.
-
-- *$cal(Z): cal(S) -> Delta(cal(O))$* is the observation function, which defines the probability of the agent receiving observation $o_t$ when the environment is in state $s_t$, formally $o_t ~ cal(Z)(dot | s_t)$.
-
-- *$R: cal(S) times cal(A) times cal(S) -> RR$* is the reward function, which defines the reward received by the agent given the action taken and the successor state, formally $r_t = R(s_t, a_t, s_(t+1))$.
-
-- *$rho_0 in Delta(cal(S))$* is the initial state distribution, formally $s_0 ~ rho_0$.
-
-- *$gamma in [0, 1]$* is the discount factor described above.
-
-Transitions satisfy the _Markov property_: the successor state depends only on the current state and action, and not on the rest of the history,
-
-$ P(s_(t+1) | s_t, a_t, s_(t-1), a_(t-1), dots, s_0, a_0) = P(s_(t+1) | s_t, a_t). $
-
-This property holds for the states, but generally not for the observations: a single observation $o_t$ does not, in general, contain enough information to predict $o_(t+1)$.
+Based on its observation, the agent chooses an action $a_t in cal(A)$, where
+$cal(A)$ is the action space. It does so using a _policy_ $pi$, which maps an
+observation to a probability distribution over actions; we write
+$a_t ~ pi(dot | o_t)$. The policy is what we want to find: it describes the
+agent's behaviour, whereas the POMDP describes the environment in which the agent
+acts. (For simplicity, we let the policy depend only on the current observation;
+should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$.) After the agent has taken action $a_t$, the environment moves
+to a new state, $s_(t+1) ~ P(dot | s_t, a_t)$, where $P$ is the transition
+function. By the _Markov property_, the next state depends only on the current
+state and action, not on earlier history @sutton2018. Then, the agent receives a scalar reward
+$r_t = R(s_t, a_t, s_(t+1))$, where $R$ is the reward function, together with
+the next observation $o_(t+1)$. The agent's goal is to maximise the expected
+discounted return
+$EE[G_0] = EE[sum_(t=0)^infinity gamma^t r_t]$, where $gamma in [0, 1)$ is a
+discount factor. The return represents a weighted sum of all future rewards, where later rewards are worth less than immediate ones. The discount rate $gamma$ describes how much the agent values future rewards relative to immediate ones. The policy that maximises the expected discounted return is called the _optimal policy_ $pi^*$.
 
 #let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
 #let o-node(pos, body) = node(
@@ -411,9 +403,9 @@ This property holds for the states, but generally not for the observations: a si
 
     // Local computations
     step((1, 1), $s_0 ~ rho_0$),
-    step((0, 2), $a_0 ~ pi(dot | s_0)$),
+    step((0, 2), $a_0 ~ pi(dot | o_0)$),
     step((1, 3), $s_1 ~ P(dot | s_0, a_0)$),
-    step((0, 4), $a_1 ~ pi(dot | s_1)$),
+    step((0, 4), $a_1 ~ pi(dot | o_1)$),
     step((1, 5), $s_2 ~ P(dot | s_1, a_1)$),
     node((0, 6), $dots.v$, fill: white),
     node((1, 6), $dots.v$, fill: white),
@@ -428,17 +420,22 @@ This property holds for the states, but generally not for the observations: a si
   caption: [
     Interaction between the agent and the environment over time ($t$).
   ],
-)
-
+) <mdp_interation_diagram>
 
 === Value functions
+Throughout this section we assume a memoryless policy $pi(dot | o_t)$. Since
+$o_t = cal(Z)(s_t)$, the agent's action distribution in state $s$ is
+$pi(dot | cal(Z)(s))$, and because the state is Markov, the expected return from
+time $t$ depends only on $s_t$. The value functions below are therefore well
+defined as functions of the state.
+
 Value functions are a central concept in reinforcement learning, providing a measure of how good it is for the agent to be in a particular state or to take a particular action.
 The state-value function,
 $
   V^pi (s) = EE_pi [G_t | S_t = s]
 $ <state_value_function>
 
-represents the expected discounted return $G_t$ the agent can achieve starting from state $s$ and following policy $pi$ thereafter. The action-value function,
+represents the expected discounted return, the agent can achieve starting from state $s$ and following policy $pi$ thereafter. The action-value function,
 $
   Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
@@ -447,18 +444,18 @@ The advantage function,
 $
   A^pi (s, a) = Q^pi (s, a) - V^pi (s)
 $ <advantage_function>
-measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state.
+measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state .
 
 These state-value and action-value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
 
 $
-  V^pi (s) = EE_pi [R_{t+1} + gamma V^pi (S_{t+1}) | S_t = s]
+  V^pi (s) = EE_pi [R_(t+1) + gamma V^pi (S_(t+1)) | S_t = s]
 $ <state_value_bellman_equation>
 
 and the Bellman equation for the action-value function is given by:
 
 $
-  Q^pi (s, a) = EE_pi [R_{t+1} + gamma Q^pi (S_{t+1}, A_{t+1}) | S_t = s, A_t = a]
+  Q^pi (s, a) = EE_pi [R_(t+1) + gamma Q^pi (S_(t+1), A_(t+1)) | S_t = s, A_t = a]
 $ <action_value_bellman_equation>
 
 These Bellman equations @state_value_bellman_equation and @action_value_bellman_equation provide a recursive relationship that allows the agent to update its value estimates based on the observed rewards and the estimated values of successor states.
@@ -466,18 +463,38 @@ These Bellman equations @state_value_bellman_equation and @action_value_bellman_
 
 
 == Reinforcement Learning (RL)
-Reinforcement learning is a subfield of machine learning, where a policy $pi_theta$ is learned through an agent's interactions with an environment with the objective of maximising the expected discounted return under policy $pi_theta$, $EE_pi_theta [G_t]$, by varying the parameters $theta$ (i.e. finding the optimal policy $pi^*$)#footnote([The parameterisation restricts the search to the policy class
-  $Pi_Theta = {pi_theta : theta in Theta}$, the set of policies the chosen
-  model can represent. The optimal policy $pi^*$ need not lie in $Pi_Theta$:
-  for example, if $pi_theta$ outputs a Gaussian over actions, it cannot
-  represent an optimal policy that is multimodal or deterministic. In that
-  case, RL can at best find the policy in $Pi_Theta$ with the highest
-  expected return, $pi_(theta^*)$ with
-  $theta^* = arg max_theta EE_(pi_theta) [G_0]$.]). This is done by sampling trajectories of the agent's interactions with the environment, and using the observed rewards to update the policy parameters $theta$ in a way that increases the probability of actions that lead to higher returns.
+Reinforcement learning (RL) is a subfield of machine learning concerned with
+finding a policy $pi$ that maximises the expected discounted return
+$J(pi) = EE_pi [G_0]$ using only data sampled from interaction with the
+environment, without labelled optimal actions or a known model. RL differs from
+supervised learning in that feedback is evaluative rather than instructive: the
+agent is told how good its actions were, not which action was correct, and
+rewards may arrive long after the actions that caused them. Furthermore, the
+data distribution depends on the agent's own policy, so the agent must explore.
 
-RL is distinct from supervised learning in that during training, the optimal or correct action is not known - the agent must explore the environment and learn from the consequences of its actions. It is also distinct from classical unsupervised learning methods in that there is a clear objective (maximising expected return) and feedback (rewards) to guide the learning process.
-
-There exist two broad classes of RL algorithms: value-based methods and policy-based methods. Value-based methods learn a value function that estimates the expected return for each state or state-action pair ($hat(V)(s_t)$ or $hat(Q)(s_t, a_t)$ respectively), and derive a policy from this value function (for example, acting greedily in state $s$, choosing action $a = argmax_(a in cal(A)) hat(Q)(s, a)$). Policy-based methods learn a parameterised policy directly, without explicitly estimating a value function. We focus on policy-based methods in this report, as value-based methods are less suitable for continuous action spaces @lillicrap2015continuous and policy-based methods can natively learn stochastic policies, without tricks such as $epsilon$-greedy. @sutton2018
+RL algorithms fall into three broad classes. _Value-based_ methods learn the
+optimal action-value function
+$Q^*(s, a) = max_pi Q^pi (s, a)$, which satisfies the Bellman optimality
+equation
+$
+  Q^*(s, a) = EE[r_t + gamma max_(a' in cal(A)) Q^*(s_(t+1), a') | s_t = s, a_t = a],
+$
+and act greedily with respect to it, $pi(s) = argmax_(a in cal(A)) Q^*(s, a)$.
+In a fully observable MDP this greedy policy is optimal, but the agent is
+restricted to deterministic policies, and the maximisation over $cal(A)$ can be
+intractable for continuous actions @lillicrap2015continuous. In a POMDP, the
+observation is not necessairily Markov, so $Q(o, a)$ does not satisfy a Bellman equation,
+and a state-based $Q(s, a)$ cannot define a deployable policy
+as the agent does not observe $s$. Value-based methods therefore require a
+Markov input such as the observation history. _Policy-based_ methods instead
+learn a parameterised policy $pi_theta$ directly by ascending the gradient of
+$J(pi_theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
+$arg max$ over actions. They can also represent stochastic policies, which may be
+necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
+combine both: a learned value function (the critic) is used to reduce the variance
+of the policy gradient, and since the critic is only used in training, it may
+condition on privileged information. We focus on policy-based and actor-critic
+methods in this report @sutton2018.
 
 == Policy gradient methods
 
@@ -488,7 +505,7 @@ $
   = integral p_theta (tau) G(tau) dif tau
 $
 
-Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done only under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable _almost_ everywhere, and the integral is finite.]),
+Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done only under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable everywhere, and the integral is finite.]),
 the gradient of the expected return with respect to $theta$ is then
 $
   nabla_theta J(theta)
@@ -534,8 +551,8 @@ However, since the expectation of the fixed past-reward terms is zero, they can 
 
 $
   EE_(a_t tilde pi_theta) [nabla_theta log pi_theta (a_t | o_t) | h_t]
-  = sum_a nabla_theta pi_theta (a | o_t)
-  = nabla_theta sum_a pi_theta (a | o_t)
+  = integral_a nabla_theta pi_theta (a | o_t)
+  = nabla_theta integral_a pi_theta (a | o_t)
   = nabla_theta 1 = 0,
 $
 The past-reward terms therefore vanish in expectation, leaving
@@ -711,7 +728,7 @@ $
 
 In our case, since we have various loss terms, each relating to a different task where the scale of $y$ differs, we must carefully choose the parameter $beta$ and scale each loss term appropriately.
 
-Rewriting the loss to $cal(L)^beta (y/sigma, hat(y)/sigma)$ allows us to reduce the model's bias towards learning tasks with larger scales, however, the Huber loss is not scale-invariant, so we must choose $beta$ carefully:
+Rewriting the loss to $cal(L)^beta ((y-mu)/sigma, hat(y))$ allows us to reduce the model's bias towards learning tasks with larger scales, since the loss is now computed on a normalised scale.
 
 In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses a rescaled definition, $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
 
@@ -1008,12 +1025,15 @@ RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. I
 
 == F1Tenth Gym
 
-The F1Tenth Gym is a python package that provides an environment for training and evaluating autonomous racing agents in simulation @okelly2020f1tenthgym. It is built on top of the OpenAI Gym framework and features a simple bicycle model, which lumps tyre forces per axle and has no wheel-level states, so quantities such as per-wheel slip are unavailable. The F1Tenth Gym is therefore unsuitable for methods like ours that require per-wheel information.
+The F1Tenth Gym @okelly2020f1tenthgym is a python package that provides an environment for training and evaluating autonomous racing agents in simulation. It is built on top of the OpenAI Gym framework and features a simple bicycle model, which lumps tyre forces per axle and has no wheel-level states, so quantities such as per-wheel slip are unavailable. The F1Tenth Gym is therefore unsuitable for methods like ours that require per-wheel information.
+
+== AutoDrive
+AutoDrive is another simulator for autonomous driving reseach based on Unity and the MLAgents toolkit.
 
 == Unity
 Unity is a game engine developed by Unity Technologies which provides a platform wherein simulations can be built and run, simplifying interations with Nvidia's PhysX physics engine and other low-level libraries.
 
-Unity was chosen over the F1Tenth Gym because its `WheelCollider` component exposes the per-wheel slip quantities that are used as privileged information for the auxiliary heads in #todo("WHERE"), and because it allows the tyre and suspension parameters to be varied between episodes. It features built-in LiDAR simulation, occupancy grid generation, and an inferface built for agent training (MLAgents).
+Unity was chosen over the F1Tenth Gym because its `WheelCollider` component exposes the per-wheel slip quantities that are used as privileged information for the auxiliary heads in #todo("WHERE"), and because it allows the tyre and suspension parameters to be varied between episodes. It features built-in LiDAR simulation, occupancy grid generation, and an API built for agent training (MLAgents).
 
 === Vehicle model
 ==== The WheelCollider <sec_wheelcollider>
@@ -1026,13 +1046,7 @@ The tyre model is built on the idea of _slip_: how much the tyre slides over
 the road instead of rolling on it. A wheel slips when it spins faster than
 the car moves (wheelspin), turns slower than the car moves (braking), or is
 dragged sideways (cornering). Slip is expressed as a ratio, so a freely
-rolling wheel has a slip of 0 and a locked wheel has a slip of 1#footnote[
-  In the standard definition, the longitudinal slip ratio is
-  $s = (omega r - v) / max(|omega r|, |v|)$, where $omega$ is the wheel's
-  spin rate, $r$ its radius and $v$ the wheel's forward speed over the
-  ground. Unity does not document its exact formula, so this is the
-  standard definition that its friction curve approximates.
-].
+rolling wheel has a slip of 0 and a locked wheel has a slip of 1.
 
 A tyre needs some slip to produce force. The `WheelCollider` computes the
 force from the slip using a friction curve (@wheel_friction_curve). Force
@@ -1042,10 +1056,6 @@ falls to a lower, constant value, the _asymptote_. Pushing the car harder
 therefore gives less force, not more, which is a regime a racing agent must
 learn to avoid. The curve is defined separately for the forward direction
 (accelerating and braking) and the sideways direction (cornering). Note that in real life, at low slip values, the rubber stretches instead of actually sliding on the road. This is modelled by the rising part of the curve at low slip values.
-
-
-
-@unitydocsWheelFrictionCurve
 
 #[
   #let asymptote-slip = 0.25
@@ -1076,6 +1086,7 @@ learn to avoid. The curve is defined separately for the forward direction
       width: 400pt,
       xlabel: "Slip ratio",
       ylabel: "Friction coefficient",
+      ylabel-pos: (0.04, 1.1),
       minor-grid-step: 0.01,
       samples: 1000,
       show-grid: "major",
@@ -1095,33 +1106,30 @@ learn to avoid. The curve is defined separately for the forward direction
         label-pos: 0.8,
       ),
     ),
-    caption: [Approximated WheelCollider friction curves for the RoboRacer#footnote("The values parameters detailed in this chart are the default values configured in the AutoDrive simulator for the F1TENTH vehicle.")],
+    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values detailed in this chart are the default values configured in the AutoDrive simulator for the F1TENTH vehicle's `WheelColliders`])],
   )<wheel_friction_curve>
 ]
 
+==== Car RigidBody
+
+The car is modelled using a `RigidBody` and various `BoxColliders` to represent the chassis, bumpers, and other parts of the vehicle. The `RigidBody` is responsible for simulating the car's own physics, such as its inertia, and keeping the wheels attached to the car. The `BoxColliders` are used to detect collisions with the track walls and other objects in the environment. The `RigidBody` is configured with a mass of 3.47 kg as in the original AutoDrive simulator.
 
 
-== AutoDrive and MLAgents
-#figure(
-  columns(2)[
-    #image("figures/autodrive_isometric_birds_eye.png", width: 200pt, height: 175pt)
-    #colbreak()
-    #image("figures/autodrive_isometric_close_up.png", width: 200pt, height: 175pt)
-  ],
-  caption: "AutoDrive-insired Unity environment, showing the RoboRacer vehicle, its LIDAR rays, and forward track prediction sampling points.",
-) <track_rendering>
 
-Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. Because each experiment requires many training runs, we first measured how to best use this hardware, so that experiments would finish in a practicable time. The goal was to maximise _aggregate_ training throughput: the total number of environment timesteps collected and learned from per second, summed across all models training simultaneously.
+== MLAgents
+=== Training throughput
 
-We performed a grid search over the three parameters in @training_performance_variables, giving $3 times 2 times 3 = 18$ configurations. For each configuration, `concurrent_trainers` identical training processes were launched at the same time, each with the same `python_threads` and `parallel_envs`. Every process ran for five PPO iterations (each a 256-frame rollout followed by four epochs of minibatch updates) with checkpointing and TensorBoard logging disabled, so that only computation was measured. To prevent the trainers from contending for the same cores, each process, together with the Unity environments it spawns, was pinned to its own equal-sized slice of the CPU's logical cores.
+Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To make experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
-For each trainer we measured the mean wall-clock time per iteration, and converted it to throughput in environment timesteps per second:
+We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
 
 $ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
 
-where each environment contains 6 training areas (and so 6 agents) that step in parallel. We report throughput per trainer, and summed across all concurrent trainers. The per-trainer figure shows how much each model slows down as the machine gets busier, while the summed figure shows the point at which adding trainers stops paying off.
+We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
 
-Bu default, Unity spawns `n_cpus` threads for its garbage collector, which can be modified by passing the `-gc-helper-count` argument when launching the executable. This value was set to 8.
+As shown in @training_performance_results, summed throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose $("concurrent_trainers", "parallel_envs", "python_threads") = (8, 8, 16)$, though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using 8 or 12 areas per environment at this configuration did not help (3844 and 3999 timesteps/s).
+
+By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
 
 #figure(
   stb-table(
@@ -1135,7 +1143,7 @@ Bu default, Unity spawns `n_cpus` threads for its garbage collector, which can b
     [${8, 16}$],
     [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
     [`parallel_envs`],
-    [${4, 8, 16}$],
+    [${4, 8, 10, 16}$],
     [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
   ),
   caption: "Parameters varied in the training performance grid search.",
@@ -1288,7 +1296,7 @@ For this purpose, a track generator was implemented in C\# in Unity to procedura
 
 Then, a Catmull-Rom spline is fitted to the points to create a smooth track centerline. In order to generate the inner and outer boundaries of the track, points are sampled along the centerline to generate a polygonal approximation of the track. The inner and outer boundaries are then generated by insetting/outsetting the centerline polygon by a fixed distance using the Clipper2 library @clipper2, which extends the Vatti polygon clipping algorithm @vatti1992.
 
-Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in @track_rendering.
+Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in #todo("ADD PLACE").
 
 = Auxiliary heads
 
@@ -1438,11 +1446,14 @@ as training signals.
 
 == Baseline performance <baseline_model>
 
-The baseline model was trained in 300 PPO steps, experiencing 512 frames on each of 48 parallel agents, for a total of 16'23" training time per step (i.e. 81.9 hours of simulation time). Every 10 steps (2.73h of simulation time), the model weights were logged to allow inspection of learning characteristics, along with per-step statistics on performance.
 
-=== Auxiliary Head Prediction
+=== Features already encoded in the model
 
 Despite not being trained with the explicit task of auxiliary prediction, we are able to extract a proxy to examine the feature representation in the model.
+
+
+
+
 
 == Normalisation of ego-agent privledged information
 
@@ -1456,6 +1467,126 @@ _Epistemic uncertainty_ is the uncertainty that comes as a result of lack of tra
 _Aleatoric uncertainty_ is that which cannot be reduced
 
 An alternative method is @chen2017gradnorm, which dynamically scales the weights of each loss term to balance the $||delta_W L_i||_2$
+
+== Features learnt by the model
+
+
+#[
+
+  #let get-conv1d-height = channels => {
+    return channels / 10
+  }
+  #let get-fc-height = size => {
+    return size / 30
+  }
+  #let main-net = draw-network(
+    (
+      (
+        type: "input",
+        image: rotate(90deg)[#image("../results/lidar_input.png", width: 4cm, height: 4cm)],
+        label: "LIDAR history",
+        channels: (101, 50),
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(50),
+        depth: 4,
+        show-relu: true,
+        channels: ("", 50),
+        legend: "Conv1d",
+        name: "conv1d",
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(32),
+        depth: 4,
+        show-relu: true,
+        channels: ("", 32),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(16),
+        depth: 4,
+        show-relu: true,
+        channels: ("", 16),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (
+        type: "conv",
+        widths: (0.5,),
+        height: get-conv1d-height(16),
+        depth: 4,
+        show-relu: true,
+        channels: ("", 16),
+        name: "conv1d",
+        offset: 0.5,
+      ),
+      (
+        type: "custom",
+        width: 0.4,
+        height: 4,
+        depth: 0.5,
+        label: "Flatten",
+        name: "flat",
+        offset: 1.5,
+        legend: "Flatten",
+        fill: green,
+      ),
+      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1, fill: teal),
+      (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
+      (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
+      (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
+      (type: "fc", channels: (27 + 4 + 1,), offset: 0.5, name: "fc4", height: get-fc-height(32), label: "out"),
+    ),
+    connections: (),
+    show-legend: true,
+    legend-title: "Layers",
+    scale: 100%,
+    stroke-thickness: 1,
+    depth-multiplier: 0.3,
+  )
+
+  #figure(
+    caption: "Neural network architecture",
+    cetz.canvas(length: 1cm, {
+      import cetz.draw: *
+      content((0, 0), main-net, anchor: "north-west", name: "main")
+      // Second input: the previous action, concatenated with the flattened
+      // conv features. Coordinates are in cm, measured from the top-left of
+      // the network image; (8.95, -1.28) is the top face of the "Concat" block.
+      content((8.95, 0), text(size: 8.5pt, weight: "bold")[Previous action], anchor: "south", name: "act")
+      line((8.95, -0.1), (8.95, -1.28), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
+    }),
+  )<neural_net_architecture2>
+]
+
+Setting up a linear regression model to predict the auxiliary targets from the hidden layer (fc3) output of the tunk model, we are able to understand the representation encoded by the model @alain2018understandingintermediatelayersusing. The results over the training period of three different training configurations at different auxiliary head loss scale weights are shown in @features_learnt_over_time_curvature_close. The three configurations are:
++ trained with all auxiliary heads simultaneously,
++ trained with only the curvature_close heads, and
++ trained without auxiliary heads.
+
+Interestingly, the linear probe model achieves a high $R^2$ score for the velocity_forward, velocity_lateral, and angular_velocity_y before even training (i.e. just LeCun initialised weights).
+
+#todo([
+  I'm not sure why this happens. I hypothesise that because the velocity is just a linear function of the difference between the length of a single LiDAR ray between two consecutive time steps (i.e. $x^"center"_t - x^"center"_(t-1)$), that each layer's projection into a subspace is likely to preserve this linear relationship, and therefore the hidden layer output encodes this information automatically.
+])
+
+I've only included the curvature_close auxiliary head results in the figure to keep it legible.
+
+More complex features, such as the track curvature at various distances ahead of the car, are not encoded well in the model before training, and the linear proble model is unable to predict them $R_"baseline"^2 in [0, 0.2]$ late in training for the baseline model. However, with an auxiliary head, the model is able to learn a representation that encodes this information with $R^2_"curvature_head" in [0.4, 0.8]$ later in training for lengths ahead < 3m.
+
+#figure(
+  image("../results/figures/r2_scores_per_time_per_aux_head/curvature_close.png"),
+  caption: [$R^2$ scores for auxiliary head predictions as a function of time. Each subplot is a different auxiliary head. Orange = trained with all aux heads simulatenously, blue = trained with only the curvature_close heads. green = trained without auxiliary heads. Transparency = auxiliary head loss scale weight $w^((i))$.
+
+    Note that the ],
+) <features_learnt_over_time_curvature_close>
 
 
 = What I did
@@ -1473,27 +1604,19 @@ $
 #bibliography("./hyagriva.yaml", style: "ieee", title: [Bibliography])
 
 #in-appendix.update(true)
+#set heading(supplement: none, numbering: none)
 
-// The appendix chapter itself is unnumbered; its sections are
-// "Appendix A", "Appendix B", ... and deeper levels "A.1", "A.1.1".
-// A pattern string cannot be used here: in "Appendix A" Typst would
-// read the leading "A" as a counting symbol too.
-// References to appendix sections read "Appendix A", not
-// "Section Appendix A".
-#set heading(supplement: none)
-
+= Appendix
 #set heading(numbering: (..n) => {
   let nums = n.pos()
   if nums.len() == 1 {
-    ""
+    none
   } else if nums.len() == 2 {
     "Appendix " + numbering("A", nums.at(1))
   } else {
     numbering("A.1.1", ..nums.slice(1))
   }
 })
-
-= Appendix
 == WheelCollider properties <wheel_collider_properties>
 
 #figure(
@@ -1544,9 +1667,7 @@ $
 #[
   #let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
 
-  #figure(
-    
-  )
+
 ]
 #set page(flipped: false)
 

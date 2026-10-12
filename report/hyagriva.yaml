@@ -644,5 +644,30 @@ kirchdorfer2026investigatingoptimaluw:
     volume: 134
     issue: 8
 
+singh1994learningwithoutstateestimation:
+  type: anthos
+  title: Learning Without State-Estimation in Partially Observable Markovian Decision Processes
+  author:
+  - Singh, Satinder P.
+  - Jaakkola, Tommi
+  - Jordan, Michael I.
+  date: 1994
+  editor:
+  - Cohen, William W.
+  - Hirsh, Haym
+  page-range: 284-292
+  url: https://www.sciencedirect.com/science/article/pii/B9781558603356500428
+  serial-number:
+    doi: https://doi.org/10.1016/B978-1-55860-335-6.50042-8
+    isbn: 978-1-55860-335-6
+  abstract: Reinforcement learning (RL) algorithms provide a sound theoretical basis for building learning control architectures for embedded agents. Unfortunately all of the theory and much of the practice (see Barto et al., 1983, for an exception) of RL is limited to Markovian decision processes (MDPs). Many real-world decision tasks, however, are inherently non-Markovian, i.e., the state of the environment is only incompletely known to the learning agent. In this paper we consider only partially observable MDPs (POMDPs), a useful class of non-Markovian decision processes. Most previous approaches to such problems have combined computationally expensive state-estimation techniques with learning control. This paper investigates learning in POMDPs without resorting to any form of state estimation. We present results about what TD(0) and Q-learning will do when applied to POMDPs. It is shown that the conventional discounted RL framework is inadequate to deal with POMDPs. Finally we develop a new framework for learning without state-estimation in POMDPs by including stochastic policies in the search space, and by defining the value or utility of a distribution over states.
+  parent:
+    type: anthology
+    title: Machine Learning Proceedings 1994
+    publisher:
+      name: Morgan Kaufmann
+      location: San Francisco (CA)
+
+
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
