@@ -159,7 +159,7 @@ class RoboRacerEnv(TransformedEnv):
                     step_penalty=step_penalty,
                     collision_penalty=collision_penalty
                 ),
-                ExcludeTransform(("agents", "unity_reward")),
+                #ExcludeTransform(("agents", "unity_reward")),
                 StackAction(
                     in_keys=[("agents", a, "continuous_action")
                              for a in agent_names],

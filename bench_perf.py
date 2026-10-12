@@ -1,17 +1,3 @@
-"""Sweep concurrent-training throughput over (num_workers, n_python_threads, num_envs, num_areas).
-
-Edit WORKER_COUNTS / THREAD_COUNTS / ENV_COUNTS / NUM_AREAS below, then: python bench_perf.py
-
-For each grid point, num_workers identical training processes run concurrently
-(same thread count and env count each) for MAX_ITERS iterations, with no
-checkpointing/TensorBoard logging. Throughput is reported in environment
-timesteps/sec (frames_per_rollout * num_envs * num_areas / seconds_per_iter),
-both per worker and totaled across all concurrent workers, so you can see
-where adding more concurrent workers stops paying off. Each worker's own
-stdout/stderr (Unity/torch noise) is redirected to bench_results/logs/ instead
-of the console. One summary row per grid point is appended to
-bench_results/bench_perf.csv.
-"""
 import contextlib
 import csv
 import multiprocessing as mp
