@@ -18,6 +18,7 @@ from pathlib import Path
 import tqdm
 
 
+torch.set_num_threads(4)
 PATH = "results/baseline_rollout.pt"
 
 if not os.path.exists(PATH):
@@ -32,7 +33,7 @@ if not os.path.exists(PATH):
             no_graphics=True,
             num_areas=4,
             seed=0,
-            worker_id=1000
+            worker_id=2000
         )
 
         data = do_rollout(
@@ -59,7 +60,7 @@ def get_iter_name(i: int):
 
 
 
-ITERATIONS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
+ITERATIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
 MODEL_NAMES = os.listdir("checkpoints")
 
 all_scores = []
@@ -95,7 +96,7 @@ for iter_name, model_name in tqdm.tqdm(trainings_to_do):
     train_x, test_x = x[:train_cuttoff_idx], x[train_cuttoff_idx:]
     train_y, test_y = y.iloc[:train_cuttoff_idx], y.iloc[train_cuttoff_idx:]
 
-    lr = LinearRegression()
+    lr = LinearRegression(n_jobs=5)
     lr.fit(train_x, train_y)
 
     test_y_hat = lr.predict(test_x)
@@ -103,6 +104,7 @@ for iter_name, model_name in tqdm.tqdm(trainings_to_do):
     scores = pd.DataFrame({
         "model_name": model_name,
         "target": y.columns,
+        "iteration": int(iter_name),
         "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
         "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(y.columns))],
         "target_stddev": [test_y.iloc[:, i].std() for i in range(len(y.columns))],

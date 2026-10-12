@@ -10,3 +10,5 @@ AutoDrive/
 su_latex_template/
 TestUnityProject/
 linux_build_old/
+checkpoints/
+results/baseline_rollout.pt
