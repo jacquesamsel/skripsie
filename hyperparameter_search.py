@@ -14,21 +14,21 @@ def curvature_keys(lo, hi):
 
 
 HYPERPARAMETER_GROUPS = {
-    "velocity_forward": ["velocity_forward"],
-    "velocity_lateral": ["velocity_lateral"],
-    "curvature_close": curvature_keys(0.0, 3.0),
-    "curvature_medium": curvature_keys(3.0, 6.0),
-    "curvature_far": curvature_keys(6.0, 8.0),
-    "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
-    "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
-    "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
-    "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
-    "angular_velocity_y": ["angular_velocity_y"],
-    "all": AUX_HEAD_KEYS
+    # "velocity_forward": ["velocity_forward"],
+    # "velocity_lateral": ["velocity_lateral"],
+    # "curvature_close": curvature_keys(0.0, 3.0),
+    # "curvature_medium": curvature_keys(3.0, 6.0),
+    # "curvature_far": curvature_keys(6.0, 8.0),
+    # "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
+    # "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
+    # "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
+    # "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
+    # "angular_velocity_y": ["angular_velocity_y"],
+    # "all": AUX_HEAD_KEYS
 }
 
 WEIGHT_VALUES = [0.1, 0.3, 1.0]
-SEEDS = [0, 1, 2]
+SEEDS = [3, 4, 5, 6]
 
 MAX_WORKERS = 8
 RUNS_DIR = Path("run_done_flags")
@@ -145,6 +145,7 @@ def main():
 
     pending = [t for t in trials if not t.done_marker.exists()]
     print(f"{len(pending)}/{len(trials)} trials to run")
+    print(pending)
 
     ctx = mp.get_context("spawn")
     counter = ctx.Value('i', 0)

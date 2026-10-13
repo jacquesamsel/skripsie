@@ -140,7 +140,8 @@ if __name__ == "__main__":
 
 
     ITERATIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
-    MODEL_NAMES = os.listdir("checkpoints")
+    #MODEL_NAMES = os.listdir("checkpoints")
+    MODEL_NAMES = ["baseline_w0_s3", "baseline_w0_s4", "baseline_w0_s5", "baseline_w0_s6"]
 
     all_scores = []
 
@@ -159,4 +160,4 @@ if __name__ == "__main__":
                 all_scores.append(scores)
 
     scores = pd.concat(all_scores, ignore_index=True)
-    scores.to_csv("results/aux_head_regression_scores.csv", index=False)
+    scores.to_csv("results/aux_head_regression_scores_new.csv", index=False)

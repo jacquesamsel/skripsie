@@ -6,7 +6,7 @@ import tensordict as td
 import torch
 from utils import get_aux_head_true_values
 import tqdm
-from environment import RoboRacerEnv, RoboRacerParallelEnvs, FollowTheGap
+from environment import RoboRacerEnv, RoboRacerParallelEnvs
 from model import load_model, make_model
 from visualize import LidarVisualiser, OccupancyGridVisualiser, RewardVisualiser
 from model import ActorValueAuxOperator
@@ -14,7 +14,7 @@ from model import ActorValueAuxOperator
 
 def do_rollout(
         env: RoboRacerEnv | RoboRacerParallelEnvs,
-        model: ActorValueAuxOperator | FollowTheGap,
+        model: ActorValueAuxOperator,
         num_steps: int = 512,
         hide_progress: bool = False,
         select_keys: list[td.NestedKey] | None = None,
