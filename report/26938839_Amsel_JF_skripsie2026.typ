@@ -193,7 +193,8 @@
   #set page(background: image("stb-thesis-frntp.pdf", width: 110%, height: 107%, fit: "stretch"))
 
 
-  #block(title("Backseat driver: Auxiliary learning for autonomous racing"), width: 400pt)
+
+  #block(title("Backseat driver: Privledged-information auxiliary loss in autonomous racing"), width: 400pt)
 
   by
 
@@ -808,8 +809,9 @@ To speed up data collection, the simulator is replicated: each Unity instance co
 Previous work at Stellenbosch on end-to-end driving has largely made use of the F1Tenth gym @okelly2020f1tenthgym, which is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, but features a simplified bicycle model of the vehicle, which approximates slip dynamics with a linear function that effectively eliminates the possibility of losing grip.
 
 The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine, is a more realistic 3D simulator that models the vehicle and its environment using PhysX, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and is used in many video games and simulators. However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training. For example, it is missing track generation & privledged information reporting, and its performance is much slower#footnote([On the order of #todo("AMOUNT")]) than the F1Tenth gym. Therefore, the Unity was used to implement a custom simulator using parts of the AutoDrive simulator.
-
-=== The WheelCollider <sec_wheelcollider>
+=== Vehicle model
+The vehicle is modelled as a `RigidBody` with four wheels, each of which is simulated using a `WheelCollider`.
+==== The WheelCollider <sec_wheelcollider>
 In our custom simulator, each wheel of the RoboRacer is
 modelled as a `WheelCollider`, which simulates the wheel's suspension,
 rotation and tyre friction @unitydocsWheelFrictionCurve. This kind of collider uses physics similar to that modelled by the semi-empirical "magic formula" wheel dynamics proposed by Pacejka et al. in @pacejka1992magicformula, and further described in @pacejka2002tyre.
@@ -1299,8 +1301,11 @@ as training signals.
 Despite not being trained with the explicit task of auxiliary prediction, we are able to extract a proxy to examine the feature representation in the model.
 
 
+== Probing intermediate layers for auxiliary information
 
+Alain and Bengio @alain2018understandingintermediatelayersusing present a method for probing intermediate layers in neural networks using linear regression to extract learnt information. The layer outputs $bold(z)_i$ are used as input to a linear regression model, which is trained to predict labelled information $bold(y)_i$. We apply this method to the final layer of the trunk (`fc3`) to understand the features learnt by the model.
 
+Interestingly, we find that even before the first epoch of gradient descent, some features are already encoded by the model.
 
 == Normalisation of ego-agent privledged information
 
@@ -1316,6 +1321,7 @@ _Aleatoric uncertainty_ is that which cannot be reduced
 An alternative method is @chen2017gradnorm, which dynamically scales the weights of each loss term to balance the $||delta_W L_i||_2$
 
 == Features learnt by the model
+
 
 
 #[
