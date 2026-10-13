@@ -389,7 +389,7 @@ discount factor. The return represents a weighted sum of all future rewards, whe
 #let lifeline(x, end) = edge((x, 0), (x, end), stroke: (paint: gray, dash: "dashed"), layer: -1)
 
 #figure(
-  diagram(
+  scale(80%, reflow: true, diagram(
     spacing: (15em, 2.5em),
     node-inset: 6pt,
 
@@ -416,7 +416,7 @@ discount factor. The return represents a weighted sum of all future rewards, whe
     msg((1, 3), (0, 4), $r_0 = R(s_0, a_0, s_1), o_1 = cal(Z)(s_1)$),
     msg((0, 4), (1, 5), $a_1$),
     msg((1, 5), (0, 6), $r_1 = R(s_1, a_1, s_2), o_2 = cal(Z)(s_2)$),
-  ),
+  )),
   caption: [
     Interaction between the agent and the environment over time ($t$).
   ],
@@ -739,63 +739,70 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
 // Add a subsystem diagram
 
 #figure(
-  cetz.canvas(length: 1cm, {
-    import cetz.draw: *
-    set-style(stroke: 1pt, content: (padding: 0pt))
+  scale(60%, reflow: true, diagram(
+    node-stroke: 0.8pt,
+    node-fill: luma(200).transparentize(50%),
+    node-inset: 8pt,
+    spacing: (2.5em, 1.5em),
+    edge-stroke: 0.8pt,
+    mark-scale: 80%,
 
-    let lbl(body) = text(size: 9pt, body)
+    // ---------- Unity ----------
+    node((1, 0), [Track generation], name: <track>),
+    node((1, 1), [Spline Extruder], name: <spline>),
 
-    // --- Unity (outer container) ---------------------------------
-    rect((0, 0), (9.5, 6.5), name: "unity")
-    content((0.3, 6.2), anchor: "north-west", text(weight: "bold", size: 11pt)[Unity])
+    node((2.5, 0), [Car Manager], width: 15em, name: <cm>),
+    node((2, 1), [Lidar], name: <lidar>),
+    node((3, 1), [Vehicle Controller], name: <vc>),
+    node((3, 2), [Wheel Colliders], name: <wheels>),
 
-    // --- Unity subsystems ----------------------------------------
-    rect((0.5, 3.4), (4.0, 4.9), name: "track")
-    content("track", lbl[Track generation])
+    node((4, 0), [MLAgents], name: <mla>),
 
-    rect((5.5, 3.4), (9.0, 4.9), name: "vehicle")
-    content("vehicle", lbl[Vehicle control])
+    // ---------- Python training ----------
+    node((7, 0), [TorchRL], name: <torch>),
+    node((7, 1), [Environment Transforms], name: <env>),
+    node((7, 2), [PPO], name: <ppo>),
 
-    rect((5.5, 0.6), (9.0, 2.1), name: "sensor")
-    content("sensor", lbl[Sensor simulation])
+    // ---------- Connections ----------
+    edge(<track>, "<->", <cm>),
+    edge(<track>, "<->", <spline>),
+    edge(<cm>, "<->", <mla>),
+    edge(<mla>, "<->", <torch>),
 
-    // --- Python agent --------------------------------------------
-    rect((12, 0), (15.5, 6.5), name: "agent")
-    content((13.75, 6.2), anchor: "north", text(weight: "bold", size: 11pt)[Python agent])
-    content((13.75, 3.25), align(
-      center + horizon,
-      lbl[Policy network #linebreak() (PPO + auxiliary #linebreak() heads)],
-    ))
+    // Car Manager -> Lidar / Vehicle Controller (drop down from the wide box)
+    edge((2, 0), "<->", <lidar>),
+    edge((3, 0), "<->", <vc>),
+    edge(<vc>, "<->", <wheels>),
 
-    // --- Arrows inside Unity -------------------------------------
-    let arrow = (end: ">", fill: black, scale: 0.7)
+    edge(<torch>, "<->", <env>),
+    edge(<env>, "<->", <ppo>),
 
-    // Track geometry is what the LiDAR rays hit
-    line("track.south", (2.25, 1.35), "sensor.west", mark: arrow)
-    content((2.25, 2.4), anchor: "east", padding: 3pt, lbl[Track walls])
-
-    // Vehicle pose is needed to cast the rays
-    line("vehicle.south", "sensor.north", mark: arrow)
-    content((7.25, 2.75), anchor: "west", padding: 4pt, lbl[Pose])
-
-    // Track defines where the car is spawned and its curvature
-    line("track.east", "vehicle.west", mark: arrow)
-    content((4.75, 4.15), anchor: "south", padding: 3pt, lbl[Spawn])
-
-    // --- Arrows between Unity and the agent ----------------------
-    // Actions: agent -> vehicle control
-    line((12, 4.15), (9.0, 4.15), mark: arrow)
-    content((10.75, 4.15), anchor: "south", padding: 3pt, lbl[Actions])
-
-    // Observations: sensor simulation -> agent
-    line((9.0, 1.6), (12, 1.6), mark: arrow)
-    content((10.75, 1.6), anchor: "south", padding: 3pt, lbl[LiDAR scans])
-
-    // Privileged information: Unity -> agent (training only)
-    line((9.0, 0.9), (12, 0.9), mark: arrow, stroke: (dash: "dashed"))
-    content((10.75, 0.9), anchor: "north", padding: 3pt, lbl[Privileged info])
-  }),
-  caption: [Subsystem diagram: the Unity simulation and the Python agent.],
+    // ---------- Group boxes ----------
+    // node(
+    //   align(top + center, move([*Hyperparameter search*], dy: -14pt)),
+    //   enclose: (<python>, <unity>),
+    //   stroke: (dash: "dashed", thickness: 1pt),
+    //   inset: 24pt,
+    //   name: <loop>,
+    // ),
+    node(
+      align(top + center, move([*Unity simulator*], dy: -14pt)),
+      enclose: (<track>, <spline>, <cm>, <lidar>, <vc>, <wheels>, <mla>),
+      stroke: (dash: "dashed", thickness: 1pt),
+      inset: 24pt,
+      snap: false,
+      name: <unity>,
+    ),
+    node(
+      align(top + center, move([*Python training*], dy: -14pt)),
+      enclose: (<torch>, <env>, <ppo>),
+      stroke: (dash: "dashed", thickness: 1pt),
+      inset: 24pt,
+      snap: false,
+      name: <python>,
+    ),
+  )),
+  caption: "System overview",
 )
 
 == RoboRacer
