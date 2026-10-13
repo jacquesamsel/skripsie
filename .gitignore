@@ -11,4 +11,5 @@ su_latex_template/
 TestUnityProject/
 linux_build_old/
 checkpoints/
-results/baseline_rollout.pt
+results/baseline_rollout_test.pt
+results/baseline_rollout_train.pt

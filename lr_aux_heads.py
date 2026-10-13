@@ -16,12 +16,81 @@ import math
 import platform
 from pathlib import Path
 import tqdm
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing as mp
 
 
-torch.set_num_threads(8)
+torch.set_num_threads(32)
 TRAIN_PATH = "results/baseline_rollout_train.pt"
 TEST_PATH = "results/baseline_rollout_test.pt"
 TRAIN_PROP = 0.8
+# The forward passes are bound by cache/memory bandwidth rather than cores, so
+# more workers past this point slows things down (measured: 32x2 ~0.56s/job,
+# 64x1 ~0.81s/job on the 64-core Threadripper)
+NUM_WORKERS = 32
+THREADS_PER_WORKER = 2
+# Forward in small chunks so each worker's activations stay in cache, rather
+# than allocating GBs per pass and contending for memory bandwidth
+FORWARD_CHUNK_SIZE = 256
+
+_train_data = None
+_test_data = None
+
+
+def init_worker():
+    # mmap so every worker reads the same page-cached copy instead of each
+    # holding its own ~1.3 GB
+    global _train_data, _test_data
+    torch.set_num_threads(THREADS_PER_WORKER)
+    torch.serialization.add_safe_globals(
+        [tensordict._td.TensorDict, tensordict._reductions._make_td])
+    _train_data = torch.load(TRAIN_PATH, mmap=True)
+    _test_data = torch.load(TEST_PATH, mmap=True)
+
+
+def get_xy(model, split_data):
+    trunk = model.get_trunk_operator()
+    with torch.inference_mode():
+        x = torch.cat([
+            trunk(split_data[i:i + FORWARD_CHUNK_SIZE].select(*trunk.in_keys))["hidden_layer"]
+            for i in range(0, len(split_data), FORWARD_CHUNK_SIZE)
+        ]).numpy()
+    y = pd.DataFrame({
+        key: split_data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
+    })
+    return x, y
+
+
+def score_checkpoint(job: tuple[str, str]) -> pd.DataFrame | None:
+    iter_name, model_name = job
+    weights_file_name = f"iteration_{iter_name}.pt"
+    model_path = Path("checkpoints") / model_name / weights_file_name
+
+    if not model_path.exists():
+        print(
+            f"Checkpoint for {model_name} at iteration {iter_name} not found.")
+        return None
+
+    model, model_config, _, _ = load_model(model_path)
+
+    # Do forward pass to get the aux head outputs
+    train_x, train_y = get_xy(model, _train_data)
+    test_x, test_y = get_xy(model, _test_data)
+
+    lr = LinearRegression(n_jobs=32)
+    lr.fit(train_x, train_y)
+
+    test_y_hat = lr.predict(test_x)
+
+    return pd.DataFrame({
+        "model_name": model_name,
+        "target": test_y.columns,
+        "iteration": int(iter_name),
+        "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(test_y.columns))],
+        "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(test_y.columns))],
+        "target_stddev": [test_y.iloc[:, i].std() for i in range(len(test_y.columns))],
+    })
+
 
 if __name__ == "__main__":
     if not (os.path.exists(TRAIN_PATH) and os.path.exists(TEST_PATH)):
@@ -63,11 +132,6 @@ if __name__ == "__main__":
             pass
         finally:
             env.close()
-    else:
-        torch.serialization.add_safe_globals(
-            [tensordict._td.TensorDict, tensordict._reductions._make_td])
-        train_data = torch.load(TRAIN_PATH)
-        test_data = torch.load(TEST_PATH)
 
 
     def get_iter_name(i: int):
@@ -84,47 +148,15 @@ if __name__ == "__main__":
         (get_iter_name(iteration), model_name) for iteration in ITERATIONS for model_name in MODEL_NAMES
     ]
 
-    for iter_name, model_name in tqdm.tqdm(trainings_to_do):
-
-        weights_file_name = f"iteration_{iter_name}.pt"
-        model_path = Path("checkpoints") / model_name / weights_file_name
-
-        if not model_path.exists():
-            print(
-                f"Checkpoint for {model_name} at iteration {iter_name} not found.")
-            continue
-
-        #print(f"Found {model_name} with iteration {iter_name}")
-        model, model_config, _, _ = load_model(model_path)
-
-        # Do forward pass to get the aux head outputs
-        def get_xy(split_data):
-            with torch.no_grad():
-                trunk_outputs = model.get_trunk_operator().forward(split_data).select("hidden_layer")
-            x = trunk_outputs["hidden_layer"].numpy()
-            y = pd.DataFrame({
-                key: split_data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
-            })
-            return x, y
-
-        train_x, train_y = get_xy(train_data)
-        test_x, test_y = get_xy(test_data)
-
-        lr = LinearRegression(n_jobs=32)
-        lr.fit(train_x, train_y)
-
-        test_y_hat = lr.predict(test_x)
-
-        scores = pd.DataFrame({
-            "model_name": model_name,
-            "target": test_y.columns,
-            "iteration": int(iter_name),
-            "r2_score": [r2_score(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(test_y.columns))],
-            "mae": [mean_absolute_error(test_y.iloc[:, i], test_y_hat[:, i]) for i in range(len(test_y.columns))],
-            "target_stddev": [test_y.iloc[:, i].std() for i in range(len(test_y.columns))],
-        })
-        all_scores.append(scores)
-        #print(scores)
+    # spawn, not fork: forking after the parent has run torch ops (e.g. the
+    # rollout above) deadlocks the workers on the inherited OpenMP state
+    with ProcessPoolExecutor(
+            max_workers=NUM_WORKERS,
+            mp_context=mp.get_context("spawn"),
+            initializer=init_worker) as executor:
+        for scores in tqdm.tqdm(executor.map(score_checkpoint, trainings_to_do), total=len(trainings_to_do)):
+            if scores is not None:
+                all_scores.append(scores)
 
     scores = pd.concat(all_scores, ignore_index=True)
     scores.to_csv("results/aux_head_regression_scores.csv", index=False)
