@@ -1,4 +1,4 @@
-#import "@preview/cetz:0.5.2"
+#import "@preview/cetz:0.5.2" as cetz: canvas, draw
 #import "@preview/lilaq:0.6.0" as lq
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node, rect-at
 #import "@preview/algorithmic:1.0.7" as algorithmic: algorithm-figure, style-algorithm
@@ -346,7 +346,7 @@ Many control and robotics problems require an agent to make a sequence of
 decisions in an environment, where each decision influences what happens next
 and where the agent can sense only part of the environment. We model such
 problems as a _partially observable Markov decision process_ (POMDP) defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$
-@kaelbling1998, whose interaction loop is shown in @mdp_interation_diagram.
+@kaelbling1998, whose interaction loop is shown in @mdp_iteration_diagram.
 
 At each time step $t$, the environment is in a state $s_t in cal(S)$, where
 $cal(S)$ is the state space. The state is a complete description of the
@@ -420,7 +420,7 @@ discount factor. The return represents a weighted sum of all future rewards, whe
   caption: [
     Interaction between the agent and the environment over time ($t$).
   ],
-) <mdp_interation_diagram>
+) <mdp_iteration_diagram>
 
 === Value functions
 Throughout this section we assume a memoryless policy $pi(dot | o_t)$. Since
@@ -736,324 +736,171 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
 
 = System overview
 
+The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle and track, and a Python training script, which computes rewards and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+
+The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
+
+To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
+
 // Add a subsystem diagram
+#figure(
+  scale(55%, reflow: true)[
+
+    #let enclose-color = luma(230)
+    #let offset-rect(dx, dy) = (node, extrude) => {
+      let (w, h) = node.size.map(i => i / 2 + extrude)
+      fletcher.cetz.draw.rect((-w + dx, -h + dy), (w + dx, h + dy))
+    }
+    #let stack-shadow(enclose, inset: 24pt, layer: -2) = node(
+      enclose: enclose,
+      inset: inset,
+      snap: false,
+      layer: layer,
+      shape: offset-rect(-5pt, 5pt),
+      fill: enclose-color,
+      stroke: (dash: "dashed", thickness: 1pt),
+    )
+    #diagram(
+      node-stroke: 0.8pt,
+      node-fill: white,
+      node-inset: 8pt,
+      spacing: (0.1em, 1.5em),
+      edge-stroke: 0.8pt,
+      mark-scale: 80%,
+      node((1, 0), [Track generation], name: <track>),
+      node((1, 1), [Spline Extruder], name: <spline>),
+      node([Car Manager], enclose: ((2, 0), (4, 0)), layer: 0, name: <cm>),
+      node((2, 1), [Lidar], name: <lidar>),
+      node((3, 1), [Auxiliary feature\ extractor], name: <aux>),
+      node((4, 1), [Vehicle Controller], name: <vc>),
+      node((4, 2), [Wheel Colliders], name: <wheels>),
+      node((5.3, 0), [ML Agents], name: <mla>),
+      node((40, 0), [TorchRL], name: <torch>),
+      node((40, 1), [Environment Transforms], name: <env>),
+      node((40, 1.75), [Reward Calculator], name: <reward>),
+      node((40, 2.75), [PPO], name: <ppo>),
+      edge(<track>, "<->", <cm>),
+      edge(<track>, "<->", <spline>),
+      edge(<cm>, "<->", <mla>),
+      edge(<mla>, "<->", <torch>, [gRPC], label-pos: 0.7, label-side: right),
+      edge((2, 0), "<->", <lidar>),
+      edge((3, 0), "<->", <aux>),
+      edge((4, 0), "<->", <vc>),
+      edge(<vc>, "<->", <wheels>),
+      edge(<torch>, "<->", <env>),
+      edge(<env>, "<->", <reward>),
+      edge(<reward>, "<->", <ppo>),
+
+      stack-shadow((<track>, <spline>, <cm>, <lidar>, <aux>, <vc>, <wheels>), layer: -2),
+      node(align(top + center, move([*Training area* ($times$ `num_areas`)], dy: -18pt)), enclose: (<track>, <spline>, <cm>, <lidar>, <aux>, <vc>, <wheels>), fill: enclose-color, stroke: (dash: "dashed", thickness: 1pt), inset: 24pt, snap: false, layer: -1, name: <training_area>),
+
+      stack-shadow((<training_area>, <mla>), layer: -4),
+      node(align(top + center, move([*Unity simulator*  ($times$ `num_inst`)], dy: -18pt)), enclose: (<training_area>, <mla>), fill: enclose-color, stroke: (dash: "dashed", thickness: 1pt), inset: 24pt, snap: false, layer: -3, name: <unity>),
+
+      node(align(top + center, move([*Python training script*], dy: -18pt)), enclose: (<torch>, <env>, <ppo>), fill: enclose-color, stroke: (dash: "dashed", thickness: 1pt), inset: 24pt, snap: false, name: <python>),
+    )
+  ],
+  caption: "System diagram",
+) <system_diagram>kri
+
+== Simulator
+
+Previous work at Stellenbosch on end-to-end driving has largely made use of the F1Tenth gym @okelly2020f1tenthgym, which is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, but features a simplified bicycle model of the vehicle, which approximates slip dynamics with a linear function that effectively eliminates the possibility of losing grip.
+
+The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine, is a more realistic 3D simulator that models the vehicle and its environment using PhysX, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and is used in many video games and simulators. However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training. For example, it is missing track generation & privledged information reporting, and its performance is much slower#footnote([On the order of #todo("AMOUNT")]) than the F1Tenth gym. Therefore, the Unity was used to implement a custom simulator using parts of the AutoDrive simulator.
+
+=== The WheelCollider <sec_wheelcollider>
+In our custom simulator, each wheel of the RoboRacer is
+modelled as a `WheelCollider`, which simulates the wheel's suspension,
+rotation and tyre friction @unitydocsWheelFrictionCurve. This kind of collider uses physics similar to that modelled by the semi-empirical "magic formula" wheel dynamics proposed by Pacejka et al. in @pacejka1992magicformula, and further described in @pacejka2002tyre.
+
+The tyre model is built on the idea of _slip_. _Longitudinal slip_, $kappa$, is the ratio between the longitudinal slip velocity and the wheel center velocity. _Lateral slip_, $tan(alpha)$, is the ratio between the lateral slip velocity and the wheel center velocity. A wheel slips when it spins faster than
+the wheel center moves (wheelspin), turns slower than the wheel center moves (braking), or is dragged sideways (cornering). A slip value of $0$ therefore indicates a freely rolling wheel, while a slip value of $> 1$ indicates that the wheel is slipping faster than the center velocity.
 
 #figure(
-  scale(60%, reflow: true, diagram(
-    node-stroke: 0.8pt,
-    node-fill: luma(200).transparentize(50%),
-    node-inset: 8pt,
-    spacing: (2.5em, 1.5em),
-    edge-stroke: 0.8pt,
-    mark-scale: 80%,
+  canvas(length: 1cm, {
+    import draw: *
 
-    // ---------- Unity ----------
-    node((1, 0), [Track generation], name: <track>),
-    node((1, 1), [Spline Extruder], name: <spline>),
+    let arrow = (end: "stealth", fill: black)
+    let accent = rgb("#c0392b")
 
-    node((2.5, 0), [Car Manager], width: 15em, name: <cm>),
-    node((2, 1), [Lidar], name: <lidar>),
-    node((3, 1), [Vehicle Controller], name: <vc>),
-    node((3, 2), [Wheel Colliders], name: <wheels>),
+    // ===================== (a) Side view: longitudinal slip =====================
+    group({
+      let R = 1.6
+      let C = (0, R)
 
-    node((4, 0), [MLAgents], name: <mla>),
+      // Ground with hatching
+      line((-2.6, 0), (2.8, 0), stroke: 0.8pt)
+      for i in range(0, 11) {
+        let x = -2.4 + i * 0.5
+        line((x, 0), (x - 0.25, -0.25), stroke: 0.4pt + gray)
+      }
 
-    // ---------- Python training ----------
-    node((7, 0), [TorchRL], name: <torch>),
-    node((7, 1), [Environment Transforms], name: <env>),
-    node((7, 2), [PPO], name: <ppo>),
+      // Wheel
+      circle(C, radius: R, stroke: 1.2pt, fill: luma(240))
+      circle(C, radius: 0.06, fill: black)
+      line(C, (0, 0), stroke: (paint: gray, dash: "dashed"))
+      content((-0.08, R / 2), $r$, anchor: "east")
 
-    // ---------- Connections ----------
-    edge(<track>, "<->", <cm>),
-    edge(<track>, "<->", <spline>),
-    edge(<cm>, "<->", <mla>),
-    edge(<mla>, "<->", <torch>),
+      // Rotation (clockwise for forward rolling)
+      arc(C, start: 130deg, stop: 40deg, radius: 1.0, anchor: "origin", mark: arrow, stroke: 0.8pt)
+      content((0.25, R + 1.25), $omega$)
 
-    // Car Manager -> Lidar / Vehicle Controller (drop down from the wide box)
-    edge((2, 0), "<->", <lidar>),
-    edge((3, 0), "<->", <vc>),
-    edge(<vc>, "<->", <wheels>),
+      // Wheel-centre velocity
+      line(C, (2.3, R), mark: arrow, stroke: 1pt)
+      content((2.3, R + 0.3), $v_(c x)$)
 
-    edge(<torch>, "<->", <env>),
-    edge(<env>, "<->", <ppo>),
+      // Slip velocity at the contact point
+      line((0, 0.18), (0.9, 0.18), mark: arrow, stroke: 1.2pt + accent, fill: accent)
+      content((0.45, -0.55), text(fill: accent, $v_(s x) = v_(c x) - omega r$))
 
-    // ---------- Group boxes ----------
-    // node(
-    //   align(top + center, move([*Hyperparameter search*], dy: -14pt)),
-    //   enclose: (<python>, <unity>),
-    //   stroke: (dash: "dashed", thickness: 1pt),
-    //   inset: 24pt,
-    //   name: <loop>,
-    // ),
-    node(
-      align(top + center, move([*Unity simulator*], dy: -14pt)),
-      enclose: (<track>, <spline>, <cm>, <lidar>, <vc>, <wheels>, <mla>),
-      stroke: (dash: "dashed", thickness: 1pt),
-      inset: 24pt,
-      snap: false,
-      name: <unity>,
-    ),
-    node(
-      align(top + center, move([*Python training*], dy: -14pt)),
-      enclose: (<torch>, <env>, <ppo>),
-      stroke: (dash: "dashed", thickness: 1pt),
-      inset: 24pt,
-      snap: false,
-      name: <python>,
-    ),
-  )),
-  caption: "System overview",
+      // Definition
+      content((0.1, -1.5), $display(kappa = - v_(s x) / abs(v_(c x)))$)
+      content((0.1, -2.25), [*(a)* Side view: longitudinal slip])
+    })
+
+    // ======================= (b) Top view: lateral slip =======================
+    group({
+      set-origin((7.2, 0))
+      let C = (0, 1.6)
+      let a = 22deg
+      let V = 2.5
+      let tip = (V * calc.cos(a), 1.6 - V * calc.sin(a))
+
+      // Tyre footprint (seen from above)
+      rect((-1.0, 1.22), (1.0, 1.98), stroke: 1.2pt, fill: luma(240), radius: 0.12)
+      circle(C, radius: 0.06, fill: black)
+
+      // Wheel axes
+      line((-1.6, 1.6), (3.2, 1.6), stroke: (paint: gray, dash: "dashed"))
+      content((3.35, 1.6), text(fill: gray, $x$), anchor: "west")
+      line((0, 0.2), (0, 3.0), stroke: (paint: gray, dash: "dashed"))
+      content((0, 3.2), text(fill: gray, $y$))
+
+      // Velocity components
+      line(C, (tip.at(0), 1.6), mark: arrow, stroke: 1pt)
+      content((tip.at(0) / 2 + 0.6, 1.88), $v_(c x)$)
+      line((tip.at(0), 1.6), tip, mark: arrow, stroke: 1.2pt + accent, fill: accent)
+      content((tip.at(0) + 0.15, (1.6 + tip.at(1)) / 2), text(fill: accent, $v_(s y)$), anchor: "west")
+
+      // Resultant wheel-centre velocity
+      line(C, tip, mark: arrow, stroke: 1.2pt)
+      content((tip.at(0) - 0.1, tip.at(1) - 0.35), $v_c$)
+
+      // Slip angle
+      arc(C, start: 0deg, stop: -a, radius: 1.55, anchor: "origin", stroke: 0.7pt)
+      content((1.85 * calc.cos(a / 2), 1.6 - 1.85 * calc.sin(a / 2)), $alpha$)
+
+      // Definition
+      content((0.9, -1.35), $display(tan alpha = - v_(s y) / abs(v_(c x)))$)
+      content((0.9, -2.25), [*(b)* Top view: lateral slip])
+    })
+  }),
+  caption: [Slip quantities. Longitudinal slip compares the slip velocity at the
+    contact point with the wheel-centre velocity; lateral slip compares the
+    sideways slip velocity with the forward velocity.],
 )
 
-== RoboRacer
-
-RoboRacer (formerly F1TENTH) is an open-source 1/10th scale race car platform. It is an open standard used for learning and research in the field of autonomous racing, and with over 1000 related publications, it is widely used in the research community. @roboracer_homepage The RoboRacer race car (@roboracer_car) is a small vehicle  governed by RoboRacer's rules @roboracer_rules, which includes specifications on the vehicle's dimensions, weight, and performance. During training, this vehicle is simulated with a wheelbase of $324 "mm"$, a track width of $236 "mm"$, and a maximum steering angle of $30 degree$ . The vehicle is powered by an electric motor and is equipped with a LiDAR sensor and camera for perception, as well as an onboard computer for processing and decision-making.
-
-
-// ------------------------------------------------------------------
-// RoboRacer vehicle, plan view.
-//
-// The body outline is traced from the vehicle silhouette in
-// `Frame 42.svg`.  The pixel coordinates of that tracing are mapped
-// onto the real vehicle dimensions by `fx()` and `fy()`, so the
-// overall length, overall width, wheelbase and track width of the
-// drawing are exactly the values it is annotated with.
-// ------------------------------------------------------------------
-#let roboracer-car(show-dimensions: true) = {
-  // -- vehicle geometry [mm] ---------------------------------------
-  let o-len = 568 // overall length  (rules: 568 mm +/- 10%)
-  let o-wid = 296 // overall width   (rules: 296 mm +/- 10%)
-  let wb = 324 // wheelbase       (AutoDrive vehicle settings)
-  let tw = 236 // track width     (AutoDrive vehicle settings)
-  let d-max = 30deg // steering limit  (AutoDrive vehicle settings)
-
-  // -- tracing -> vehicle coordinates ------------------------------
-  // Landmarks in the tracing: the body runs from 32 px (rear) to
-  // 346.5 px (front), its centreline sits at 103.875 px, and the wheel
-  // hubs are at 85 px and 290 px, 150 px apart and 74 px long.
-  //
-  // The scale factor `k` is taken from the wheelbase, which also puts
-  // the traced track width within half a millimetre of the simulated
-  // one: the chassis, its suspension and the wheels therefore line up
-  // exactly.  At that scale the traced body is 71 mm shorter than the
-  // overall length, so the two bumper blocks -- everything outside
-  // 71 px and 311 px, which carries no suspension detail -- are
-  // stretched lengthwise to make up the difference.
-  let cx = (85 + 290) / 2
-  let cy = 103.875
-  let k = wb / (290 - 85)
-  let k-rear = (o-len / 2 - (cx - 71) * k) / (71 - 32)
-  let k-front = (o-len / 2 - (311 - cx) * k) / (346.5 - 311)
-  let fx(x) = {
-    if x <= 71 { (71 - cx) * k - (71 - x) * k-rear } else if x >= 311 {
-      (311 - cx) * k + (x - 311) * k-front
-    } else { (x - cx) * k }
-  }
-  let fy(y) = (cy - y) * k
-
-  // The wheels are not part of the traced outline: they sit on the
-  // simulated wheelbase and track, which is where the tracing has
-  // them, and are as wide as the overall width allows.
-  let r-w = 37 * k // wheel radius (half a traced wheel)
-  let w-w = o-wid - tw // tyre width: the wheels set the overall width
-
-  let s = 1 / 45 // canvas units per millimetre
-  let p(x, y) = (x * s, y * s)
-
-  // -- palette and strokes -----------------------------------------
-  let c-wheel = luma(90%)
-  let c-part = luma(96%)
-  let outline = (paint: black, thickness: 0.6pt)
-  let thin = (paint: luma(25%), thickness: 0.4pt)
-  let hair = (paint: luma(5%), thickness: 0.35pt)
-  let dashed = (paint: luma(35%), thickness: 0.4pt, dash: "dashed")
-  let arrow = (start: ">", end: ">", scale: 0.45, fill: luma(25%))
-
-  // -- key, built here so that cetz's `grid` does not shadow the
-  // standard one ---------------------------------------------------
-  let item(n, body) = ([#n.], body)
-
-  cetz.canvas({
-    import cetz.draw: *
-    set-style(stroke: outline, content: (padding: 0pt))
-
-    let lbl(body) = text(size: 7.5pt, body)
-
-    // -- dimension helpers (arguments in mm) -----------------------
-    let dim-h(x1, x2, y, ey, body) = {
-      line(p(x1, ey), p(x1, y), stroke: hair)
-      line(p(x2, ey), p(x2, y), stroke: hair)
-      line(p(x1, y), p(x2, y), stroke: thin, mark: arrow)
-      content(p((x1 + x2) / 2, y + 7), anchor: "south", lbl(body))
-    }
-    let dim-v(y1, y2, x, ex, body) = {
-      line(p(ex, y1), p(x, y1), stroke: hair)
-      line(p(ex, y2), p(x, y2), stroke: hair)
-      line(p(x, y1), p(x, y2), stroke: thin, mark: arrow)
-      content(p(x - 7, (y1 + y2) / 2), anchor: "south", angle: 90deg, lbl(body))
-    }
-
-    // -- numbered callout ------------------------------------------
-    let tag(n, x, y) = {
-      circle(p(x, y), radius: 15 * s, fill: white, stroke: thin)
-      content(p(x, y), text(size: 7pt, [#n]))
-    }
-
-    // -- size envelope ---------------------------------------------
-    if show-dimensions {
-      rect(p(-o-len / 2, -o-wid / 2), p(o-len / 2, o-wid / 2), stroke: dashed)
-    }
-
-    // -- wheels ----------------------------------------------------
-    // drawn first, so that the body outline runs over them
-    let wheel(x, y, angle, fill: c-wheel, stroke: none) = {
-      group({
-        translate(p(x, y))
-        rotate(angle)
-        rect(p(-r-w, -w-w / 2), p(r-w, w-w / 2), fill: fill, stroke: stroke)
-      })
-    }
-    for m in (-1, 1) {
-      wheel(-wb / 2, m * tw / 2, 0deg)
-      wheel(wb / 2, m * tw / 2, 0deg)
-    }
-
-    // -- body outline ----------------------------------------------
-    // One half of the tracing, mirrored about the centreline by `m`.
-    // Each outline runs from the centreline, around the half it
-    // describes, and back to the centreline; the edge the tracing puts
-    // *along* the centreline is left out, so the two halves join into
-    // a single silhouette.
-    let body(m) = {
-      let q(x, y) = (fx(x) * s, m * fy(y) * s)
-
-      // front bumper
-      merge-path({
-        line(q(71, cy), q(71, 34), q(47.5, 34))
-        bezier(q(47.5, 34), q(32, 45), q(37, 34), q(32, 41))
-        line(q(32, 45), q(32, cy))
-      })
-
-      // chassis tub, from the front shock tower back to the side pod
-      merge-path({
-        line(
-          q(71, cy),
-          q(71, 62),
-          q(74, 43.5),
-          q(92, 43.5),
-          q(94, 88.5),
-          q(101.5, 86),
-          q(110.5, 74.5),
-          q(110.5, 62),
-          q(114.5, 58),
-          q(227.5, 58),
-        )
-        bezier(q(227.5, 58), q(255, 77), q(233, 58), q(243.585, 70.6678))
-        bezier(q(255, 77), q(288, 91), q(267.242, 83.791), q(275.113, 85.5327))
-        line(q(288, 91), q(288, cy))
-      })
-
-      // rear suspension tower and rear bumper
-      merge-path({
-        line(
-          q(288, cy),
-          q(288, 90.5),
-          q(273.5, 85),
-          q(275.5, 44.5),
-          q(298.5, 44.5),
-          q(305.5, 94),
-          q(311, 85),
-          q(311, 60.5),
-          q(323.5, 60.5),
-          q(330.5, 42),
-          q(340, 42),
-        )
-        bezier(q(340, 42), q(346.5, cy), q(343.507, 50.3434), q(344.779, 66.1226))
-      })
-    }
-    body(1)
-    body(-1)
-
-    // -- on-board hardware -----------------------------------------
-    let part(x1, x2, hw, radius: 4) = {
-      rect(p(x1, -hw), p(x2, hw), fill: c-part, stroke: thin, radius: radius * s)
-    }
-    tag(1, 240, 0)
-    circle(p(92, 0), radius: 34 * s, fill: c-part, stroke: thin)
-    tag(2, 92, 0)
-    part(8, 44, 18)
-    tag(3, 26, 0)
-
-    // -- dimensions ------------------------------------------------
-    if show-dimensions {
-      dim-v(-o-wid / 2, o-wid / 2, -345, -o-len / 2, [296mm #sym.plus.minus max])
-      dim-v(-tw / 2, tw / 2, 345, o-len / 2, [Track width])
-      dim-h(-o-len / 2, o-len / 2, -205, -o-wid / 2, [568mm max])
-      dim-h(-wb / 2, wb / 2, 200, o-wid / 2, [Wheel base])
-
-      // steering limit, drawn on the near front wheel
-      let (wx, wy) = (wb / 2, tw / 2)
-      let (ri, ro) = (48, 52)
-      line(p(wx - ri, wy), p(wx + ro, wy), stroke: dashed)
-      line(
-        p(wx - ri * calc.cos(d-max), wy - ri * calc.sin(d-max)),
-        p(wx + ro * calc.cos(d-max), wy + ro * calc.sin(d-max)),
-        stroke: thin,
-      )
-      arc(
-        p(wx, wy),
-        start: 0deg,
-        stop: d-max,
-        radius: 40 * s,
-        anchor: "origin",
-        stroke: thin,
-        mark: (end: ">", scale: 0.4, fill: luma(25%)),
-      )
-      line(
-        p(wx + 42 * calc.cos(d-max / 2), wy + 42 * calc.sin(d-max / 2)),
-        p(wx + 72, wy + 56),
-        stroke: hair,
-      )
-      content(p(wx + 76, wy + 56), anchor: "west", lbl[$delta_max$])
-    }
-  })
-}
-
-#figure(
-  caption: [
-    Sketch of the RoboRacer vehicle: a 1:10 scale car on a Traxxas chassis
-  ],
-  roboracer-car(show-dimensions: true),
-) <roboracer_car>
-
-
-
-= Simulation environments
-
-== F1Tenth Gym
-
-The F1Tenth Gym @okelly2020f1tenthgym is a python package that provides an environment for training and evaluating autonomous racing agents in simulation. It is built on top of the OpenAI Gym framework and features a simple bicycle model, which lumps tyre forces per axle and has no wheel-level states, so quantities such as per-wheel slip are unavailable. The F1Tenth Gym is therefore unsuitable for methods like ours that require per-wheel information.
-
-== AutoDrive
-AutoDrive is another simulator for autonomous driving reseach based on Unity and the MLAgents toolkit.
-
-== Unity
-Unity is a game engine developed by Unity Technologies which provides a platform wherein simulations can be built and run, simplifying interations with Nvidia's PhysX physics engine and other low-level libraries.
-
-Unity was chosen over the F1Tenth Gym because its `WheelCollider` component exposes the per-wheel slip quantities that are used as privileged information for the auxiliary heads in #todo("WHERE"), and because it allows the tyre and suspension parameters to be varied between episodes. It features built-in LiDAR simulation, occupancy grid generation, and an API built for agent training (MLAgents).
-
-=== Vehicle model
-==== The WheelCollider <sec_wheelcollider>
-Unity simulates vehicle dynamics with PhysX. Each wheel of the RoboRacer is
-modelled as a `WheelCollider`, which simulates the wheel's suspension,
-rotation and tyre friction @unitydocsWheelFrictionCurve. The parameters used
-are listed in @wheel_collider_properties.
-
-The tyre model is built on the idea of _slip_: how much the tyre slides over
-the road instead of rolling on it. A wheel slips when it spins faster than
-the car moves (wheelspin), turns slower than the car moves (braking), or is
-dragged sideways (cornering). Slip is expressed as a ratio, so a freely
-rolling wheel has a slip of 0 and a locked wheel has a slip of 1.
 
 A tyre needs some slip to produce force. The `WheelCollider` computes the
 force from the slip using a friction curve (@wheel_friction_curve). Force
@@ -1090,7 +937,8 @@ learn to avoid. The curve is defined separately for the forward direction
       xmax: 0.4,
       ymin: 0,
       ymax: 1,
-      width: 400pt,
+      width: 300pt,
+      height: 150pt,
       xlabel: "Slip ratio",
       ylabel: "Friction coefficient",
       ylabel-pos: (0.04, 1.1),
@@ -1113,54 +961,14 @@ learn to avoid. The curve is defined separately for the forward direction
         label-pos: 0.8,
       ),
     ),
-    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values detailed in this chart are the default values configured in the AutoDrive simulator for the F1TENTH vehicle's `WheelColliders`])],
+    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator. See @wheel_collider_properties for the values.])],
   )<wheel_friction_curve>
 ]
 
-==== Car RigidBody
 
-The car is modelled using a `RigidBody` and various `BoxColliders` to represent the chassis, bumpers, and other parts of the vehicle. The `RigidBody` is responsible for simulating the car's own physics, such as its inertia, and keeping the wheels attached to the car. The `BoxColliders` are used to detect collisions with the track walls and other objects in the environment. The `RigidBody` is configured with a mass of 3.47 kg as in the original AutoDrive simulator.
+=== Track generation
 
-
-
-== MLAgents
-=== Training throughput
-
-Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To make experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
-
-We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
-
-$ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
-
-We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
-
-As shown in @training_performance_results, summed throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose $("concurrent_trainers", "parallel_envs", "python_threads") = (8, 8, 16)$, though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using 8 or 12 areas per environment at this configuration did not help (3844 and 3999 timesteps/s).
-
-By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
-
-#figure(
-  stb-table(
-    columns: 3,
-    align: (left, center, left),
-    header: ("Parameter", "Values considered", "Description"),
-    [`concurrent_trainers`],
-    [${2, 4, 8, 12}$],
-    [Number of independent models training simultaneously, each in its own process.],
-    [`python_threads`],
-    [${8, 16}$],
-    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
-    [`parallel_envs`],
-    [${4, 8, 10, 16}$],
-    [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
-  ),
-  caption: "Parameters varied in the training performance grid search.",
-) <training_performance_variables>
-
-// HERE
-
-== Track generation
-
-During model training, having a variety of tracks is important to prevent overfitting to a single track. This improves generalisation to unseen tracks, allowing the model to learn a more robust policy.
+During training, a variety of tracks is used to prevent the policy from overfitting to any single layout. Training on diverse environments has been shown to improve generalisation to unseen environments @cobbe2019quantifying, and is closely related to domain randomisation, where simulator parameters are randomised to produce more robust policies @tobin2017domain @peng2018sim
 
 For this purpose, a track generator was implemented in C\# in Unity to procedurally generate tracks. The track generator takes the following parameters as input: $R$ - the track radius, $n$ - the number of points to generate, $theta_max$, the maximum turn angle in a single step, $rho$ - the mean-reversion factor, $s$ - the mean-reversion exponent, $phi_max$ - the maximum heading offset, and $q$ - the probability of flipping the driving direction. The track generator outputs a list of points that define the track.
 
@@ -1304,6 +1112,38 @@ For this purpose, a track generator was implemented in C\# in Unity to procedura
 Then, a Catmull-Rom spline is fitted to the points to create a smooth track centerline. In order to generate the inner and outer boundaries of the track, points are sampled along the centerline to generate a polygonal approximation of the track. The inner and outer boundaries are then generated by insetting/outsetting the centerline polygon by a fixed distance using the Clipper2 library @clipper2, which extends the Vatti polygon clipping algorithm @vatti1992.
 
 Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in #todo("ADD PLACE").
+
+
+== Training performance tuning
+Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
+
+We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
+
+$ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
+
+We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
+
+As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `parallel_envs`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
+
+By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
+
+#figure(
+  stb-table(
+    columns: 3,
+    align: (left, center, left),
+    header: ("Parameter", "Values considered", "Description"),
+    [`concurrent_trainers`],
+    [${2, 4, 8, 12}$],
+    [Number of independent models training simultaneously, each in its own process.],
+    [`python_threads`],
+    [${8, 16}$],
+    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
+    [`parallel_envs`],
+    [${4, 8, 10, 16}$],
+    [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
+  ),
+  caption: "Parameters varied in the training performance grid search.",
+) <training_performance_variables>
 
 = Auxiliary heads
 
@@ -1589,7 +1429,8 @@ I've only included the curvature_close auxiliary head results in the figure to k
 More complex features, such as the track curvature at various distances ahead of the car, are not encoded well in the model before training, and the linear proble model is unable to predict them $R_"baseline"^2 in [0, 0.2]$ late in training for the baseline model. However, with an auxiliary head, the model is able to learn a representation that encodes this information with $R^2_"curvature_head" in [0.4, 0.8]$ later in training for lengths ahead < 3m.
 
 #figure(
-  image("../results/figures/r2_scores_per_time_per_aux_head/curvature_close.png"),
+  //image("../results/figures/r2_scores_per_time_per_aux_head/curvature_close.png"),
+  [#todo("INSERT IMAGE")],
   caption: [$R^2$ scores for auxiliary head predictions as a function of time. Each subplot is a different auxiliary head. Orange = trained with all aux heads simulatenously, blue = trained with only the curvature_close heads. green = trained without auxiliary heads. Transparency = auxiliary head loss scale weight $w^((i))$.
 
     Note that the ],

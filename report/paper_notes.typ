@@ -47,4 +47,5 @@ Learning to Navigate in Complex Environments
 https://arxiv.org/pdf/1611.03673
 
 
-
+= Domain Randomization for Transferring Deep Neural Networks from Simulation to the Real World
+Tobin, Josh

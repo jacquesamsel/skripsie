@@ -668,6 +668,121 @@ singh1994learningwithoutstateestimation:
       name: Morgan Kaufmann
       location: San Francisco (CA)
 
+ml-agents:
+  type: Repository
+  title: "Unity ML-Agents Toolkit"
+  author:
+    name: Unity Technologies
+  date: 2017
+  publisher: GitHub
+  url:
+    value: https://github.com/Unity-Technologies/ml-agents
+    date: 2026-10-13
+
+pacejka2002tyre:
+  type: book
+  title: Tyre and Vehicle Dynamics
+  author: Pacejka, H.B.
+  date: 2002
+  page: 172
+  publisher: Elsevier Science & Technology Books
+  url: https://books.google.co.za/books?id=pQNUAAAAMAAJ
+  serial-number:
+    isbn: '9780750651417'
+  parent:
+    type: book
+    title: Automotive Engineering Series
+
+AutoDRIVESimulator2021:
+  type: article
+  title: 'AutoDRIVE Simulator: A Simulator for Scaled Autonomous Vehicle Research and Education'
+  author:
+  - Samak, Tanmay Vilas
+  - Samak, Chinmay Vilas
+  - Xie, Ming
+  date: 2021
+  page-range: 1-5
+  url: https://doi.org/10.1145/3483845.3483846
+  serial-number:
+    doi: 10.1145/3483845.3483846
+    isbn: '9781450390453'
+  parent:
+    type: proceedings
+    title: 2021 2nd International Conference on Control, Robotics and Intelligent System
+    publisher:
+      name: Association for Computing Machinery
+      location: Qingdao, China
+    parent:
+      type: proceedings
+      title: CCRIS'21
+
+
+tobin2017domain:
+  type: article
+  title: Domain Randomization for Transferring Deep Neural Networks from Simulation to the Real World
+  author:
+  - Tobin, Josh
+  - Fong, Rachel
+  - Ray, Alex
+  - Schneider, Jonas
+  - Zaremba, Wojciech
+  - Abbeel, Pieter
+  date: 2017
+  parent:
+    type: proceedings
+    title: IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)
+
+
+cobbe2019quantifying:
+  type: article
+  title: Quantifying Generalization in Reinforcement Learning
+  author:
+  - Cobbe, Karl
+  - Klimov, Oleg
+  - Hesse, Chris
+  - Kim, Taehoon
+  - Schulman, John
+  date: 2019
+  page-range: 1282-1289
+  parent:
+    type: proceedings
+    title: International Conference on Machine Learning (ICML)
+
+
+peng2018sim:
+  type: article
+  title: Sim-to-Real Transfer of Robotic Control with Dynamics Randomization
+  author:
+  - Peng, Xue Bin
+  - Andrychowicz, Marcin
+  - Zaremba, Wojciech
+  - Abbeel, Pieter
+  date: 2018
+  parent:
+    type: proceedings
+    title: IEEE International Conference on Robotics and Automation (ICRA)
+
+
+
+juliani2018unity:
+  type: Article
+  title: "Unity: A General Platform for Intelligent Agents"
+  author:
+    - Juliani, Arthur
+    - Berges, Vincent-Pierre
+    - Teng, Ervin
+    - Cohen, Andrew
+    - Harper, Jonathan
+    - Elion, Chris
+    - Goy, Chris
+    - Gao, Yuan
+    - Henry, Hunter
+    - Mattar, Marwan
+    - Lange, Danny
+  date: 2018
+  serial-number:
+    arxiv: "1809.02627"
+  url: https://arxiv.org/abs/1809.02627
 
 # https://arxiv.org/abs/2305.17600 example of Waymo using auxilliary losses
 # https://arxiv.org/pdf/2310.04241 comparing different kinds of auxilliary losses
