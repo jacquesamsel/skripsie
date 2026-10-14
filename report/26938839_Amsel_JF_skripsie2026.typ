@@ -1293,19 +1293,21 @@ as training signals.
 ]
 = Experiments & results
 
-== Baseline performance <baseline_model>
-
-
-=== Features already encoded in the model
-
-Despite not being trained with the explicit task of auxiliary prediction, we are able to extract a proxy to examine the feature representation in the model.
-
-
 == Probing intermediate layers for auxiliary information
 
 Alain and Bengio @alain2018understandingintermediatelayersusing present a method for probing intermediate layers in neural networks using linear regression to extract learnt information. The layer outputs $bold(z)_i$ are used as input to a linear regression model, which is trained to predict labelled information $bold(y)_i$. We apply this method to the final layer of the trunk (`fc3`) to understand the features learnt by the model.
 
-Interestingly, we find that even before the first epoch of gradient descent, some features are already encoded by the model.
+To construct the probing dataset, we perform a rollout using baseline model for 2048 steps (82 s of simulated time) in each of 32 parallel agents. At every step we record each agent's LIDAR observation $bold(o)_(i,t) in RR^101$ together with the corresponding labelled information $bold(y)_(i,t)$, giving an observation tensor $bold(O) in RR^(32 times 2048 times 101)$. Then, for each checkpoint of each training run of the baseline model, each observation is passed through the trunk to obtain the `fc3` activations $bold(z)_(i,t)$, which serve as inputs to the linear probe. We fit the probe on the rollouts of 25 agents (≈78%) and evaluate it on the remaining 7, so that the train and test sets share no trajectories or track layouts.
+
+Interestingly, we observe that even before the first epoch of gradient descent, some features are already encoded by the model, as shown in @baseline_lr_model_dumbell. This is especially true for the car's lateral velocity $v_l$ and angular velocity $omega_y$, which is predicted with a mean out-of-sample $R^2$ of $overline(R)^2 = 92%$ and $overline(R)^2 = 85%$. #todo([
+  We hypothesise that this is because the car's lateral and angular velocities are strongly correlated with the LIDAR observations, and any random projection of these observations will maintain some of this correlation. Then, with many such observations (101 rays x 50 time steps), this correlation is strongly preserved.
+])
+#figure(
+  scale(80%, reflow: true, image("../results/figures/baseline_lr_dumbell.png")),
+  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk (`fc3`) on the baseline model]
+) <baseline_lr_model_dumbell>
+
+
 
 == Normalisation of ego-agent privledged information
 
