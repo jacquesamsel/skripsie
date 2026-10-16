@@ -271,7 +271,7 @@
 
 #pagebreak()
 
-#outline(title: "Table of contents")
+#outline(title: "Table of contents", indent: 32pt)
 
 #pagebreak()
 
@@ -348,19 +348,34 @@
 = Introduction
 
 == Background and motivation
+#todo("Why does this problem matter? Bigger picture e.g. saving lives")
+
 Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes for a demanding testbed to develop and evaluate autonomous driving algorithms. Studying autonomous racing is a proxy for development of autonomous driving algorithms, which have the potential to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg.
 
 Generally, there exist two broad approaches to autonomous driving: end-to-end learning, where a model is trained to map sensor inputs directly to control outputs, and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
 
 Auxiliary learning is a technique involving training a model to perform additional (auxiliary) tasks alongside the primary task, in the hope that these tasks will help the model learn representations that are useful for the primary task. In some cases, it can be used to improve the performance of reinforcement learning models by providing additional supervisory signals during training that improve the model's learned representations @rafiee2022makesusefulauxiliarytasks, while also aiding in interpretability of the learned representations  @chen2020interpretableendtoendurbanautonomous.
 
-== Problem statement & objectives
+== Problem statement
+#todo("Focus in - specificly say what problem I am addressing. Research question = what was supposed to be done")
 
 An end-to-end RL agent that drives from LiDAR alone has to learn a representation of privledged information it can’t directly observe in the real world (e.g. its own velocity and slip, the curvature ahead, and its opponent's location in the case of head-to-head (H2H) racing). The agent may struggle to learn these representations early in training, when it has not yet learned to drive well enough to explore the environment effectively, which can lead to slow convergence.
 
 However, since the privledged information is available in simulation, we can use auxiliary learning to provide additional supervisory signals to the agent during training, which may help it learn better representations of the privledged information and improve its performance or training speed.
 
+== Objectives
+#todo("If I meet these (which are observable), I would have addressed the problem statement (answering a research question)")
+
 The objectives of this Skripsie are to (a) select an appropriate simulation environment for autonomous racing, (b) implement a baseline end-to-end RL agent that drives from LiDAR alone, (c) gain an understanding of what representations the baseline agent natively encodes, (d) implement auxiliary learning to provide additional supervisory signals to the agent during training, and (e) evaluate the performance of the auxiliary learning agent against the baseline agent.
+
+== Summary of work
+#todo("What did I do, and what came out of it. At this point should know all the findings.z")
+
+== Scope
+#todo("Show what I did not do, by talking about what I did do.")
+
+== Roadmap
+#todo("What I did in each chapter")
 
 = Background and Related Literature
 
@@ -829,9 +844,10 @@ done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
 concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
 models for spatial and temporal encodings.
 
-== Previous work
+== Related work
+#todo("For each, the objective, method, and results. What were shortcomings")
 
-Lample and Chaplot @lample2017fps explore a similar problem of training an RL agent to play doom using Deep Q-Networks (DQN) from first-person visual input. They find that auxiliary losses for presence of enemies in the agent's field of view significantly improves performance, approximately doubling agent's kill-to-death ratio. They, however, find that these auxiliary losses only significantly improve performance in the case of Deep _Recurrent_ Q-Networks (DRQN), which are able to maintain a memory of past observations, and not in the case of DQN, which are memoryless, and instead receive a stack of $N$ previous observations as input.
+Lample and Chaplot @lample2017fps explore a similar problem of training an RL agent to play doom using Deep Q-Networks (DQN) from first-person visual input. They find that auxiliary losses for presence of enemies in the agent's field of view significantly improves performance, approximately doubling agent's kill-to-death ratio. They, however, find that these auxiliary losses only significantly improve performance in the case of Deep _Recurrent_ Q-Networks (DRQN), which receive single-frame inputs and are able to maintain a memory, and not in the case of DQNs, which are memoryless, and instead receive a stack of $N$ previous observations as input. #todo("Why do we not use DRQN?")
 
 
 = System overview
@@ -962,9 +978,9 @@ However, the AutoDrive simulator by default does not provide various features th
 In order to ensure the Unity simulator is suitable for training, and not just evaluation, its performance was compared to the F1Tenth gym. Both environments were configured for 100Hz physics and 25Hz control with one vehicle per environment. Then, a rollout of 10 000 control timesteps (400 sim-seconds) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode.
 
 
-Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed, as shown in @sim_benchmarks. The Unity simulator is slower than the F1Tenth gym by $20%$. The memory usage of the Unity simulator is also higher than that of the F1Tenth gym, but this is a marginal diffence of 115 MB on average.
+Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed in this environment, as shown in @sim_benchmarks. The Unity simulator is slower than the F1Tenth gym by $20%$. The memory usage of the Unity simulator is also higher than that of the F1Tenth gym, but this is a marginal diffence of 115 MB on average.
 
-Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent.
+Due to the relatively minor performance difference, and Unity's more realistic 3D physics #todo("Do I need to cite here/prove it? I feel as though it's obvious."), the Unity simulator was chosen for training the RL agent.
 
 #figure(
   image("../results/sim_benchmarks.pdf"),
@@ -1174,7 +1190,7 @@ learn to avoid. The curve is defined separately for the forward direction
         mark: none,
       ),
     ),
-    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator. See @wheel_collider_properties for the values.])],
+    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator for the forward direction. See @wheel_collider_properties for the values.])],
   )<wheel_friction_curve>
 ]
 
@@ -1185,151 +1201,217 @@ The car itself is modelled as a `RigidBody`, which is a Unity component that sim
 
 During training, a variety of tracks is used to prevent the policy from overfitting to any single layout. Training on diverse environments has been shown to improve generalisation to unseen environments @cobbe2019quantifying, and is closely related to domain randomisation, where simulator parameters are randomised to produce more robust policies @tobin2017domain @peng2018sim
 
-For this purpose, a track generator was implemented in C\# in Unity to procedurally generate tracks. The track generator takes the following parameters as input: $r$ - the track radius, $n$ - the number of points to generate, $theta_max$, the maximum turn angle in a single step, $rho$ - the mean-reversion factor, $s$ - the mean-reversion exponent, $phi_max$ - the maximum heading offset, and $q$ - the probability of flipping the driving direction. The track generator outputs a list of points that define the track.
+==== Centerline generation
 
-#algorithm-figure(
-  "Random Closed Track",
-  vstroke: .5pt + luma(200),
-  {
-    import algorithmic: *
-    Procedure(
-      "Generate-Walk",
-      ($n$, $r$, $theta_"max"$, $rho$, $s$, $phi_"max"$, $q$),
-      {
-        Comment[Initialise the walk on the guide circle]
-        Assign[$L$][$2 pi r / n$]
-        Assign[$P_0$][$(r, 0)$]
-        Assign[$h$][$0$]
-        LineBreak
-        Comment[Random walk with a mean-reverting heading offset]
-        For(
-          $i = 1$ + [ to ] + $n$,
-          {
-            Assign[$r$][$rho + (1 - rho)(i / n)^s$]
-            Assign[$u$][$"Uniform"(-theta_"max", theta_"max")$]
-            Assign[$h$][$"clamp"((h + u)(1 - r), -phi_"max", phi_"max")$]
-            Assign[$alpha$][$(2 pi i) / n + pi / 2 + h$]
-            Assign[$P_i$][$P_(i-1) + L (cos alpha, sin alpha)$]
-          },
-        )
-        LineBreak
-        Comment[Spread the closing error evenly over the lap]
-        Assign[$g$][$P_n - P_0$]
-        For(
-          $i = 0$ + [ to ] + $n - 1$,
-          {
-            Assign[$Q_i$][$P_i - (i / n) g$]
-          },
-        )
-        LineBreak
-        Comment[Randomly flip the driving direction, keeping $Q_0$ fixed]
-        If(
-          $"Uniform"(0, 1) < q$,
-          {
-            Assign[$(Q_1, dots, Q_(n-1))$][$(Q_(n-1), dots, Q_1)$]
-          },
-        )
-        Return[$Q$]
-      },
-    )
-  },
+To this end, we implemented a procedural track generator in C\# in Unity. The idea
+is a _mean-reverting random walk_: a polyline of $N$ equal-length segments whose
+heading wanders randomly but is continually pulled back towards the heading of a
+_reference circle_ of radius $R$. The result wanders freely but still forms a single
+closed loop of roughly predictable size.
+
+The walk keeps track of two angles: the _reference heading_ $phi_i$, the tangent
+direction of the reference circle, and a _heading offset_ $delta_i$ relative to it.
+The segment direction is $theta_i = phi_i + delta_i$. Only the offset is random;
+the reference heading advances deterministically by $2 pi \/ N$ per step.
+
+The walk starts at $p_0 = (R, 0)$ with $delta_0 = 0$, i.e. tangent to the circle.
+Each segment has length $ell = 2 pi R \/ N$, the circumference divided by the number
+of segments. For $i = 0, 1, ..., N-1$, with progress $t_i = (i+1) \/ N$:
+
++ We calculate the reference heading, $phi_i = 2 pi t_i + pi \/ 2$, the tangent of the reference
+  circle at $hat(p)_i = R dot (cos 2 pi t_i, sin 2 pi t_i)$.
++ We take a random turn (@fig:walk-step a), drawing $epsilon_i ~ cal(U)(-Delta_max, Delta_max)$
+  and adding it to the offset.
++ As depicted in @fig:walk-step b, we shrink the offset the offset towards zero by a factor
+  $1 - kappa_i$, where
+  $ kappa_i = kappa_0 + (1 - kappa_0) t_i^s. $
+  The restoring strength $kappa_i$ starts at $kappa_0$ and ramps up to exactly 1 on
+  the final step. The exponent $s$ controls how late the ramp kicks in.
++ In @fig:walk-step c, we limit the offset from the reference heading to prevent accumulation of large offsets, and advance by length $l$:
+  $
+    delta_(i+1) & = "clip"((1 - kappa_i)(delta_i + epsilon_i), -delta_max, delta_max), \
+        p_(i+1) & = p_i + ell (cos(phi_i + delta_(i+1)), sin(phi_i + delta_(i+1))).
+  $
+
+
+// Three-frame illustration of one step of the mean-reverting random walk.
+// stage 1: random turn, stage 2: mean reversion, stage 3: clip and step.
+#let walk-step(stage) = canvas(length: 0.62cm, {
+  import draw: *
+
+  // ---- schematic parameters (degrees; chosen so every effect is visible) ----
+  let a-ref = 0 // reference heading φ_i (circle tangent at p_i)
+  let d-prev = 20 // offset carried over from the previous step, δ_i
+  let eps = 50 // random turn ε_i
+  let k-rest = 0.2 // restoring strength κ_i
+  let turn-max = 55 // Δ_max
+  let d-max = 40 // δ_max
+  let R = 6 // reference circle radius
+  let L = 3 // length of drawn heading rays
+  let step-len = 2.6 // step length ℓ
+
+  let d-turn = d-prev + eps // after random turn
+  let d-rest = (1 - k-rest) * d-turn // after mean reversion
+  let d-new = calc.clamp(d-rest, -d-max, d-max) // after clipping = δ_{i+1}
+
+  // ---- styling ----
+  let c-ref = gray.darken(20%)
+  let c-turn = rgb("#c4472d")
+  let c-rest = rgb("#1f5fa8")
+  let c-clip = rgb("#2e7d32")
+  let faded(c) = c.transparentize(65%)
+
+  // ---- helpers ----
+  let dir(a, r) = (r * calc.cos(a * 1deg), r * calc.sin(a * 1deg))
+  let ray(a, len: L, ..style) = line((0, 0), dir(a, len), ..style)
+  let ang(a, b, r, ..style) = arc((0, 0), start: a * 1deg, stop: b * 1deg, radius: r, anchor: "origin", ..style)
+  let wedge(a, b, r, fill) = arc(
+    (0, 0),
+    start: a * 1deg,
+    stop: b * 1deg,
+    radius: r,
+    anchor: "origin",
+    mode: "PIE",
+    fill: fill,
+    stroke: none,
+  )
+  let lbl(pos, body, c: black, anchor: "center") = content(pos, text(fill: c, size: 8pt, body), anchor: anchor)
+
+  // fixed bounding box so all three frames line up
+  rect((-2.9, -1.0), (5.0, 3.4), stroke: none)
+
+  // parallel indicator "//" centred on pt, for a line with direction angle a
+  let par-mark(pt, a) = {
+    for o in (-0.09, 0.09) {
+      let c = (pt.at(0) + o * calc.cos(a * 1deg), pt.at(1) + o * calc.sin(a * 1deg))
+      let t = dir(a + 60, 0.16)
+      line((c.at(0) - t.at(0), c.at(1) - t.at(1)), (c.at(0) + t.at(0), c.at(1) + t.at(1)), stroke: (
+        paint: c-ref,
+        thickness: 0.8pt,
+      ))
+    }
+  }
+
+  // ---- context: reference circle, previous step, p_i ----
+  // The walk has drifted off the circle. The reference heading φ_i is the
+  // tangent at the ideal position p̂_i (where p_i would be on an unperturbed
+  // lap); the same direction is then applied at the actual p_i.
+  let p-ideal = (-1.3, 1.55)
+  let centre = (p-ideal.at(0), p-ideal.at(1) + R)
+  arc(centre, start: -118deg, stop: -60deg, radius: R, anchor: "origin", stroke: (
+    paint: c-ref.lighten(70%),
+    thickness: 0.6pt,
+  ))
+  lbl((-2.35, 2.3), [reference circle], c: c-ref, anchor: "south")
+  // tangent at the ideal position (parallel to φ_i)
+  line(
+    (rel: (-1.3, 0), to: p-ideal),
+    (rel: (1.3, 0), to: p-ideal),
+    stroke: (paint: c-ref, dash: "dotted", thickness: 0.9pt),
+  )
+  par-mark((p-ideal.at(0) + 0.85, p-ideal.at(1)), a-ref)
+  circle(p-ideal, radius: 0.13, stroke: (paint: c-ref, thickness: 0.7pt), fill: white)
+  lbl((rel: (0, -0.2), to: p-ideal), $hat(bold(p))_i$, c: c-ref, anchor: "north")
+
+  // previous step of the walk
+  let p-prev = dir(180 + 8, step-len)
+  line(p-prev, (0, 0), stroke: 1.6pt)
+  circle(p-prev, radius: 0.08, fill: black, stroke: none)
+  lbl(p-prev, $bold(p)_(i-1)$, anchor: "north-west")
+
+  // reference heading φ_i, parallel to the tangent at p̂_i
+  ray(a-ref, stroke: (paint: c-ref, dash: "dashed", thickness: 0.9pt), mark: (end: ">", fill: c-ref, scale: 0.6))
+  lbl(dir(a-ref, L + 0.1), [reference $phi_i$], c: c-ref, anchor: "west")
+  par-mark(dir(a-ref, 2.4), a-ref)
+
+  // ---- stage-specific content ----
+  if stage == 1 {
+    wedge(d-prev - turn-max, d-prev + turn-max, 2.2, faded(c-turn).transparentize(55%))
+    ray(d-prev, stroke: (paint: black, dash: "dashed", thickness: 0.7pt))
+    ang(a-ref, d-prev, 1.25, stroke: 0.7pt)
+    lbl(dir((a-ref + d-prev) / 2, 1.6), $delta_i$)
+    ang(d-prev, d-turn, 1.6, stroke: (paint: c-turn, thickness: 0.9pt), mark: (end: ">", fill: c-turn, scale: 0.6))
+    lbl(dir((d-prev + d-turn) / 2, 1.95), $epsilon_i$, c: c-turn)
+    ray(d-turn, stroke: (paint: c-turn, thickness: 1.4pt))
+    lbl(dir(d-prev - turn-max, 2.25), $plus.minus Delta_max$, c: c-turn, anchor: "north-west")
+  }
+
+  if stage == 2 {
+    ray(d-prev, stroke: (paint: faded(black), dash: "dashed", thickness: 0.7pt))
+    ray(d-turn, stroke: (paint: faded(c-turn), thickness: 1.2pt))
+    ang(d-turn, d-rest, 2.0, stroke: (paint: c-rest, thickness: 0.9pt), mark: (end: ">", fill: c-rest, scale: 0.6))
+    lbl(dir((d-turn + d-rest) / 2 - 5, 3), $times (1 - kappa_i)$, c: c-rest, anchor: "south-west")
+    ray(d-rest, stroke: (paint: c-rest, thickness: 1.4pt))
+  }
+
+  if stage == 3 {
+    wedge(a-ref - d-max, a-ref + d-max, 2.0, c-clip.transparentize(85%))
+    ray(d-rest, stroke: (paint: faded(c-rest), thickness: 1.2pt))
+    ang(d-rest, d-new, 1.55, stroke: (paint: c-clip, thickness: 0.9pt), mark: (end: ">", fill: c-clip, scale: 0.45))
+    ray(d-new, len: step-len, stroke: (paint: c-clip, thickness: 1.2pt))
+    ang(a-ref, d-new, 1.1, stroke: (paint: c-clip, thickness: 0.8pt))
+    lbl(dir((a-ref + d-new) / 2, 1.45), $delta_(i+1)$, c: c-clip)
+    lbl(dir(a-ref - d-max, 2.05), $plus.minus delta_max$, c: c-clip, anchor: "north-west")
+    // the actual step
+    let q = dir(d-new, step-len)
+    line((0, 0), q, stroke: 1.6pt)
+    circle(q, radius: 0.08, fill: black, stroke: none)
+    lbl((rel: (0.15, -0.05), to: q), $bold(p)_(i+1)$, anchor: "north-west")
+    lbl(dir(d-new + 2, 2.3), $ell$, anchor: "south-east")
+  }
+
+  // p_i on top of everything
+  circle((0, 0), radius: 0.08, fill: black, stroke: none)
+  lbl((0.05, -0.12), $bold(p)_i$, anchor: "north")
+})
+
+#figure(
+  grid(
+    columns: 3,
+    column-gutter: 6pt,
+    row-gutter: 6pt,
+    walk-step(1), walk-step(2), walk-step(3),
+    [(a) Random turn], [(b) Mean reversion], [(c) Clip and step],
+  ),
+  caption: [One step of the track-generation walk.
+    *(a)* A random turn $epsilon_i ~ cal(U)(-Delta_max, Delta_max)$ is added to the carried offset $delta_i$, measured from the reference heading $phi_i$.
+    *(b)* A fraction $kappa_i$ of the accumulated offset is removed, pulling the heading towards the reference $phi_i$.
+    *(c)* The offset is clipped to $plus.minus delta_max$, giving $delta_(i+1)$, and a step of length $ell$ is taken to $bold(p)_(i+1)$.],
+) <fig:walk-step>
+
+Early on, $kappa_i approx kappa_0$ is small, so the offset behaves like a weakly
+damped random walk (an AR(1) process) and the track
+meanders. Near the end, $kappa_i -> 1$ forces the heading back onto the reference
+tangent, so the walk heads towards the start point. Because the integrated heading still deviates
+slightly from the circle, $p_N$ generally misses $p_0$ by a small gap. We close it by
+distributing the gap linearly along the track:
+$ p_i <- p_i + i / N (p_0 - p_N), quad i = 0, ..., N. $
+The gap is (usually) small, so this correction barely distorts the track.
+
+#figure(
+  image("../results/figures/trackgen_walk.pdf", width: 120%),
+  caption: [*(a)* Open end of the track before distributing the gap between $p_0$ (green) and $p_N$ (red) *(b)* Closed track after distributing the gap *(c)* Catmull-Rom spline interpolation of the polyline *(d)* A degenerate track],
 )
+
+
+This method is not immune to generating self-intersecting (degenerate) tracks, but the probability is low enough, that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.14%, 0.19%)$ assuming a binomial distribution.
+
+==== Track walls
+
+Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti in @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may producce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
+
+Empirically, we find that at 135 of the 100 000 tracks produce these islands (C.I. $(1.28%, 1.42%)$), so we simply discard any tracks with islands and re-generate them.
+
 
 
 #figure(
-  caption: "Track generation",
-  cetz.canvas({
-    import cetz.draw: *
-    circle((0, 0), radius: 4, stroke: (paint: luma(60%), dash: "dashed"))
-    // dots: roughly trace the guide circle for 3/4 of a revolution, with a
-    // little radial jitter so it reads as a walk rather than a perfect ring
-    let n = 7
-    let sweep = 250deg
-    let jitter = (0, 0.3, -0.2, 0.4, -0.3, 0.2, -1.5)
-    let angle_at = idx => sweep * (idx / (n - 1))
-    let dots = range(n).map(idx => {
-      let angle = angle_at(idx)
-      let r = 4 + jitter.at(idx)
-      (r * calc.cos(angle), r * calc.sin(angle))
-    })
-
-    let last_point = dots.at(n - 1)
-
-    // Where dot 7 would have landed had the walk stayed on the guide circle,
-    // and the unit tangent of the circle at that angle
-    let last_angle = angle_at(n - 1)
-    let guide_point = (4 * calc.cos(last_angle), 4 * calc.sin(last_angle))
-    let tangent_dir = (-calc.sin(last_angle), calc.cos(last_angle))
-
-    // Cone of headings reachable from dot 7, i.e. the support of
-    // $u ~ "Uniform"(-theta_max, theta_max)$ about the tangent direction
-    let theta_max = 60deg
-    arc(
-      last_point,
-      start: last_angle + 90deg - theta_max,
-      stop: last_angle + 90deg + theta_max,
-      radius: 2.6,
-      anchor: "origin",
-      mode: "PIE",
-      fill: color.transparentize(luma(89.8%), 50%),
-      stroke: none,
-    )
-
-    for idx in range(n) {
-      if idx != 0 {
-        line(dots.at(idx - 1), dots.at(idx))
-      }
-    }
-
-    let half_length = 2.8
-    let along = (base, t) => (
-      base.at(0) + t * tangent_dir.at(0),
-      base.at(1) + t * tangent_dir.at(1),
-    )
-    // Chevron denoting the two lines as parallel
-    let parallel_mark = base => line(
-      along(base, -1.5),
-      along(base, -1.1),
-      mark: (end: ">", scale: 0.8),
-      stroke: 0.8pt,
-    )
-
-    // Dotted tangent at the un-jittered position of dot 7
-    circle(
-      guide_point,
-      radius: 8pt,
-      stroke: (paint: luma(60%), dash: "dashed"),
-    )
-    line(
-      along(guide_point, -half_length),
-      along(guide_point, half_length),
-      stroke: (dash: "dotted"),
-    )
-    parallel_mark(guide_point)
-
-    // Its parallel, shifted inwards to cross through dot 7
-    line(
-      along(last_point, -half_length),
-      along(last_point, half_length),
-      stroke: (dash: "dotted"),
-    )
-    parallel_mark(last_point)
-
-    for idx in range(n) {
-      circle(dots.at(idx), radius: 8pt, fill: black)
-      content(dots.at(idx))[#text(size: 12pt, fill: white)[#(idx + 1)]]
-    }
-  }),
-)
+  image("../results/figures/trackgen_inset_outset.pdf", width: 120%),
+  caption: "Track insets and outsets using different methods"
+) <trackgen_inset_outset>
 
 
 
-Then, a Catmull-Rom spline is fitted to the points to create a smooth track centerline. In order to generate the inner and outer boundaries of the track, points are sampled along the centerline to generate a polygonal approximation of the track. The inner and outer boundaries are then generated by insetting/outsetting the centerline polygon by a fixed distance using the Clipper2 library @clipper2, which extends the Vatti polygon clipping algorithm @vatti1992.
-
-Once we have the inner and outer boundaries of the track, generating a mesh by extruding a circle or square along the splines is straightforward in Unity. An example track is shown in #todo("ADD PLACE").
-
-
-== Training performance tuning
+== Trainer Performance Tuning
 Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
 We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
@@ -1359,6 +1441,38 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
   ),
   caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
+
+== Metrics
+#todo("What do you intend to measure? How do you measure it?")
+=== Reward function
+The agent receives a dense reward at each timestep that encourages fast,
+collision-free progress along the track:
+
+$ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
+
+Here, $xi_t in [0, L)$ is the agent's *progress* at time $t$: the arc length
+along the track centerline, in meters, of the centerline point closest to the
+agent's position. $L$ is the total length of the centerline. 
+
+The first term rewards forward progress. Because the track is a loop, $xi$
+resets from $L$ to $0$ at the finish line, which would make the raw difference
+$xi_t - xi_(t-1)$ jump to $-L$. The wrap function maps the difference
+to the equivalent displacement in $[-L/2, L/2)$:
+
+$ "wrap"(Delta) = ((Delta + L/2) mod L) - L/2 $
+
+so crossing the finish line gives a small positive reward rather than a large
+negative spike. Moving backward along the track gives a negative reward.
+
+The second term penalizes collisions. The indicator $c_t$ equals 1 if the
+agent collides with an obstacle at time $t$ and 0 otherwise. 
+
+The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision) 
+balance speed against safety, so must be chosen based on the risk tolerance of the application. We use $w_p = 1.0$ and $w_c = 1.0$. It is important to note that, since the agent is terminated on collision, there already exists a strong implicit penalty for collisions, so $w_c$ can be set relatively low.
+
+== Crash rate
+
+
 
 = Auxiliary heads
 
@@ -1565,7 +1679,7 @@ Then:
 == Primary Task Performance
 
 #figure(
-  image("../results/figures/primary_task_performance.pdf", height: 600pt),
+  image("../results/figures/primary_task_auc_dumbbells.pdf", height: 600pt),
   caption: [AUC for the primary task reward $r_t$ by auxiliary head],
 )
 
@@ -1598,6 +1712,8 @@ $
 - By default, BLAS spawns 128 threads. Did hyperparameter tuning to find the best combination of (num_pytorch_threads, num_parallel_trainers, num_envs_per_trainer). Also Unity spawns 128 GC threads, which can be controlled via `"-job-worker-count", str(num_unity_threads), "-gc-helper-count", str(num_unity_threads)`
 
 = Conclusions and recommendations
+
+#todo("Show you have met the objectives")
 #pagebreak()
 #bibliography("./hyagriva.yaml", style: "ieee", title: [Bibliography])
 
