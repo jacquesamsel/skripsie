@@ -75,6 +75,66 @@ alain2018understandingintermediatelayersusing:
   serial-number:
     arxiv: "1610.01644"
 
+anand2020unsupervisedstaterepresentationlearning:
+  type: misc
+  title: Unsupervised State Representation Learning in Atari
+  author:
+  - Anand, Ankesh
+  - Racah, Evan
+  - Ozair, Sherjil
+  - Bengio, Yoshua
+  - Côté, Marc-Alexandre
+  - Hjelm, R Devon
+  date: 2020
+  url: https://arxiv.org/abs/1906.08226
+  serial-number:
+    arxiv: '1906.08226'
+
+mcgrath2022alphazero:
+  type: article
+  title: Acquisition of chess knowledge in AlphaZero
+  author:
+  - McGrath, Thomas
+  - Kapishnikov, Andrei
+  - Tomašev, Nenad
+  - Pearce, Adam
+  - Wattenberg, Martin
+  - Hassabis, Demis
+  - Kim, Been
+  - Paquet, Ulrich
+  - Kramnik, Vladimir
+  date: 2022
+  page-range: e2206625119
+  url: https://www.pnas.org/doi/abs/10.1073/pnas.2206625119
+  serial-number:
+    doi: 10.1073/pnas.2206625119
+  abstract: We analyze the knowledge acquired by AlphaZero, a neural network engine that learns chess solely by playing against itself yet becomes capable of outperforming human chess players. Although the system trains without access to human games or guidance, it appears to learn concepts analogous to those used by human chess players. We provide two lines of evidence. Linear probes applied to AlphaZero’s internal state enable us to quantify when and where such concepts are represented in the network. We also describe a behavioral analysis of opening play, including qualitative commentary by a former world chess champion.
+  parent:
+    type: periodical
+    title: Proceedings of the National Academy of Sciences
+    issue: 47
+    volume: 119
+
+gurnee2024languagemodelsrepresentspace:
+  type: misc
+  title: Language Models Represent Space and Time
+  author:
+  - Gurnee, Wes
+  - Tegmark, Max
+  date: 2024
+  url: https://arxiv.org/abs/2310.02207
+  serial-number:
+    arxiv: '2310.02207'
+
+belinkov2021probingclassifierspromisesshortcomings:
+  type: misc
+  title: 'Probing Classifiers: Promises, Shortcomings, and Advances'
+  author: Belinkov, Yonatan
+  date: 2021
+  url: https://arxiv.org/abs/2102.12452
+  serial-number:
+    arxiv: '2102.12452'
+
 chen2020interpretableendtoendurbanautonomous:
   type: misc
   title: Interpretable End-to-end Urban Autonomous Driving with Latent Deep Reinforcement Learning
@@ -246,6 +306,19 @@ roboracer_rules:
   url:
     value: "https://github.com/f1tenth/roboracer_rules/blob/cfc65eca67d2a9b83d028eb963f64902e01810a4/rules_v3.md"
     date: 2026-10-07
+
+f1tenth_gym_trackgen:
+  type: Web
+  title: "Customised Usage Example"
+  authors:
+    - Hongrui Zheng
+    - Matthew O'Kelly
+    - Aman Sinha
+  version: "24726dda"
+  date: 2026-09-17
+  url:
+    value: "https://f1tenth-gym.readthedocs.io/en/v1.0.0/customized_usage.html#random-track-generator-beta"
+    date: 2026-10-14
 
 roboracer_homepage:
   type: Web

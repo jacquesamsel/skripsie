@@ -1,13 +1,73 @@
 from functools import reduce
 
-from torchrl.envs.transforms import Transform, Stack, UnaryTransform, ExcludeTransform, RenameTransform, UnsqueezeTransform
-from torchrl.envs import CatFrames, TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv, Compose
+from torchrl.envs.transforms import Transform, Stack, UnaryTransform, ExcludeTransform, RenameTransform, UnsqueezeTransform, FrameSkipTransform
+from torchrl.envs import CatFrames, TransformedEnv, UnityMLAgentsEnv, MarlGroupMapType, ParallelEnv, Compose, GymWrapper, step_mdp
 from torchrl.data import Bounded, Composite, Unbounded, UnboundedContinuous
 import torch
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-import tensordict as td
-
+from tensordict import TensorDict, TensorDictBase, NestedKey
+import f1tenth_gym
+import gymnasium as gym
 from utils import CURVATURE_LOOKAHEAD_KEYS, REWARD_TERM_KEYS
+from tqdm import tqdm
+import time
+import psutil
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+class F1TenthEnv(TransformedEnv):
+    """RoboRacer environment wrapper.
+
+        Args:
+            num_stacked_frames (int): Number of frames to stack for the observations.
+            no_graphics (bool, optional): Whether to run the environment in no-graphics mode. Defaults to True.
+            seed (int, optional): Random seed for the environment. Defaults to 0.
+            progress_weight (float, optional): Reward per metre of centerline progress. Defaults to 1.0.
+            forward_velocity_weight (float, optional): Reward per m/s of forward velocity. Defaults to 0.0.
+            step_penalty (float, optional): Fixed cost charged every step. Defaults to 0.0.
+            collision_penalty (float, optional): Cost charged on the step a car crashes. Defaults to 1.0.
+    """
+
+    def __init__(
+        self,
+        num_stacked_frames: int,
+        no_graphics=True,
+        time_scale=100.0,
+        num_areas=10,
+        seed=0,
+        progress_weight=1.0,
+        forward_velocity_weight=0.0,
+        step_penalty=0.0,
+        collision_penalty=1.0,
+        physics_resolution=0.01,
+        decision_period=4
+    ):
+
+        base_env = GymWrapper(gym.make("f1tenth-v0"))
+        # print(base_env.observation_spec)
+
+        return super().__init__(
+            base_env,
+            Compose(
+                FrameSkipTransform(4),
+                RenameTransform(
+                    in_keys=[("scans",)],
+                    out_keys=[("agents", "lidar")],
+                ),
+                UnsqueezeTransform(
+                    dim=-2,
+                    in_keys=[("agents", "lidar")],
+                    out_keys=[("agents", "lidar")]
+                ),
+                CatFrames(
+                    N=num_stacked_frames,
+                    dim=-2,
+                    in_keys=[("agents", "lidar")],
+                    out_keys=[("agents", "stacked_lidar")],
+                )
+            )
+        )
 
 
 class RoboRacerEnv(TransformedEnv):
@@ -34,7 +94,7 @@ class RoboRacerEnv(TransformedEnv):
         file_name: str | None,
         num_stacked_frames: int,
         no_graphics=True,
-        time_scale=100.0,
+        time_scale=1000.0,
         num_areas=10,
         seed=0,
         progress_weight=1.0,
@@ -60,7 +120,8 @@ class RoboRacerEnv(TransformedEnv):
             num_areas=num_areas,
             seed=seed,
             group_map=MarlGroupMapType.ALL_IN_ONE_GROUP,
-            additional_args=["-job-worker-count", str(num_unity_threads), "-gc-helper-count", str(num_unity_threads)],
+            additional_args=[
+                "-job-worker-count", str(num_unity_threads), "-gc-helper-count", str(num_unity_threads)],
         )
 
         super().__init__(
@@ -106,7 +167,8 @@ class RoboRacerEnv(TransformedEnv):
                 # Mask the misses -> 0 length in LIDAR. This also removes the other
                 # lidar "channels", leaving one distance value per ray.
                 UnaryTransform(
-                    fn=lambda lidar: lidar[..., -1] * (lidar[..., -2] == 0.0).to(torch.float32),
+                    fn=lambda lidar: lidar[..., -1] *
+                    (lidar[..., -2] == 0.0).to(torch.float32),
                     in_keys=[("agents", "lidar")],
                     out_keys=[("agents", "lidar")],
                 ),
@@ -159,7 +221,7 @@ class RoboRacerEnv(TransformedEnv):
                     step_penalty=step_penalty,
                     collision_penalty=collision_penalty
                 ),
-                #ExcludeTransform(("agents", "unity_reward")),
+                # ExcludeTransform(("agents", "unity_reward")),
                 StackAction(
                     in_keys=[("agents", a, "continuous_action")
                              for a in agent_names],
@@ -207,7 +269,7 @@ class AreasAsBatch(Transform):
     def transform_env_batch_size(self, batch_size: torch.Size) -> torch.Size:
         return torch.Size([*batch_size, self.num_areas])
 
-    def _call(self, next_tensordict: td.TensorDictBase) -> td.TensorDictBase:
+    def _call(self, next_tensordict: TensorDictBase) -> TensorDictBase:
         # the leaves are already (num_areas, ...); this only moves the boundary
         # between batch dims and feature dims, hence batch_dims=1 rather than
         # letting auto_batch_size_ swallow the feature dims too
@@ -218,7 +280,7 @@ class AreasAsBatch(Transform):
     def _reset(self, tensordict, tensordict_reset):
         return self._call(tensordict_reset)
 
-    def _inv_call(self, tensordict: td.TensorDictBase) -> td.TensorDictBase:
+    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         # Going the other way, StackAction unstacks the action back into one
         # (2,) entry per agent, which no longer carries the area dim -- so the
         # batch dim has to come off before the transforms below run, or those
@@ -249,13 +311,13 @@ class AreasAsBatch(Transform):
 
 
 class SplitVector(Transform):
-    def __init__(self, layout: list[tuple[td.NestedKey, torch.Size]], in_key: td.NestedKey, delete_vector: bool = False):
+    def __init__(self, layout: list[tuple[NestedKey, torch.Size]], in_key: NestedKey, delete_vector: bool = False):
         super().__init__(in_keys=[in_key], out_keys=[key for key, _ in layout])
         self.layout = layout
         self.delete_vector = delete_vector
         self.in_key = in_key
 
-    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
+    def _call(self, tensordict: TensorDict) -> TensorDict:
         offset = 0
         vector = tensordict[self.in_key]
         for key, shape in self.layout:
@@ -270,7 +332,7 @@ class SplitVector(Transform):
             del tensordict[self.in_key]
         return tensordict
 
-    def _reset(self, tensordict: td.TensorDict, tensordict_reset: td.TensorDict) -> td.TensorDict:
+    def _reset(self, tensordict: TensorDict, tensordict_reset: TensorDict) -> TensorDict:
         return self._call(tensordict_reset)
 
     def transform_observation_spec(self, observation_spec):
@@ -313,7 +375,7 @@ class ComposeReward(Transform):
         self.step_penalty = step_penalty
         self.collision_penalty = collision_penalty
 
-    def _call(self, tensordict: td.TensorDict) -> td.TensorDict:
+    def _call(self, tensordict: TensorDict) -> TensorDict:
         forward_velocity = tensordict["agents", "velocity_forward"].squeeze(-1)
         progress_delta = tensordict["agents", "progress"].squeeze(-1)
         crashed = (
@@ -337,7 +399,7 @@ class ComposeReward(Transform):
             tensordict[REWARD_TERM_KEYS[name]] = term.unsqueeze(-1)
         return tensordict
 
-    def _reset(self, tensordict: td.TensorDict, tensordict_reset: td.TensorDict) -> td.TensorDict:
+    def _reset(self, tensordict: TensorDict, tensordict_reset: TensorDict) -> TensorDict:
         # The terms are declared as observations, so the reset output has to carry them
         # too or it no longer matches the spec. Zero is the honest value: there was no
         # step to pay for. _call can't be reused here -- the reset output has no
@@ -485,3 +547,65 @@ class RoboRacerParallelEnvs(ParallelEnv):
                 "worker_id": worker_id
             } for worker_id in range(start_worker_id, start_worker_id + num_envs)],
         )
+
+
+def benchmark(env, reset_in_python: bool, n_steps=10_000, log_every=100):
+    main = psutil.Process()
+    procs = {}  # keep Process objects so cpu_percent() has a baseline
+
+    def tracked():
+        # Include child processes: the Unity build runs as a separate process
+        ps = [main] + main.children(recursive=True)
+        for p in ps:
+            if p.pid not in procs:
+                procs[p.pid] = p
+                p.cpu_percent(None)  # first call always returns 0, so prime it
+        return [procs[p.pid] for p in ps]
+
+    def sample():
+        mem = cpu = 0.0
+        for p in tracked():
+            try:
+                mem += p.memory_info().rss
+                cpu += p.cpu_percent(None)
+            except psutil.NoSuchProcess:
+                pass
+        return mem / 1024**2, cpu
+
+    log = {"step": [], "sps": [], "mem_mb": [], "cpu": []}
+    td = env.reset()
+    tracked()
+    t_last = time.perf_counter()
+
+    for i in tqdm(range(1, n_steps + 1)):
+        td = env.rand_step(td)
+        if reset_in_python and td["next", "done"].any():
+            td = env.reset()
+        else:
+            td = step_mdp(td)
+
+        if i % log_every == 0:
+            elapsed = time.perf_counter() - t_last
+            mem, cpu = sample()
+            log["step"].append(i)
+            log["sps"].append(log_every / elapsed)
+            log["mem_mb"].append(mem)
+            log["cpu"].append(cpu)
+            t_last = time.perf_counter()  # restart after sampling so its overhead isn't counted
+
+    return pd.DataFrame(log)
+
+
+def plot_benchmarks(runs: dict):
+    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(9, 8))
+    metrics = [("sps", "Steps / s"), ("mem_mb",
+                                      "Memory (MB)"), ("cpu", "CPU (%)")]
+    for name, log in runs.items():
+        for ax, (key, label) in zip(axes, metrics):
+            ax.plot(log["step"], log[key], label=name)
+            ax.set_ylabel(label)
+            ax.grid(alpha=0.3)
+    axes[0].legend()
+    axes[-1].set_xlabel("Step")
+    fig.tight_layout()
+    plt.show()
