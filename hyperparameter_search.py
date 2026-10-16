@@ -117,7 +117,6 @@ def worker(trial: Trial):
             ray_kernel=8,
             ray_stride=1,
             seed=trial.seed,
-            lidar_conv="conv1d",
             max_iters=600,
             rollout_length=256,
             num_threads=NUM_PYTHON_THREADS

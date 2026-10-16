@@ -1,5 +1,5 @@
 import math
-from typing import Any, Literal
+from typing import Any
 
 import torch
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -52,7 +52,24 @@ import os
 
 #         # find largest continuous free gap
 
-        
+
+class RecurrentTrunkModel(torch.nn.Module):
+    def __init__(self,
+                 num_stacked_lidar_frames: int,
+                 n_rays: int,
+                 hidden_size: int = 64,
+                 ):
+        super().__init__()
+        self.encoder = TrunkModel(encoder_kwargs)
+        self.cell = torch.nn.GRUCell(64, hidden_size)
+        self.norm = torch.nn.LayerNorm(hidden_size)
+
+    def forward(self, lidar, steering_angle, cur_throttle, h, is_init) -> torch.Tensor:
+        """lidar etc: (..., L, ...) with time as the last batch dim.
+        h: (..., hidden) state *before* the first step. is_init: (..., L, 1) bool."""
+
+        x, cnn = self.encoder(lidar, steering_angle, cur_throttle)
+        outs = []
 
 
 class TrunkModel(torch.nn.Module):
@@ -60,25 +77,17 @@ class TrunkModel(torch.nn.Module):
         self,
         num_stacked_lidar_frames: int,
         n_rays: int,
-        lidar_conv: Literal["conv1d", "conv2d"],
         ray_kernel: int,
         ray_stride: int,
         time_subsample: int = 1,
-
-        time_stride: int | None = None,
-        time_kernel: int | None = None,
     ):
         super().__init__()
-        if lidar_conv == "conv2d" and (time_kernel is None or time_stride is None):
-            raise ValueError(
-                f"time_kernel and time_stride must be specified for conv2d lidar_conv. Got time_kernel={time_kernel}, time_stride={time_stride}")
 
         self.sampled_time_dim_size = (
             num_stacked_lidar_frames - 1) // time_subsample + 1
         self.num_stacked_lidar_frames = num_stacked_lidar_frames
         self.time_subsample = time_subsample
         self.n_rays = n_rays
-        self.lidar_conv = lidar_conv
 
         self.lidar_network = torch.nn.Sequential(
             torch.nn.Conv1d(
@@ -94,36 +103,10 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv1d(in_channels=32, out_channels=16, kernel_size=8),
             torch.nn.ReLU(),
-        ) if lidar_conv == "conv1d" else torch.nn.Sequential(
-            # only this layer has kernel height > 1, so it's the only one that
-            # mixes across time; it sees a local, strided window of raw frames
-            # (time_kernel, time_stride) rather than all of them at once like
-            # the conv1d branch's channel-folding does
-            torch.nn.Conv2d(
-                in_channels=1,
-                out_channels=16,
-                kernel_size=(time_kernel, ray_kernel),
-                stride=(time_stride, ray_stride)
-            ),
-            torch.nn.ReLU(),
-            # collapse time to 1 now, before it's repeated through 3 more
-            # kernel_size=(1, k) convs that can't mix across time anyway (height
-            # 1) and would otherwise redo the same per-slice work ~20x over
-            torch.nn.AdaptiveAvgPool2d((1, None)),
-            torch.nn.Conv2d(in_channels=16, out_channels=32,
-                            kernel_size=(1, 8)),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(in_channels=32, out_channels=32,
-                            kernel_size=(1, 8)),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(in_channels=32, out_channels=16,
-                            kernel_size=(1, 8)),
-            torch.nn.ReLU(),
         )
 
         with torch.no_grad():
-            dummy = torch.zeros(1, self.sampled_time_dim_size, n_rays) if lidar_conv == "conv1d" else torch.zeros(
-                1, 1, self.sampled_time_dim_size, n_rays)
+            dummy = torch.zeros(1, self.sampled_time_dim_size, n_rays)
             dense_in = self.lidar_network(dummy).numel() + 2
 
         self.dense = torch.nn.Sequential(
@@ -157,8 +140,6 @@ class TrunkModel(torch.nn.Module):
         # dim so Conv1d always sees (N, n_frames, L), then restore the batch shape
         lidar_cnn_output: torch.Tensor = self.lidar_network(
             lidar_distance_only.reshape(-1,
-                                        self.sampled_time_dim_size, n_rays) if self.lidar_conv == "conv1d" else
-            lidar_distance_only.reshape(-1, 1,
                                         self.sampled_time_dim_size, n_rays)
         )
         lidar_cnn_output = lidar_cnn_output.reshape(
@@ -274,12 +255,9 @@ def make_or_load_model(
     name: str,
     num_stacked_lidar_frames: int,
     n_rays: int,
-    lidar_conv: Literal["conv1d", "conv2d"],
     ray_kernel: int,
     ray_stride: int,
     time_subsample: int = 1,
-    time_stride: int | None = None,
-    time_kernel: int | None = None,
 ) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
     if os.path.exists(f"checkpoints/{name}"):
         # get latest checkpoint
@@ -295,35 +273,26 @@ def make_or_load_model(
         return (*make_model(
             num_stacked_lidar_frames=num_stacked_lidar_frames,
             n_rays=n_rays,
-            lidar_conv=lidar_conv,
             ray_kernel=ray_kernel,
             ray_stride=ray_stride,
             time_subsample=time_subsample,
-            time_stride=time_stride,
-            time_kernel=time_kernel
         ), 0, None)
 
 
 def make_model(
     num_stacked_lidar_frames: int,
     n_rays: int,
-    lidar_conv: Literal["conv1d", "conv2d"],
     ray_kernel: int,
     ray_stride: int,
     time_subsample: int = 1,
-    time_stride: int | None = None,
-    time_kernel: int | None = None,
 ) -> tuple[ActorValueAuxOperator, dict[str, Any]]:
     trunk_tensordict_model = TensorDictModule(
         TrunkModel(
             num_stacked_lidar_frames=num_stacked_lidar_frames,
             n_rays=n_rays,
-            lidar_conv=lidar_conv,
             ray_kernel=ray_kernel,
             ray_stride=ray_stride,
             time_subsample=time_subsample,
-            time_stride=time_stride,
-            time_kernel=time_kernel,
         ),
         in_keys=[("agents", "stacked_lidar"), ("agents", "steering_angle"),
                  ("agents", "throttle")],
@@ -373,12 +342,9 @@ def make_model(
     model_config = {
         "num_stacked_lidar_frames": num_stacked_lidar_frames,
         "n_rays": n_rays,
-        "lidar_conv": lidar_conv,
         "ray_kernel": ray_kernel,
         "ray_stride": ray_stride,
         "time_subsample": time_subsample,
-        "time_stride": time_stride,
-        "time_kernel": time_kernel
     }
 
     return ActorValueAuxOperator(
@@ -410,6 +376,11 @@ def save_model(
 def load_model(path: str) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
     checkpoint = torch.load(path, map_location="cpu")
     model_config = checkpoint["model_config"]
+    # older checkpoints carry config keys from the removed conv2d trunk
+    if model_config.pop("lidar_conv", "conv1d") != "conv1d":
+        raise ValueError(f"{path} uses the removed conv2d lidar trunk")
+    model_config.pop("time_stride", None)
+    model_config.pop("time_kernel", None)
     optim_state_dict = checkpoint["optim"]
     model, _ = make_model(**model_config)
     model.load_state_dict(checkpoint["model"])

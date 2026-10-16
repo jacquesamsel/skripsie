@@ -1,4 +1,3 @@
-from typing import Literal
 import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
@@ -28,11 +27,8 @@ class TrainParams:
     name: str | None
     num_stacked_lidar_frames: int = 50
     n_rays: int = 101
-    lidar_conv: Literal["conv1d", "conv2d"] = "conv1d"
     ray_kernel: int = 8
     ray_stride: int = 1
-    time_kernel: int | None = None
-    time_stride: int | None = None
     max_iters: int | None = None
     show_rollout_progress: bool = False
     rollout_length: int = 512
@@ -60,11 +56,8 @@ def train(
         name=params.name,
         num_stacked_lidar_frames=params.num_stacked_lidar_frames,
         n_rays=params.n_rays,
-        lidar_conv=params.lidar_conv,
         ray_kernel=params.ray_kernel,
         ray_stride=params.ray_stride,
-        time_kernel=params.time_kernel,
-        time_stride=params.time_stride,
     )
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
     if optim_state_dict is not None:
