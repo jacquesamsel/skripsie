@@ -813,7 +813,7 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
     (
       (
         type: "input",
-        image: rotate(90deg)[#image("../results/lidar_input.png", width: 4cm, height: 4cm)],
+        image: rotate(90deg)[#image("figures/lidar_input.png", width: 4cm, height: 4cm)],
         label: "LIDAR history",
         channels: ("", 50),
       ),
@@ -1173,7 +1173,7 @@ learn to avoid. The curve is defined separately for the forward direction
       k * D * calc.sin(C * calc.atan(bx - E * (bx - calc.atan(bx).rad())).rad())
     }
   }
-  
+
   #let xs = lq.linspace(0, 0.4, num: 1000)
   #let dashed = (dash: "dashed", thickness: 0.8pt)
   #let label-size = 8pt
@@ -1241,7 +1241,7 @@ learn to avoid. The curve is defined separately for the forward direction
         stroke: red.transparentize(60%) + 1.5pt,
         label: "Pacejka curve",
         mark: none,
-      )
+      ),
     ),
     caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator for the forward direction. See @wheel_collider_properties for the values.])],
   )<wheel_friction_curve>
@@ -1464,123 +1464,31 @@ Empirically, we find that at 135 of the 100 000 tracks produce these islands (C.
 ) <trackgen_inset_outset>
 
 
+== Environment interface
+At every control step (25 Hz, i.e. 40 ms, or four 100 Hz physics steps), each of the `num_areas` agents in an instance sends the following over gRPC:
 
-== Trainer Performance Tuning
-Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
+- a 101-ray LiDAR scan, reduced to its normalised distance channel (the hit/miss and object-type flags are discarded by the environment wrapper, because the policy only uses distance), and
+- its current steering angle and throttle.
+- privledged quantities including
+  - the agent's forward and lateral velocity ($v_f$ and $v_l$) in m/s
+  - the agent's yaw rate $omega_y$ in rad/s
+  - the track curvature #footnote("The reciprocal of the radius of curvature is also known as the curvature. It is used to prevent large values on straight sections of the track") at 17 equally spaced points between 0.5m and 8m ahead of the agent along the centerline, in 1/m
+  - the forward and lateral per-wheel slip values for each wheel, $kappa_x$ and $tan(alpha_x)$ with $x in {"FR", "FL", "BR", "BL"}$, which are unitless
 
-We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
+The trainer stacks the 50 most recent scans for each agent (2 s of history at 25 Hz) and passes the stack, together with the steering and throttle, to the policy. The policy returns a steering and throttle command for each agent, which the simulator applies for the next control step. Privileged quantities (velocities, per-wheel slip, upcoming curvature) are sent alongside the observation, and are used only as auxiliary targets.
 
-$ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
-
-We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
-
-As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `parallel_envs`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
-
-By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
-
-#figure(
-  stb-table(
-    columns: 3,
-    align: (left, center, left),
-    header: ("Parameter", "Values considered", "Description"),
-    [`concurrent_trainers`],
-    [${2, 4, 8, 12}$],
-    [Number of independent models training simultaneously, each in its own process.],
-    [`python_threads`],
-    [${8, 16}$],
-    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
-    [`parallel_envs`],
-    [${4, 8, 10, 16}$],
-    [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
-  ),
-  caption: "Parameters varied in the training performance grid search.",
-) <training_performance_variables>
-
-== The agent policy
-
-To different agent policy architectures were implemented: a feedforward neural network, and a recurrent GRU network. The feedforward
-
-== Metrics
-=== Reward function
-The agent receives a dense reward at each timestep that encourages fast,
-collision-free progress along the track:
-
-$ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
-
-Here, $xi_t in [0, L)$ is the agent's *progress* at time $t$: the arc length
-along the track centerline, in meters, of the centerline point closest to the
-agent's position. $L$ is the total length of the centerline.
-
-The first term rewards forward progress. Because the track is a loop, $xi$
-resets from $L$ to $0$ at the finish line, which would make the raw difference
-$xi_t - xi_(t-1)$ jump to $-L$. The wrap function maps the difference
-to the equivalent displacement in $[-L/2, L/2)$:
-
-$ "wrap"(Delta) = ((Delta + L/2) mod L) - L/2 $
-
-so crossing the finish line gives a small positive reward rather than a large
-negative spike. Moving backward along the track gives a negative reward.
-
-The second term penalizes collisions. The indicator $c_t$ equals 1 if the
-agent collides with an obstacle at time $t$ and 0 otherwise.
-
-The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision)
-balance speed against safety, so must be chosen based on the risk tolerance of the application. We use $w_p = 1.0$ and $w_c = 1.0$. It is important to note that, since the agent is terminated on collision, there already exists a strong implicit penalty for collisions, so $w_c$ can be set relatively low.
-
-== Crash rates
-The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the max. episode length.
+Because there are `num_inst` Unity instances, the trainer waits for all of them to report before running a single batched inference pass.
 
 
+== The Agent
 
-= Auxiliary heads
+The agent is a feedforward actor-critic network implemented in PyTorch, with the TorchRL library handling the action distribution and the PPO loss. It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ (@trunk_network_architecture) followed by three independent heads (@head_network_architecture), each of which takes as input the same 64-dimensional feature vector output from the trunk:
 
-Several auxiliary heads were implemented to predict the following quantities:
+- the _policy head_ outputs the parameters of the action distribution,
+- the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
+- the _auxiliary head_ outputs predictions of the privileged targets
 
-#figure(
-  stb-table(
-    columns: (1.2fr, 0.5fr, 3fr),
-    align: (center, center, left),
-    header: ([Auxiliary head(s)], [Unit], [Description]),
-    [$v_f$],
-    [m/s],
-    [The car's forward velocity],
-    [$v_l$],
-    [m/s],
-    [The car's lateral velocity (positive is to the left)],
-    [$omega$],
-    [rad/s],
-    [The car's angular velocity around the verical axis (postive is counter-clockwise)],
-    [$v_(s,x)$],
-    [m/s],
-    [The car's wheel slip velocity per wheel $x in {"LF", "RF", "LB", "RB"}$],
-    [$kappa_d$],
-    [$1/m$],
-    [Reciprocal #footnote("The reciprocal of the radius of curvature is used to prevent undefined values when the track is straight.") of the radius of curvature of the track at various points $d$ along the track ahead of the car, $d in {0.5, 1.0, ..., 8.0} m$],
-  ),
-  caption: "Auxiliary targets implemented to predict the car's forward velocity $v_f$, lateral velocity $v_l$, and angular velocity $omega$.",
-)
-
-== The model
-
-The model is a feedforward neural network. Its input is a stack of the 50 most
-recent LIDAR scans (101 rays each), plus the previous action (steering and
-throttle). Since the network has no recurrent state, the stacked scans are the
-only source of temporal information.
-
-The scans are processed by four 1D convolutional layers with ReLU activations.
-The convolutions slide along the ray axis and treat the 50 time steps as input
-channels, so the first layer combines the whole history at each angular
-position and turns it into a set of learned feature channels. The remaining
-three layers work on these features and only add spatial context along the ray
-axis. The output is flattened, concatenated with the
-previous action, and passed through three fully connected layers (128, 72 and
-64 units) with ReLU activations and a final layer normalization.
-
-The 64-dimensional output is shared by all heads. The last layer ("out" in
-@neural_net_architecture) is a linear layer that produces the outputs of every head at once:
-4 for the policy (mean and scale for steering and throttle), 1 for the value
-estimate, and 27 for the auxiliary prediction targets, which are only used
-as training signals.
+The trunk (@trunk_network_architecture) has a convolutional part followed by a dense part. The input is a tensor of shape $50 times 101$ (time steps by rays). Four 1D convolutions with ReLU activations slide along the ray axis and treat the time steps as input channels, so the first layer mixes the whole history at each angular position. They have 32, 16, and 16 output channels respectively; all have the same kernel size of 8 (roughly $21 degree$ of FOV). The output is flattened and concatenated with the current steering angle and throttle, and passed through fully connected layers of 128, 72 and 64 units with ReLU activations, followed by layer normalisation of the 64-dimensional output to prevent gradient explosion when the car is under heavy acceleration, pointing the LiDAR above the track walls and resulting in large ray lengths as input.
 
 #[
 
@@ -1593,10 +1501,13 @@ as training signals.
   #let main-net = draw-network(
     (
       (
-        type: "input",
-        image: rotate(90deg)[#image("../results/lidar_input.png", width: 4cm, height: 4cm)],
-        label: "LIDAR history",
-        channels: (101, 50),
+        type: "custom",
+        image: rotate(90deg)[
+          #image("figures/lidar_input.png", width: 4cm, height: 4cm)
+          #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101")]
+        ],
+        channels: ("", 50),
+        width: 0,
       ),
       (
         type: "conv",
@@ -1653,8 +1564,17 @@ as training signals.
       (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
       (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
       (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
-      (type: "custom", channels: (64,), depth: 0.5, height: 3, offset: 0.5, name: "fc3", label: "LayerNorm"),
-      (type: "fc", channels: (27 + 4 + 1,), offset: 0.5, name: "fc4", height: get-fc-height(32), label: "out"),
+      (
+        type: "custom",
+        channels: (64,),
+        depth: 0.5,
+        height: 3,
+        offset: 0.5,
+        name: "fc3",
+        label: "LayerNorm",
+        legend: "LayerNorm",
+        fill: red,
+      ),
     ),
     connections: (),
     show-legend: true,
@@ -1665,18 +1585,180 @@ as training signals.
   )
 
   #figure(
-    caption: "Neural network architecture",
-    cetz.canvas(length: 1cm, {
+    caption: [Trunk trunk network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector.],
+    scale(80%, reflow: true, cetz.canvas(length: 1cm, {
       import cetz.draw: *
       content((0, 0), main-net, anchor: "north-west", name: "main")
+      let x_pos = 7.9
       // Second input: the previous action, concatenated with the flattened
       // conv features. Coordinates are in cm, measured from the top-left of
       // the network image; (8.95, -1.28) is the top face of the "Concat" block.
-      content((8.95, 0), text(size: 8.5pt, weight: "bold")[Previous action], anchor: "south", name: "act")
-      line((8.95, -0.1), (8.95, -1.28), mark: (end: ">"), stroke: (paint: rgb("#0f4d52"), thickness: 1pt))
-    }),
-  )<neural_net_architecture>
+      content((x_pos, 0), text(size: 8.5pt, weight: "bold")[Current steering, throttle], anchor: "south", name: "act")
+      line(
+        (x_pos, -0.1),
+        (x_pos, -1.0),
+        mark: (end: "stealth", fill: rgb("#0f4d52")),
+        stroke: (paint: rgb("#0f4d52"), thickness: 1pt),
+      )
+    })),
+  ) <trunk_network_architecture>
 ]
+
+#figure(
+  scale(70%, reflow: true, [
+    #let get-fc-height = size => {
+      return size / 5
+    }
+
+    #let create-head = (name, label, color, n-outputs, show-legend: false) => {
+      return [
+        #draw-network(
+          (
+            (
+              type: "custom",
+              image: rotate(90deg)[
+                #image("figures/lidar_input.png", width: 4cm, height: 4cm)
+                #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101")]
+              ],
+              channels: ("", 50),
+              width: 0,
+            ),
+            (
+              type: "custom",
+              widths: (2,),
+              height: 3,
+              depth: 4,
+              legend: "Trunk network",
+              name: "conv1d",
+            ),
+            (
+              type: "fc",
+              width: 2,
+              height: get-fc-height(n-outputs),
+              depth: 0.5,
+              fill: green,
+              show-relu: true,
+              legend: "Head",
+              name: "conv1d",
+              channels: (n-outputs,),
+            ),
+          ),
+          connections: (),
+          show-legend: show-legend,
+          legend-title: "Layers",
+          scale: 100%,
+          stroke-thickness: 1,
+          depth-multiplier: 0.3,
+        )
+        *(#label)* #name
+      ]
+    }
+    #grid(
+      columns: (1fr, 1fr, 1fr),
+      [
+        #create-head("Policy head", "a", blue, 4)
+      ],
+      [
+        #create-head("Value head", "b", blue, 1)
+      ],
+      [
+        #create-head("Auxiliary head", "c", blue, 26, show-legend: true)
+      ],
+    )
+  ]),
+  caption: [Heads attached to the shared 64-dimensional trunk output. Each head is a single linear layer (no activation): the policy head outputs 4 values (location and scale for throttle and steering), the value head 1, and the auxiliary head 27 (one per privileged target).],
+)<head_network_architecture>
+
+=== Action Distributions
+The policy head outputs a location $mu$ and a raw scale value $x$ for each of
+throttle and steering. Each action is sampled independently from a
+tanh-squashed Gaussian,
+$ a = tanh(u), quad u tilde cal(N)(mu, sigma^2), $
+so that $a in (-1, 1)$. To keep the location from drifting arbitrarily far, it is
+additionally soft-clamped to roughly $[-5, 5]$ (`tanh_loc=True` in TorchRL's
+`TanhNormal`).
+
+The standard deviation is made positive with a softplus, with a small floor:
+$ sigma = op("softplus")(x) + 10^(-3).$
+
+*Initialisation.* The policy head's linear layer uses a weight initialisation with
+gain $0.01$ and zero bias, so every output is close to $0$ at the start. Hence
+$mu approx 0$, and both actions are centred near the middle of their range
+($tanh(0) = 0$).
+
+This is important because the derivative of the squashing function is
+$ (dif a) / (dif u) = 1 - tanh^2(u), $
+which goes to $0$ as $|u|$ grows. If the head's outputs start large, samples
+land in the saturated region, the gradient of the policy loss with respect to
+$mu$ is almost zero, and the policy cannot recover. In early experiments this
+is exactly what happened: the car locked at full throttle and full steering in either the positive or negative direction.
+
+= Experiments & results
+
+To different agent policy architectures were implemented: a feedforward neural network, and a recurrent GRU network. The feedforward
+
+== Metrics
+=== Reward function
+The agent receives a dense reward at each timestep that encourages fast,
+collision-free progress along the track:
+
+$ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
+
+Here, $xi_t in [0, L)$ is the agent's *progress* at time $t$: the arc length
+along the track centerline, in meters, of the centerline point closest to the
+agent's position. $L$ is the total length of the centerline.
+
+The first term rewards forward progress. Because the track is a loop, $xi$
+resets from $L$ to $0$ at the finish line, which would make the raw difference
+$xi_t - xi_(t-1)$ jump to $-L$. The wrap function maps the difference
+to the equivalent displacement in $[-L/2, L/2)$:
+
+$ "wrap"(Delta) = ((Delta + L/2) mod L) - L/2 $
+
+so crossing the finish line gives a small positive reward rather than a large
+negative spike. Moving backward along the track gives a negative reward.
+
+The second term penalizes collisions. The indicator $c_t$ equals 1 if the
+agent collides with an obstacle at time $t$ and 0 otherwise.
+
+The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision)
+balance speed against safety, so must be chosen based on the risk tolerance of the application. We use $w_p = 1.0$ and $w_c = 1.0$. It is important to note that, since the agent is terminated on collision, there already exists a strong implicit penalty for collisions, so $w_c$ can be set relatively low.
+
+=== Crash rates
+The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the maximum episode length.
+
+
+== Trainer Performance Tuning
+Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
+
+We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
+
+$ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
+
+We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
+
+As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `parallel_envs`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
+
+By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
+
+#figure(
+  stb-table(
+    columns: 3,
+    align: (left, center, left),
+    header: ("Parameter", "Values considered", "Description"),
+    [`concurrent_trainers`],
+    [${2, 4, 8, 12}$],
+    [Number of independent models training simultaneously, each in its own process.],
+    [`python_threads`],
+    [${8, 16}$],
+    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
+    [`parallel_envs`],
+    [${4, 8, 10, 16}$],
+    [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
+  ),
+  caption: "Parameters varied in the training performance grid search.",
+) <training_performance_variables>
+
 = Experiments & results
 
 == Probing intermediate layers for auxiliary information
