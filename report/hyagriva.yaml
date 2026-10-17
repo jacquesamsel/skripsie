@@ -320,6 +320,23 @@ f1tenth_gym_trackgen:
     value: "https://f1tenth-gym.readthedocs.io/en/v1.0.0/customized_usage.html#random-track-generator-beta"
     date: 2026-10-14
 
+evans2024unifyingf1tenthautonomousracing:
+  type: misc
+  title: 'Unifying F1TENTH Autonomous Racing: Survey, Methods and Benchmarks'
+  author:
+  - Evans, Benjamin David
+  - Trumpp, Raphael
+  - Caccamo, Marco
+  - Jahncke, Felix
+  - Betz, Johannes
+  - Jordaan, Hendrik Willem
+  - Engelbrecht, Herman Arnold
+  date: 2024
+  url: https://arxiv.org/abs/2402.18558
+  serial-number:
+    arxiv: '2402.18558'
+
+
 roboracer_homepage:
   type: Web
   title: "RoboRacer"

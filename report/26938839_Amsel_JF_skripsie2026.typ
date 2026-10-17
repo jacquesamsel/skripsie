@@ -6,6 +6,7 @@
 #import "@preview/neural-netz:0.3.0" as neural-netz: draw-network
 #import "@preview/simple-plot:1.1.0": hline, note, plot, vline
 #import "@preview/lilaq:0.5.0" as lq
+#import "@preview/neural-viz:0.1.0": *
 
 #show: style-algorithm
 #show: latex-lookalike.style-outline
@@ -131,8 +132,8 @@
   text([\[#it\]])
 }
 #show heading.where(level: 2): stb-heading(17pt, 1.8em, 1em)
-#show heading.where(level: 3): stb-heading(14pt, 1.6em, 0.8em)
-#show heading.where(level: 4): stb-heading(12pt, 1.4em, 0.7em)
+#show heading.where(level: 3): stb-heading(14pt, 1.6em, 1em)
+#show heading.where(level: 4): stb-heading(12pt, 1.4em, 1em)
 
 // --- Title page: \LARGE, no bold (stb-titlepage.sty) ---------
 #show title: set text(size: 20pt, weight: "regular")
@@ -216,7 +217,7 @@
 
 
 
-  #block(title("Backseat driver: Privledged-information auxiliary loss in autonomous racing"), width: 400pt)
+  #block(title("Backseat driver: Privileged-information auxiliary loss in autonomous racing"), width: 400pt)
 
   by
 
@@ -345,37 +346,66 @@
 
 #set heading(numbering: "1.")
 
+
+
 = Introduction
 
 == Background and motivation
 #todo("Why does this problem matter? Bigger picture e.g. saving lives")
 
-Autonomous racing is a challenging problem in autonmous robotics: the high speed, tight control margins, and short time available to recover from bad decisions makes for a demanding testbed to develop and evaluate autonomous driving algorithms. Studying autonomous racing is a proxy for development of autonomous driving algorithms, which have the potential to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg.
+Road traffic crashes remain a leading cause of death and serious injury worldwide, and most are attributed to human error. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle situations at the limits of vehicle dynamics, where grip is nearly exhausted and small mistakes compound quickly.
 
-Generally, there exist two broad approaches to autonomous driving: end-to-end learning, where a model is trained to map sensor inputs directly to control outputs, and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
+Autonomous racing is a demanding testbed for exactly these situations. The high speeds, tight control margins, and short time available to recover from bad decisions make it a proxy for developing and evaluating autonomous driving algorithms. In head-to-head (H2H) racing, the agent must additionally reason about an opponent, which adds a further source of information that cannot be read off the vehicle's own sensors.
 
-Auxiliary learning is a technique involving training a model to perform additional (auxiliary) tasks alongside the primary task, in the hope that these tasks will help the model learn representations that are useful for the primary task. In some cases, it can be used to improve the performance of reinforcement learning models by providing additional supervisory signals during training that improve the model's learned representations @rafiee2022makesusefulauxiliarytasks, while also aiding in interpretability of the learned representations  @chen2020interpretableendtoendurbanautonomous.
+Generally, there exist two broad approaches to control in autonomous driving: end-to-end learning, where a model is trained to map sensor inputs (e.g. LiDAR, camera frames) directly to control outputs (e.g. speed and steering angle), and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
+
+Auxiliary learning is a technique in which a model is trained to perform additional (auxiliary) tasks alongside the primary task, in the hope that these tasks help it learn intermediate representations that are useful for the primary task. In reinforcement learning, auxiliary tasks can improve performance by providing additional supervisory signals during training @rafiee2022makesusefulauxiliarytasks, while also aiding the interpretability of the learned representations @chen2020interpretableendtoendurbanautonomous. This is attractive for end-to-end racing: a simulator knows the car's true velocity, slip and the geometry of the track ahead, so these quantities can supervise the network during training even though they will not be available to the deployed policy.
 
 == Problem statement
-#todo("Focus in - specificly say what problem I am addressing. Research question = what was supposed to be done")
+An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, the curvature of the track ahead, and, in H2H racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can lead to slow convergence.
 
-An end-to-end RL agent that drives from LiDAR alone has to learn a representation of privledged information it can’t directly observe in the real world (e.g. its own velocity and slip, the curvature ahead, and its opponent's location in the case of head-to-head (H2H) racing). The agent may struggle to learn these representations early in training, when it has not yet learned to drive well enough to explore the environment effectively, which can lead to slow convergence.
+Privileged information is, however, available in simulation. This report investigates whether _auxiliary losses_ that predict this privileged information from the policy's shared representation can improve the learning of a LiDAR-only end-to-end racing agent. The research question is:
 
-However, since the privledged information is available in simulation, we can use auxiliary learning to provide additional supervisory signals to the agent during training, which may help it learn better representations of the privledged information and improve its performance or training speed.
+#align(center)[
+  _Does training with privileged-information auxiliary losses improve the performance or training speed of an end-to-end RL racing agent that drives from LiDAR alone, and does it change what the agent's representation encodes?_
+]
 
 == Objectives
-#todo("If I meet these (which are observable), I would have addressed the problem statement (answering a research question)")
+The objectives of this Skripsie are to:
 
-The objectives of this Skripsie are to (a) select an appropriate simulation environment for autonomous racing, (b) implement a baseline end-to-end RL agent that drives from LiDAR alone, (c) gain an understanding of what representations the baseline agent natively encodes, (d) implement auxiliary learning to provide additional supervisory signals to the agent during training, and (e) evaluate the performance of the auxiliary learning agent against the baseline agent.
+#set enum(numbering: "(a)")
++ select an appropriate simulation environment for autonomous racing;
++ implement a baseline end-to-end RL agent that drives from LiDAR alone;
++ gain an understanding of what representations the baseline agent natively encodes;
++ implement auxiliary learning to provide additional supervisory signals to the agent during training; and
++ evaluate the performance of the auxiliary learning agent against the baseline agent.
+#set enum(numbering: "1.")
+
+Meeting these objectives answers the research question: (a) and (b) provide the experimental platform and the baseline, (c) establishes what auxiliary learning must improve on, and (d) and (e) test the proposed method directly.
 
 == Summary of work
-#todo("What did I do, and what came out of it. At this point should know all the findings.z")
+A custom racing simulator was built in Unity, using PhysX-based vehicle dynamics for the RoboRacer vehicle and a procedural track generator that produces a new closed track for each training area. It was benchmarked against the F1Tenth gym and found to run only about 20% slower despite its higher-fidelity physics, and so it was chosen over the F1Tenth gym. The simulator communicates with a Python PPO training script over gRPC, and the training pipeline was tuned for throughput on a 64-core machine.
+
+The baseline agent is a feedforward network that takes a stack of 50 LiDAR scans and the previous action, and is trained with PPO and a dense progress-based reward. To understand what this baseline encodes, linear regression probes were fitted to the activations of its final shared layer to predict privileged quantities. Even at random initialisation, some quantities are already linearly decodable: the car's lateral and angular velocity are predicted with mean out-of-sample $R^2$ of 92% and 85% respectively. Auxiliary heads predicting forward, lateral and angular velocity, per-wheel slip, and upcoming track curvature were then added to the network and trained with a weighted auxiliary loss. Their effect was assessed through changes in probe $R^2$ relative to the baseline and through the area under the primary-task reward curve.
+
+#todo(
+  "Summarise the key findings once the auxiliary-vs-baseline analysis is final: which targets became more decodable, and whether primary task performance/training speed improved, stayed the same, or degraded.",
+)
 
 == Scope
-#todo("Show what I did not do, by talking about what I did do.")
+This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its previous action only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping (@ng1999policy) are discussed as background but not evaluated. Auxiliary loss weights were chosen by fixed weighting rather than learned weighting, so methods such as uncertainty weighting @kendall2018multitask-cvpr are discussed in the literature review but #todo("not implemented / implemented: must update to match what was done"). Representations are analysed with linear probes only, so non-linearly encoded information is not measured.
+
+#todo("state whether H2H racing with an opponent was evaluated or left as future work")
 
 == Roadmap
-#todo("What I did in each chapter")
+
+*Chapter 2* reviews the background and related literature: POMDPs and value functions, policy gradient methods up to PPO, auxiliary losses and rewards, loss weighting, and linear probing of representations, and closes with related work on auxiliary tasks in RL.
+
+*Chapter 3* describes the system: the Unity simulator and its comparison with the F1Tenth gym, the vehicle and tyre model, procedural track generation, performance tuning of the trainer, and the reward function and evaluation metrics, as well as the auxiliary targets and the network architecture.
+
+*Chapter 4* presents the experiments and results: linear probing of the baseline, the change in probed representations after auxiliary learning, and the effect on primary task performance.
+
+*Chapter 5* concludes by showing how the objectives were met and makes recommendations for future work.
 
 = Background and Related Literature
 
@@ -389,26 +419,32 @@ problems as a _partially observable Markov decision process_ (POMDP) defined by 
 At each time step $t$, the environment is in state $s_t in cal(S)$, where
 $cal(S)$ is the state space. This state is a _complete_ description of the
 environment at that time. The first state is sampled from an initial state distribution,
-$s_0 ~ rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation
-$o_t in cal(O)$ drawn from the observation function,
+$s_0 ~ rho_0$. The agent does not see $s_t$ directly. #todo("REWORD:")Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
 $o_t ~ cal(Z)(dot | s_t)$, where $cal(O)$ is the observation space. The information in $s_t$ that is missing from
 $o_t$ is called _privileged information_. For example, a car may observe its lidar measurements, but not the road surface conditions directly.
 
-Based on its observation, the agent chooses an action $a_t in cal(A)$, where
-$cal(A)$ is the action space. It does so using a _policy_ $pi$, which maps an
+Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
+$cal(A)$ is the action space. The policy maps an
 observation to a probability distribution over actions; we write
 $a_t ~ pi(dot | o_t)$. The policy is what we want to find: it describes the
 agent's behaviour, whereas the POMDP describes the environment in which the agent
-acts. (For simplicity, we let the policy depend only on the current observation;
-should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$.) After the agent has taken action $a_t$, the environment moves
+acts. For simplicity, we let the policy depend only on the current observation;
+should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
 to a new state, $s_(t+1) ~ P(dot | s_t, a_t)$, where $P$ is the transition
 function. By the _Markov property_, the next state depends only on the current
 state and action, not on earlier history @sutton2018. Then, the agent receives a scalar reward
 $r_t = R(s_t, a_t, s_(t+1))$, where $R$ is the reward function, together with
-the next observation $o_(t+1)$. The agent's goal is to maximise the expected
-discounted return
-$EE[G_0] = EE[sum_(t=0)^infinity gamma^t r_t]$, where $gamma in [0, 1)$ is a
-discount factor. The return represents a weighted sum of all future rewards, where later rewards are worth less than immediate ones. The discount rate $gamma$ describes how much the agent values future rewards relative to immediate ones. The policy that maximises the expected discounted return is called the _optimal policy_ $pi^*$.
+the next observation $o_(t+1)$. The agent's goal is to maximise the expected discounted return. The
+_return_ from time step $t$ is the discounted sum of all rewards the agent
+receives from $t$ onward,
+$ G_t = sum_(k=0)^(T-t) gamma^k r_(t+k), $
+where $T$ is the final time step and $gamma in [0, 1)$ is the discount
+factor. A reward received $k$ steps ahead is scaled by $gamma^k$, so later
+rewards are worth less than immediate ones: when $gamma$ is close to 1 the
+agent is far-sighted, and when $gamma$ is close to 0 it is short-sighted.
+Since $G_t$ depends on random states, observations and actions, it is a
+random variable, and the agent maximises its expectation $EE[G_0]$ from the
+start of the episode. The policy that achieves this is the _optimal policy_ $pi^*$.
 
 #let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
 #let o-node(pos, body) = node(
@@ -482,7 +518,7 @@ The advantage function,
 $
   A^pi (s, a) = Q^pi (s, a) - V^pi (s)
 $ <advantage_function>
-measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state .
+measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state.
 
 These state-value and action-value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
 
@@ -519,12 +555,11 @@ $
 $
 and act greedily with respect to it, $pi(s) = argmax_(a in cal(A)) Q^*(s, a)$.
 In a fully observable MDP this greedy policy is optimal, but the agent is
-restricted to deterministic policies, and the maximisation over $cal(A)$ can be
+restricted to deterministic policies (which are not always optimal in partially observed problems), and the maximisation over $cal(A)$ can be
 intractable for continuous actions @lillicrap2015continuous. In a POMDP, the
 observation is not necessairily Markov, so $Q(o, a)$ does not satisfy a Bellman equation,
 and a state-based $Q(s, a)$ cannot define a deployable policy
-as the agent does not observe $s$. Value-based methods therefore require a
-Markov input such as the observation history. _Policy-based_ methods instead
+as the agent does not observe $s$. _Policy-based_ methods, on the other hand,
 learn a parameterised policy $pi_theta$ directly by ascending the gradient of
 $J(pi_theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
 $arg max$ over actions. They can also represent stochastic policies, which may be
@@ -610,7 +645,7 @@ $
   hat(nabla_theta J)(theta) = 1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
 $
 
-where $overline(T)$ is the average trajectory length. In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
+In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
 $
   cal(L)_"REINFORCE" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
 $
@@ -631,7 +666,7 @@ where $r_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is t
 
 == Auxiliary Learning in Policy-Based Methods
 
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. _Auxiliary learning_ augments this with _auxiliary tasks_ whose learning signals are used only to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and their outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$) in the policy-based approach. _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
 formulations: auxiliary *losses*, which leave the RL objective unchanged and
 shape only the shared representation, and auxiliary *rewards*, which modify the
 objective itself and can therefore change the optimal policy.
@@ -673,8 +708,7 @@ The primary loss, such as $cal(L)_"PPO"$, is still a policy-gradient surrogate
 with a high-variance gradient estimate. Auxiliary losses, by contrast, are
 usually ordinary supervised or self-supervised objectives (for example
 predicting the next observation, or the immediate reward), so their gradients
-are exact and low-variance, and do not depend on the reward being observed
-#todo([citation]). This is what makes them useful when rewards are sparse or
+are exact and low-variance. This is what makes them useful when rewards are sparse or
 delayed. Their cost is that the auxiliary and primary gradients can conflict
 on the shared parameters, $theta_"s"$ so the weights $w^((k))$ must be chosen
 with care.
@@ -852,11 +886,11 @@ Lample and Chaplot @lample2017fps explore a similar problem of training an RL ag
 
 = System overview
 
-The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle and track, and a Python training script, which computes rewards and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
 
 The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
 
-To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
+To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
 
 // Add a subsystem diagram
 #figure(
@@ -946,7 +980,7 @@ To speed up data collection, the simulator is replicated: each Unity instance co
 
 == Simulator
 
-Previous work on end-to-end driving has largely made use of the F1Tenth gym #todo("CITE"), which is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics with a linear function  @okelly2020f1tenthgym.
+Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among methods suveyed in @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
 
 The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine, is a 3D simulator that models the vehicle and its environment using PhysX, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and allows for higher-fidelity simulations, including weight transfer dynamics, and suspsension deformation.
 
@@ -960,22 +994,23 @@ The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engin
     [Runge-Kutta 4th order],
     [Euler],
     [Car model],
-    [4-wheel rigid body with suspension, weight transfer, non-linear wheel slip dynamics],
+    [3D, 4-wheel rigid body with suspension, weight transfer, non-linear wheel slip dynamics],
     [2-wheel bicycle model with linearised slip dynamics],
     [Sensors],
-    [Digital-Twin LiDAR, IMU, wheel encoders #footnote("The IMU and wheel encoders are modules available in the AutoDrive simulator, not native Unity")],
+    [LiDAR (max 101 rays per agent), IMU, wheel encoders #footnote("The IMU and wheel encoders are modules available in the AutoDrive simulator, not native Unity"), occupancy grids],
     [LiDAR, IMU (excl. pitch, roll) ],
     [Track generation],
     [No],
     [In Beta @f1tenth_gym_trackgen],
   ),
+  caption: "Feature comparison of the Unity (PhysX) and F1Tenth gym simulators",
 )
 
-However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training. For example, it is missing track generation & privledged information reporting, and its performance is slower than the F1Tenth gym. Therefore, custom simulator was implemented in Unity (albeit incorporating AutoDrive's `VehicleController` component, which provides an easy interface to modify parameters like mass, wheelbase, and all/rear/front-wheel drive toggles),.
+However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator.
 
 === Simulator performance comparison
 
-In order to ensure the Unity simulator is suitable for training, and not just evaluation, its performance was compared to the F1Tenth gym. Both environments were configured for 100Hz physics and 25Hz control with one vehicle per environment. Then, a rollout of 10 000 control timesteps (400 sim-seconds) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode.
+In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. Both environments were configured for 100Hz physics and 25Hz control with one vehicle per environment. Then, a rollout of 10 000 control timesteps (400 sim-seconds) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode.
 
 
 Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed in this environment, as shown in @sim_benchmarks. The Unity simulator is slower than the F1Tenth gym by $20%$. The memory usage of the Unity simulator is also higher than that of the F1Tenth gym, but this is a marginal diffence of 115 MB on average.
@@ -988,7 +1023,25 @@ Due to the relatively minor performance difference, and Unity's more realistic 3
 ) <sim_benchmarks>
 
 === Unity Vehicle Model
-The vehicle is modelled as a `RigidBody` with four wheels, each of which is simulated using a `WheelCollider`.
+The vehicle is modelled as a `Rigidbody` with four wheels, each simulated by a
+`WheelCollider`. The two components divide the work: the `Rigidbody` represents the
+car as a single moving mass, and the `WheelCollider`s generate the forces that move it. Near the front of the car, a `RayPerceptionSensor` from the ML-Agents toolkit simulates a 2D LiDAR sensor with 101 rays, which is used as the agent's observation.
+
+==== The Rigidbody
+A `Rigidbody` is the Unity component that gives an object physical behaviour. It
+stores the car's mass, centre of mass and moment of inertia. At each fixed timestep
+the physics engine (PhysX) integrates the forces and torques acting on it to update
+its linear and angular velocity and its pose. The car's body is covered by simple
+box colliders (@unity_colliders), which handle collisions with walls and other
+objects. They play no part in the tyre-road interaction, which is handled entirely
+by the wheels. `BoxColliders` were used to model the car's body and collisions between the wheels and walls.
+
+#figure(
+  image("figures/unity_isometric_colliders.png", width: 300pt),
+  caption: [Custom Unity car's colliders: the body colliders handle collisions, and
+    the four `WheelCollider`s handle suspension and tyre forces.],
+) <unity_colliders>
+
 ==== The WheelCollider <sec_wheelcollider>
 In our custom simulator, each wheel of the RoboRacer is
 modelled as a `WheelCollider`, which simulates the wheel's suspension,
@@ -1120,7 +1173,7 @@ learn to avoid. The curve is defined separately for the forward direction
       k * D * calc.sin(C * calc.atan(bx - E * (bx - calc.atan(bx).rad())).rad())
     }
   }
-
+  
   #let xs = lq.linspace(0, 0.4, num: 1000)
   #let dashed = (dash: "dashed", thickness: 0.8pt)
   #let label-size = 8pt
@@ -1188,14 +1241,15 @@ learn to avoid. The curve is defined separately for the forward direction
         stroke: red.transparentize(60%) + 1.5pt,
         label: "Pacejka curve",
         mark: none,
-      ),
+      )
     ),
     caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator for the forward direction. See @wheel_collider_properties for the values.])],
   )<wheel_friction_curve>
 ]
 
-==== RigidBody
-The car itself is modelled as a `RigidBody`, which is a Unity component that simulates the car's mass, inertia, and response to forces. The `RigidBody` ensures that the wheels
+==== LiDAR
+
+The vehicle is equipped with a simulated 2D LiDAR sensor, which is implemented using a `RayPerceptionSensor` from the ML-Agents toolkit. The sensor emits 101 rays in a fan pattern, covering a field of view of $270 degree$. Each ray measures the distance to the nearest obstacle, such as walls or other vehicles, and returns a normalized value between 0 and 1, where 1 indicates no obstacle within the maximum range of the sensor (20m). The sensor also exposes a hit/miss flag for each ray, as well as flags for which object type was hit (opponent, wall, floor etc.).
 
 === Track generation
 
@@ -1406,7 +1460,7 @@ Empirically, we find that at 135 of the 100 000 tracks produce these islands (C.
 
 #figure(
   image("../results/figures/trackgen_inset_outset.pdf", width: 120%),
-  caption: "Track insets and outsets using different methods"
+  caption: "Track insets and outsets using different methods",
 ) <trackgen_inset_outset>
 
 
@@ -1442,8 +1496,11 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
   caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
 
+== The agent policy
+
+To different agent policy architectures were implemented: a feedforward neural network, and a recurrent GRU network. The feedforward
+
 == Metrics
-#todo("What do you intend to measure? How do you measure it?")
 === Reward function
 The agent receives a dense reward at each timestep that encourages fast,
 collision-free progress along the track:
@@ -1452,7 +1509,7 @@ $ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
 
 Here, $xi_t in [0, L)$ is the agent's *progress* at time $t$: the arc length
 along the track centerline, in meters, of the centerline point closest to the
-agent's position. $L$ is the total length of the centerline. 
+agent's position. $L$ is the total length of the centerline.
 
 The first term rewards forward progress. Because the track is a loop, $xi$
 resets from $L$ to $0$ at the finish line, which would make the raw difference
@@ -1465,12 +1522,13 @@ so crossing the finish line gives a small positive reward rather than a large
 negative spike. Moving backward along the track gives a negative reward.
 
 The second term penalizes collisions. The indicator $c_t$ equals 1 if the
-agent collides with an obstacle at time $t$ and 0 otherwise. 
+agent collides with an obstacle at time $t$ and 0 otherwise.
 
-The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision) 
+The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision)
 balance speed against safety, so must be chosen based on the risk tolerance of the application. We use $w_p = 1.0$ and $w_c = 1.0$. It is important to note that, since the agent is terminated on collision, there already exists a strong implicit penalty for collisions, so $w_c$ can be set relatively low.
 
-== Crash rate
+== Crash rates
+The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the max. episode length.
 
 
 
@@ -1499,7 +1557,7 @@ Several auxiliary heads were implemented to predict the following quantities:
     [$1/m$],
     [Reciprocal #footnote("The reciprocal of the radius of curvature is used to prevent undefined values when the track is straight.") of the radius of curvature of the track at various points $d$ along the track ahead of the car, $d in {0.5, 1.0, ..., 8.0} m$],
   ),
-  caption: "Auxiliary heads implemented to predict the car's forward velocity $v_f$, lateral velocity $v_l$, and angular velocity $omega$.",
+  caption: "Auxiliary targets implemented to predict the car's forward velocity $v_f$, lateral velocity $v_l$, and angular velocity $omega$.",
 )
 
 == The model
@@ -1687,7 +1745,7 @@ Then:
 
 
 
-== Normalisation of ego-agent privledged information
+== Normalisation of ego-agent privileged information
 
 Prior to applying auxiliary learning, the privileged information must be normalised. The auxiliary loss is a sum over the individual prediction targets, so a target with a larger numerical range contributes larger errors and gradients, and can dominate the shared representation at the expense of the others. Training with unnormalised targets makes hyperparameter tuning @vanhasselt2016, and training more difficult @lecun1998.
 
