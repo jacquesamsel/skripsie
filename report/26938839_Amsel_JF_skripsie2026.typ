@@ -351,11 +351,10 @@
 = Introduction
 
 == Background and motivation
-#todo("Why does this problem matter? Bigger picture e.g. saving lives")
 
-Road traffic crashes remain a leading cause of death and serious injury worldwide, and most are attributed to human error. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle situations at the limits of vehicle dynamics, where grip is nearly exhausted and small mistakes compound quickly.
+Road traffic crashes remain a leading cause of death and serious injury worldwide, and the overwhelming majority are attributed to human error @hankey1999identification, as cited in @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly.
 
-Autonomous racing is a demanding testbed for exactly these situations. The high speeds, tight control margins, and short time available to recover from bad decisions make it a proxy for developing and evaluating autonomous driving algorithms. In head-to-head (H2H) racing, the agent must additionally reason about an opponent, which adds a further source of information that cannot be read off the vehicle's own sensors.
+Autonomous racing is a demanding testbed for exactly these situations. The high speeds, tight control margins, and short time available to recover from bad decisions make it a proxy for developing and evaluating autonomous driving algorithms.
 
 Generally, there exist two broad approaches to control in autonomous driving: end-to-end learning, where a model is trained to map sensor inputs (e.g. LiDAR, camera frames) directly to control outputs (e.g. speed and steering angle), and modular pipelines, where the problem is broken down into subproblems such as perception, planning, and control. End-to-end learning has the advantage of being able to learn a policy directly from data, without requiring hand-engineered features or intermediate representations. However, it can be difficult to interpret and debug, and may require large amounts of data to learn effectively. Modular pipelines, on the other hand, can be more interpretable and easier to debug, but may require more domain knowledge and engineering effort to design and tune @chen2020interpretableendtoendurbanautonomous.
 
@@ -384,18 +383,13 @@ The objectives of this Skripsie are to:
 Meeting these objectives answers the research question: (a) and (b) provide the experimental platform and the baseline, (c) establishes what auxiliary learning must improve on, and (d) and (e) test the proposed method directly.
 
 == Summary of work
-A custom racing simulator was built in Unity, using PhysX-based vehicle dynamics for the RoboRacer vehicle and a procedural track generator that produces a new closed track for each training area. It was benchmarked against the F1Tenth gym and found to run only about 20% slower despite its higher-fidelity physics, and so it was chosen over the F1Tenth gym. The simulator communicates with a Python PPO training script over gRPC, and the training pipeline was tuned for throughput on a 64-core machine.
+A custom racing simulator was built in Unity, using PhysX-based vehicle dynamics for the RoboRacer vehicle and a procedural track generator that produces a new closed track for each training episode. It was benchmarked against the F1Tenth gym and found to run only about 20% slower despite its higher-fidelity physics, and so it was chosen over the F1Tenth gym.
 
-The baseline agent is a feedforward network that takes a stack of 50 LiDAR scans and the previous action, and is trained with PPO and a dense progress-based reward. To understand what this baseline encodes, linear regression probes were fitted to the activations of its final shared layer to predict privileged quantities. Even at random initialisation, some quantities are already linearly decodable: the car's lateral and angular velocity are predicted with mean out-of-sample $R^2$ of 92% and 85% respectively. Auxiliary heads predicting forward, lateral and angular velocity, per-wheel slip, and upcoming track curvature were then added to the network and trained with a weighted auxiliary loss. Their effect was assessed through changes in probe $R^2$ relative to the baseline and through the area under the primary-task reward curve.
+The baseline agent (a feedforward network) that takes a stack of 50 LiDAR scans, current steering and throttle as input was trained with PPO and a dense progress-based reward. To understand what this baseline encodes, linear regression probes were fitted to the activations of its final shared layer to predict privileged quantities. Even at random initialisation, some quantities are already linearly decodable: the car's lateral and angular velocity are predicted with mean out-of-sample $R^2$ of 92% and 85% respectively. Auxiliary heads predicting forward, lateral and angular velocity, per-wheel slip, and upcoming track curvature were then added to the network and trained with a weighted auxiliary loss. Close (< 3m ahead) track curvature heads resulted in improved training speed (+15.2% AUC on average), better performance after 600 PPO iterations (+12.4% average reward in the final 50 iterations), and a collision rate per timestep 44% lower than the baseline. On the other hand, far-ahead (6-8m ahead) curvature heads resulted in worse performance than the baseline. We hypothesise that this is because far-ahead curvature is often not visible in the LiDAR scans, so the network is forced to learn an impossible task and, since the gradient norm is limited, the auxiliary loss dominates the primary loss, preventing the network from 
 
-#todo(
-  "Summarise the key findings once the auxiliary-vs-baseline analysis is final: which targets became more decodable, and whether primary task performance/training speed improved, stayed the same, or degraded.",
-)
 
 == Scope
-This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its previous action only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping (@ng1999policy) are discussed as background but not evaluated. Auxiliary loss weights were chosen by fixed weighting rather than learned weighting, so methods such as uncertainty weighting @kendall2018multitask-cvpr are discussed in the literature review but #todo("not implemented / implemented: must update to match what was done"). Representations are analysed with linear probes only, so non-linearly encoded information is not measured.
-
-#todo("state whether H2H racing with an opponent was evaluated or left as future work")
+This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its previous action only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping (@ng1999policy) are discussed as background but not evaluated. Auxiliary loss weights were chosen by fixed weighting rather than learned weighting, so methods such as uncertainty weighting @kendall2018multitask-cvpr are discussed in the literature review but #todo("not implemented / implemented: must update to match what was done before I hand in"). Representations are analysed with linear probes only, so non-linearly encoded information is not measured. H2H racing is not studied, so opponent information is not considered.
 
 == Roadmap
 
@@ -419,7 +413,7 @@ problems as a _partially observable Markov decision process_ (POMDP) defined by 
 At each time step $t$, the environment is in state $s_t in cal(S)$, where
 $cal(S)$ is the state space. This state is a _complete_ description of the
 environment at that time. The first state is sampled from an initial state distribution,
-$s_0 ~ rho_0$. The agent does not see $s_t$ directly. #todo("REWORD:")Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
+$s_0 ~ rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
 $o_t ~ cal(Z)(dot | s_t)$, where $cal(O)$ is the observation space. The information in $s_t$ that is missing from
 $o_t$ is called _privileged information_. For example, a car may observe its lidar measurements, but not the road surface conditions directly.
 
@@ -790,7 +784,7 @@ Then, assuming the tasks are independent, the total loss is the sum of the indiv
 Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this Skripsie, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
 
 == Huber loss
-The Huber loss (with parameter $beta$ or in some literature $k$) is a loss function that is less sensitive to outliers compared to the standard Mean Squared Error (MSE) L2 loss @huber1964robust. It is defined as:
+The Huber loss @huber1964robust is a robust alternative to the squared-error (L2) loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero. The Huber loss is defined as:
 
 $
   cal(L)^beta (y, hat(y)) = cases(
@@ -799,13 +793,38 @@ $
   )
 $
 
-In our case, since we have various loss terms, each relating to a different task where the scale of $y$ differs, we must carefully choose the parameter $beta$ and scale each loss term appropriately.
-
-Rewriting the loss to $cal(L)^beta ((y-mu)/sigma, hat(y))$ allows us to reduce the model's bias towards learning tasks with larger scales, since the loss is now computed on a normalised scale.
-
 In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses a rescaled definition, $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
 
+
+#{
+  let xs = lq.linspace(-4, 4, num: 100)
+  let huber-loss = x => {
+    if calc.abs(x) <= 1 {
+      return 0.5 * calc.pow(x, 2)
+    } else {
+      return calc.abs(x) - 0.5
+    }
+  }
+  let squared-error = x => 0.5 * calc.pow(x, 2)
+  figure(
+    lq.diagram(
+      xlabel: [Prediction error ($delta = y - hat(y)$)],
+      ylabel: [Loss value ($cal(L)$)],
+      lq.plot(xs, xs.map(huber-loss), mark: none, stroke: 2pt + blue),
+      lq.plot(xs, xs.map(squared-error), mark: none, stroke: 2pt + red),
+    ),
+    caption: [Huber loss (blue) vs squared error loss (red) for prediction errors $delta$.],
+  )
+} <huber_vs_mse_diagram>
+
 == Linear Probing of Representations
+
+Consider the network in @example_network_diagram. Once trained, each layer $l$
+maps an input $bold(x)$ to an intermediate representation
+$bold(h)^((l)) = f_l (bold(x); theta)$. We would like to know what
+information these representations encode, and in particular whether they encode
+privileged state variables (e.g. velocity, slip, upcoming curvature) that.
+
 
 #figure(
   caption: "Example network architecture",
@@ -821,38 +840,38 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
         type: "conv",
         label: "Conv1D",
         channels: (1, 50),
+        connection-label: $bold(h)^((0))$,
       ),
       (
         type: "conv",
         label: "Conv1D",
         channels: (1, 50),
+        connection-label: $bold(h)^((1))$,
       ),
       (
         type: "fc",
         label: "fc1",
+        connection-label: $bold(h)^((2))$,
       ),
       (
         type: "fc",
         label: "fc2",
+        connection-label: $bold(h)^((3))$,
       ),
       (
         type: "fc",
         label: "fc3",
+        connection-label: $bold(h)^((4))$,
       ),
       (
         type: "output",
         label: "output",
+        connection-label: $bold(h)^((5))$,
       ),
     ),
     show-relu: true,
   )),
 ) <example_network_diagram>
-
-Consider the network in @example_network_diagram. Once trained, each layer $l$
-maps an input $bold(x)$ to an intermediate representation
-$bold(h)^((l)) = f_l (bold(x); theta) in RR^(d_l)$. We would like to know what
-information these representations encode, and in particular whether they encode
-privileged state variables (e.g. velocity, slip, upcoming curvature) that.
 
 Alain and Bengio @alain2018understandingintermediatelayersusing introduced
 _linear probes_ for this purpose. The main network's weights are frozen, and a
@@ -862,12 +881,11 @@ probe cannot change the representation, its test accuracy measures how much
 class information is _linearly_ available at that layer. Anand et al.
 @anand2020unsupervisedstaterepresentationlearning extended this idea to
 reinforcement learning, probing an encoder's representations for ground-truth
-state variables of Atari games (read from the console's RAM) rather than for
-the network's own targets.
+state variables of Atari games (read from the console's RAM).
 
 The choice of a _linear_ probe is deliberate. A sufficiently expressive probe
-(e.g. a deep MLP) could compute the target from almost any input, including the
-raw observation, so high probe accuracy would say more about the probe than
+(e.g. a deep MLP) may compute the target from almost any input, including the
+raw network input, so high probe accuracy would say more about the probe than
 about the representation @belinkov2021probingclassifierspromisesshortcomings.
 Restricting the probe to a linear map means that it can only succeed if the
 network has already done the work of encoding the target along some direction in the representation space.
@@ -879,9 +897,18 @@ concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to pr
 models for spatial and temporal encodings.
 
 == Related work
-#todo("For each, the objective, method, and results. What were shortcomings")
+Lample and Chaplot in @lample2017fps trained Deep Q-Network (DQN) and Deep Recurrent Q-Network (DRQN) agents to play Doom from first-person game frames in 2017. They used auxiliary heads to predict binary labels for the presence of enemies in the field of view, which roughly doubled the kill-to-death ratio. However, the gain was only significant for the recurrent DRQN, not for the memoryless DQN with stacked frames. The method was limited to discrete actions, vision only, and a single game.
 
-Lample and Chaplot @lample2017fps explore a similar problem of training an RL agent to play doom using Deep Q-Networks (DQN) from first-person visual input. They find that auxiliary losses for presence of enemies in the agent's field of view significantly improves performance, approximately doubling agent's kill-to-death ratio. They, however, find that these auxiliary losses only significantly improve performance in the case of Deep _Recurrent_ Q-Networks (DRQN), which receive single-frame inputs and are able to maintain a memory, and not in the case of DQNs, which are memoryless, and instead receive a stack of $N$ previous observations as input. #todo("Why do we not use DRQN?")
+Dosovitskiy and Koltun @dosovitskiy2016learning proposed Direct Future Prediction (DFP) in 2017, which predicts measurements (health, ammo, frags) at several future offsets with single frames as input, using a supervised regression loss. The agent picks the action maximising a weighted sum of the predictions. This method outperformed Lample and Chaplot by more than 50% in k/d ratio, earning first place in the Visual Doom AI Competition (Full Deathmatch). They found that predicting multiple targets improved performance, even when those targets were not used in action selection. However, since it requires and argmax over the actions, it is intractable for continuous control. It is also not a RL method, as it receives no reward signal in training.
+
+Mirowski et al. in @mirowski2017learningnavigatecomplexenvironments trained an recurrent LSTM A3C agent to navigate 3D mazes from RGB frames with sparse rewards and randomised goal locations. They used auxiliary heads for depth prediction and loop-closure classification#footnote("Loop closure occurs when the agent returns to a previously visited location"). They observed a 5x training speedup, and depth prediction from the last LSTM layer outperformed depth prediction at the output of the convolutional encoder block. Further, they found that an auxiliary loss for depth prediction was more effective than depth as an input.
+
+Shelhamer et al. in @shelhamer2017lossrewardselfsupervisionreinforcement showed that representation learning is the bottleneck in RL and that self-supervised auxiliary losses can speed it up. They used A3C with auxiliary tasks built from the agent's own transitions: reward binning, inverse dynamics, and VAE or BiGAN #footnote("Variational autoencoders (VAEs) and bidirectional generative adversarial networks (BiGANs) are unsupervised generative models that learn a compact latent representation of their input without labels, and are trained so that the representation retains enough information to reproduce or model the data distribution."). They found that multi-task pre-training gave about 2.7x training efficiency (AUC) over the first 10M updates.
+
+Much of the previous work made use of recurrent neural networks to handle observations that are not Markov, but we implement a memoryless policy with stacked LiDAR frames as input.
+
+#todo("Should I cite regular RL papers in F1Tenth that are not auxiliary learning? Feels useless...")
+
 
 
 = System overview
@@ -1694,26 +1721,44 @@ $mu$ is almost zero, and the policy cannot recover. In early experiments this
 is exactly what happened: the car locked at full throttle and full steering in either the positive or negative direction.
 
 == Auxiliary Targets
-
-A set of auxiliary targets described in @auxiliary_targets
+Each frame, the environment emits a set of privledged quantities to the trainer, which are used as auxiliary targets to improve the policy's internal representation of the environment. These targets are listed in @auxiliary_targets.
 
 #figure(
   stb-table(
-
+    columns: 3,
+    align: (left, center, left),
+    line-between-rows: true,
+    header: ([*Target*], [*Units*], [*Description*]),
+    [Forward velocity $v_f$],
+    [m/s],
+    [The component of the agent's velocity in the direction of its forward axis],
+    [Lateral velocity $v_l$],
+    [m/s],
+    [The component of the agent's velocity in the direction of its lateral axis],
+    [Yaw rate $omega_y$],
+    [rad/s],
+    [The rate of change of the agent's heading about its vertical axis],
+    [Track curvature ahead $c_d$],
+    [1/m],
+    [The curvature of the track centerline at $d$ meters ahead of the agent, measured as the reciprocal of the radius of curvature],
+    [Per-wheel longitudinal slip $kappa_x$],
+    [unitless],
+    [The longitudinal slip of wheel $x in {"FR", "FL", "BR", "BL"}$],
+    [Per-wheel lateral slip $tan(alpha_x)$],
+    [unitless],
+    [The lateral slip of wheel $x in {"FR", "FL", "BR", "BL"}$],
   ),
-  caption: [The auxiliary targets to be predicted by the agent]
+  caption: [The auxiliary targets to be predicted by the agent],
 ) <auxiliary_targets>
 
-In order to prevent large gradients that could destabilise traning, the targets are normalised to $sigma = 1, mu = 0$
+In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy.
+
+Because the auxiliary targets are heavy-tailed, we use the Huber loss to reduce the influence of outliers and prevent the policy from (a) overfitting to them; and (b) producing large gradients that destabilise training.
 
 == Training
 The agent is trained using the PPO algorhtm (@sec_ppo) using Generalised Advantage Estimation. The total loss minimised is
 $ cal(L) = cal(L)_"PPO" + c_v cal(L)_V - c_e H[pi_theta] + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)), $
 where $cal(L)_V$ is the value loss, $H$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs <epochs> epochs of minibatch updates.
-
-= Experiments & results
-
-To different agent policy architectures were implemented: a feedforward neural network, and a recurrent GRU network. The feedforward
 
 == Metrics
 === Reward function

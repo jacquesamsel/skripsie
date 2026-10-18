@@ -14,6 +14,44 @@ olofsson2021crashdatabases:
     issue: 6
     volume: 22
 
+medina2004relationshipinfrastructuredrivererror:
+  type: article
+  title: Relationship between Infrastructure, Driver Error, and Critical Incidents
+  author:
+  - Medina, Alejandra L.
+  - Lee, Suzanne E.
+  - Wierwille, Walter W.
+  - Hanowski, Richard J.
+  date: 2004
+  page-range: 2075-2079
+  url: https://doi.org/10.1177/154193120404801661
+  serial-number:
+    doi: 10.1177/154193120404801661
+  abstract: ' During the course of a Federal Highway Administration (FHWA)-sponsored research project ”Identification of Driver Errors,” ”driver errors” in crashes and near-crashes (i.e., critical incidents) were investigated and an analysis approach was developed to help identify infrastructure-related and non-infrastructure-related problems at intersections and other roadway sites. The research team carefully examined the relationship between the infrastructure, driver error, and critical incidents. This was accomplished by first determining which incidents appeared to have an infrastructure component (signing, signaling, delineation, alinement, geometry, etc.). These incidents were then reexamined to determine the precise nature of the infrastructure components. Once the problems had been identified, countermeasures were suggested. This work is a demonstration of the synergistic effects of combining human factors engineering techniques with traffic engineering. By broadening the earlier traffic-conflict technique to include greater consideration of driver behavior, with emphasis on generalized driver errors, a better understanding of critical incidents and their corresponding countermeasures has been obtained. '
+  parent:
+    type: periodical
+    title: Proceedings of the Human Factors and Ergonomics Society Annual Meeting
+    issue: 16
+    volume: 48
+
+hankey1999identification:
+  type: article
+  title: 'Identification and evaluation of driver errors: Task c report, driver error taxonomy development'
+  author:
+  - Hankey, JM
+  - Wierwille, WW
+  - Cannell, WJ
+  - Kieliszewski, CA
+  - Medina, A
+  - Dingus, TA
+  - Cooper, LM
+  date: 1999
+  parent:
+    type: periodical
+    title: Project no. Dtfh-61-97-c-00051. Virginia Tech Transportation Institute, Blacksburg, VA
+
+
+
 VanDriel2010congestion:
   type: article
   title: The Impact of a Congestion Assistant on Traffic Flow Efficiency and Safety in Congested Traffic Caused by a Lane Drop
@@ -179,6 +217,67 @@ kaelbling1998:
     title: Artificial Intelligence
     volume: 101
     issue: 1-2
+
+mirowski2017learningnavigatecomplexenvironments:
+  type: misc
+  title: Learning to Navigate in Complex Environments
+  author:
+  - Mirowski, Piotr
+  - Pascanu, Razvan
+  - Viola, Fabio
+  - Soyer, Hubert
+  - Ballard, Andrew J.
+  - Banino, Andrea
+  - Denil, Misha
+  - Goroshin, Ross
+  - Sifre, Laurent
+  - Kavukcuoglu, Koray
+  - Kumaran, Dharshan
+  - Hadsell, Raia
+  date: 2017
+  url: https://arxiv.org/abs/1611.03673
+  serial-number:
+    arxiv: '1611.03673'
+
+dosovitskiy2016learning:
+  type: article
+  title: Learning to act by predicting the future
+  author:
+  - Dosovitskiy, Alexey
+  - Koltun, Vladlen
+  date: 2016
+  parent:
+    type: periodical
+    title: arXiv preprint arXiv:1611.01779
+
+
+shelhamer2017lossrewardselfsupervisionreinforcement:
+  type: misc
+  title: 'Loss is its own Reward: Self-Supervision for Reinforcement Learning'
+  author:
+  - Shelhamer, Evan
+  - Mahmoudieh, Parsa
+  - Argus, Max
+  - Darrell, Trevor
+  date: 2017
+  url: https://arxiv.org/abs/1612.07307
+  serial-number:
+    arxiv: '1612.07307'
+
+qiao2026end2raceendtoendlearningframework:
+  type: misc
+  title: 'End2Race: An End-to-End Learning Framework for Multi-Vehicle Autonomous Racing'
+  author:
+  - Qiao, Zhijie
+  - Li, Haowei
+  - Cao, Zhong
+  - Liu, Henry X.
+  date: 2026
+  url: https://arxiv.org/abs/2509.16894
+  serial-number:
+    arxiv: '2509.16894'
+
+
 
 jaderberg2017unreal:
   type: article
