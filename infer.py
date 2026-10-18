@@ -7,7 +7,7 @@ import torch
 from utils import get_aux_head_true_values
 import tqdm
 from environment import RoboRacerEnv, RoboRacerParallelEnvs
-from model import load_model, make_model
+from model import advance_recurrent_state, initial_recurrent_state, load_model, make_model, step_operator
 from visualize import LidarVisualiser, OccupancyGridVisualiser, RewardVisualiser
 from model import ActorValueAuxOperator
 
@@ -22,6 +22,7 @@ def do_rollout(
         visualise_occupancy_grid: bool = False
 ) -> td.TensorDict:
     tensordict = env.reset()
+    recurrent_state = initial_recurrent_state(model, tensordict.batch_size)
     steps: list[td.TensorDict] = []
 
     lidar_visualiser = LidarVisualiser() if visualise_lidar else None
@@ -29,8 +30,11 @@ def do_rollout(
 
     with torch.no_grad():
         for step in tqdm.trange(num_steps, disable=hide_progress):
-            tensordict = model.get_policy_operator()(tensordict)
+            tensordict = step_operator(
+                model.get_policy_operator(), tensordict, recurrent_state)
             tensordict = env.step(tensordict)
+            recurrent_state = advance_recurrent_state(
+                recurrent_state, tensordict)
             if visualise_lidar:
                 lidar_visualiser.render(tensordict["agents", "stacked_lidar"])
             if visualise_occupancy_grid:

@@ -1,7 +1,7 @@
 import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
-from model import ActorValueAuxOperator, make_or_load_model, save_model
+from model import ActorValueAuxOperator, advance_recurrent_state, initial_recurrent_state, make_or_load_model, save_model, step_operator
 from environment import (
     RoboRacerEnv,
     RoboRacerParallelEnvs
@@ -25,10 +25,16 @@ class TrainParams:
     seed: int
     num_threads: int
     name: str | None
-    num_stacked_lidar_frames: int = 50
+    num_stacked_lidar_frames: int = 4
     n_rays: int = 101
     ray_kernel: int = 8
     ray_stride: int = 1
+    # "recurrent" (GRU over a short lidar stack) or "stacked" (long lidar stack, no memory)
+    trunk: str = "recurrent"
+    hidden_size: int = 64
+    # PPO minibatches are made of whole sequences of this many steps, so the GRU
+    # can be unrolled through them. Has to divide rollout_length.
+    seq_len: int = 32
     max_iters: int | None = None
     show_rollout_progress: bool = False
     rollout_length: int = 512
@@ -40,6 +46,10 @@ def train(
     torch.set_num_threads(params.num_threads)
     random.seed(params.seed)
     torch.manual_seed(params.seed)
+
+    if params.rollout_length % params.seq_len != 0:
+        raise ValueError(
+            f"seq_len ({params.seq_len}) must divide rollout_length ({params.rollout_length})")
 
     if any(params.aux_weights.get(name) == None for name in AUX_HEAD_KEYS):
         raise ValueError(
@@ -58,6 +68,8 @@ def train(
         n_rays=params.n_rays,
         ray_kernel=params.ray_kernel,
         ray_stride=params.ray_stride,
+        trunk=params.trunk,
+        hidden_size=params.hidden_size,
     )
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
     if optim_state_dict is not None:
@@ -96,6 +108,9 @@ def train(
         "results/aux_head_scaling_factors.json")
 
     tensordict: td.TensorDict = env.reset()
+    # Carried across iterations as well as steps, since the env never resets
+    # from Python after this
+    recurrent_state = initial_recurrent_state(model, tensordict.batch_size)
     start_time = time.perf_counter_ns()
 
     save_every = 10
@@ -107,14 +122,20 @@ def train(
         steps = []
 
         rollout_start = time.perf_counter_ns()
+        policy_value_op = model.get_policy_value_operator()
         with torch.no_grad(), set_exploration_type(ExplorationType.RANDOM):
             for frame in tqdm.trange(params.rollout_length, disable=not params.show_rollout_progress, desc=f"Rollout {i}"):
-                tensordict = env.step(
-                    model.get_policy_operator()(tensordict))
+                # V(s_t) is computed here, because it depends on the recurrent state
+                tensordict = env.step(step_operator(
+                    policy_value_op, tensordict, recurrent_state))
+                recurrent_state = advance_recurrent_state(
+                    recurrent_state, tensordict)
 
-                # Don't store next-step observations in the rollout
+                # Don't store next-step observations in the rollout. The stored
+                # rnn_h is the state *before* the step, which is what training
+                # unrolls from.
                 steps.append(tensordict.exclude(
-                    ("next", "agents", "stacked_lidar"), ("next", "agents", "lidar")))
+                    ("next", "agents", "stacked_lidar"), ("next", "agents", "lidar"), "rnn_h_out"))
                 tensordict = env.step_mdp(tensordict)
 
         stack_rollout_start = time.perf_counter_ns()
@@ -124,33 +145,40 @@ def train(
         gae_start = time.perf_counter_ns()
 
         with torch.no_grad():
-            value_op = model.get_value_operator()
-            # V(s_t) for t = 0..T-1
-            values = value_op(rollout.select(*value_op.in_keys))["state_value"]
+            # V(s_t) for t = 0..T-1, stored during the rollout
+            values = rollout["state_value"]
             # V(s_T): the observation after the last step is the root of `tensordict`
-            last_value = value_op(tensordict.select(*value_op.in_keys))["state_value"]
+            last_value = step_operator(
+                model.get_value_operator(), tensordict.copy(), recurrent_state)["state_value"]
 
-            rollout["state_value"] = values
             rollout["next", "state_value"] = torch.cat([values[1:], last_value.unsqueeze(0)], dim=0)
             rollout = gae(rollout)
         print("Rollout batch size:", rollout.batch_size)
 
         save_rollout_buffer_start = time.perf_counter_ns()
 
-        # flatten [T, num_envs, num_agents] into T * num_envs * num_agents samples
-        flat_rollout = rollout.reshape(-1)
-        num_samples = flat_rollout.shape[0]
+        # cut [T, num_envs, num_agents] into sequences of seq_len steps, with time
+        # as the last batch dim: [T/seq_len * num_envs * num_agents, seq_len]
+        # (with seq_len=1 this is just every sample on its own)
+        seq_len = params.seq_len
+        batch_dims = rollout.batch_size[1:]
+        sequences = rollout.reshape(
+            params.rollout_length // seq_len, seq_len, *batch_dims)
+        sequences = sequences.permute(
+            0, *range(2, 2 + len(batch_dims)), 1).reshape(-1, seq_len)
+        num_sequences = sequences.shape[0]
+        sequences_per_batch = max(1, batch_size // seq_len)
 
         epochs_start = time.perf_counter_ns()
 
         logs = []
         for epochs in range(4):  # epochs
-            # randomly shuffle the rollout
-            shuffled = flat_rollout[torch.randperm(num_samples)]
+            # randomly shuffle the sequences, keeping each one intact
+            shuffled = sequences[torch.randperm(num_sequences)]
 
             # do minibatch updates
-            for batch_start in range(0, num_samples, batch_size):
-                minibatch = shuffled[batch_start:batch_start + batch_size]
+            for batch_start in range(0, num_sequences, sequences_per_batch):
+                minibatch = shuffled[batch_start:batch_start + sequences_per_batch]
                 optim.zero_grad()
 
                 minibatch = model.get_trunk_operator()(minibatch)
@@ -159,7 +187,10 @@ def train(
                 aux_head = model.get_aux_head()
                 minibatch = aux_head(minibatch)
 
-                loss: td.TensorDict = loss_module(minibatch)
+                # The trunk needs the (n_sequences, seq_len) shape to unroll, but
+                # ClipPPOLoss reduces some of its logs (ESS, explained_variance)
+                # over dim 0 only, so give it a flat batch
+                loss: td.TensorDict = loss_module(minibatch.reshape(-1))
 
                 aux_losses = gen_aux_losses(
                     minibatch, aux_weights_scaling_factors)
@@ -296,11 +327,20 @@ def train(
 
 if __name__ == "__main__":
     SEED = 42
+    params = TrainParams(
+        aux_weights=gen_aux_weights_default_zero({}),
+        name="test_recurrent",
+        seed=SEED,
+        rollout_length=512,
+        num_threads=16,
+        show_rollout_progress=True,
+        num_stacked_lidar_frames=1
+    )
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(
         num_envs=8,
         file_name="TestUnityProject/Test Speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
-        num_stacked_frames=50,
+        num_stacked_frames=params.num_stacked_lidar_frames,
         no_graphics=True,
         num_areas=6,
         time_scale=1000.0,
@@ -308,16 +348,6 @@ if __name__ == "__main__":
         seed=SEED,
     )
     try:
-        train(
-            env,
-            params=TrainParams(
-                aux_weights=gen_aux_weights_default_zero({}),
-                name=None,
-                seed=SEED,
-                rollout_length=512,
-                num_threads=16,
-                show_rollout_progress=True
-            )
-        )
+        train(env, params=params)
     finally:
         env.close()

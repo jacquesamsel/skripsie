@@ -14,29 +14,31 @@ def curvature_keys(lo, hi):
 
 
 HYPERPARAMETER_GROUPS = {
-    # "velocity_forward": ["velocity_forward"],
-    # "velocity_lateral": ["velocity_lateral"],
-    # "curvature_close": curvature_keys(0.0, 3.0),
-    # "curvature_medium": curvature_keys(3.0, 6.0),
-    # "curvature_far": curvature_keys(6.0, 8.0),
-    # "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
-    # "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
-    # "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
-    # "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
-    # "angular_velocity_y": ["angular_velocity_y"],
-    # "all": AUX_HEAD_KEYS
+    "velocity_forward": ["velocity_forward"],
+    "velocity_lateral": ["velocity_lateral"],
+    "curvature_close": curvature_keys(0.0, 3.0),
+    "curvature_medium": curvature_keys(3.0, 6.0),
+    "curvature_far": curvature_keys(6.0, 8.0),
+    "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
+    "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
+    "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
+    "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
+    "angular_velocity_y": ["angular_velocity_y"],
+    "all": AUX_HEAD_KEYS
 }
 
 WEIGHT_VALUES = [0.1, 0.3, 1.0]
-SEEDS = [3, 4, 5, 6]
+SEEDS = [1, 2, 3]
 
-MAX_WORKERS = 8
 RUNS_DIR = Path("run_done_flags")
 
 NUM_ENVS = 8
-MAX_WORKERS = 8
+MAX_WORKERS = 5
 NUM_PYTHON_THREADS = 16
 NUM_AREAS=6
+# Lidar frames the encoder sees each step; the GRU carries the longer history
+NUM_STACKED_FRAMES = 2
+SEQ_LEN = 32
 
 _SLOT = None
 _ENV = None
@@ -50,7 +52,9 @@ class Trial:
 
     @property
     def name(self):
-        return f"{self.group}_w{self.weight:g}_s{self.seed}"
+        # rnn_ prefix keeps these apart from the stacked-trunk runs' checkpoints,
+        # tensorboard logs and done markers
+        return f"rnn_{self.group}_w{self.weight:g}_s{self.seed}"
 
     @property
     def params(self):
@@ -91,7 +95,7 @@ def _get_env(seed):
             file_name="TestUnityProject/Test speed/build.app" if is_mac else "linux_build/linux_build.x86_64",
             num_envs=NUM_ENVS,
             num_areas=NUM_AREAS,
-            num_stacked_frames=50,
+            num_stacked_frames=NUM_STACKED_FRAMES,
             seed=seed,
             start_worker_id=_SLOT * NUM_ENVS
         )
@@ -111,7 +115,9 @@ def worker(trial: Trial):
         env,
         params=TrainParams(
             aux_weights=gen_aux_weights_default_zero(trial.params),
-            num_stacked_lidar_frames=50,
+            num_stacked_lidar_frames=NUM_STACKED_FRAMES,
+            trunk="recurrent",
+            seq_len=SEQ_LEN,
             name=trial.name,
             n_rays=101,
             ray_kernel=8,

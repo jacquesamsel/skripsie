@@ -77,7 +77,7 @@ def gen_aux_losses(td: TensorDict, scaling_factors: dict[str, tuple[float, float
 
 def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict, scaling_factors: dict[str, tuple[float, float]]):
     r2_scores = {
-        key: r2_score(prediction[key], (target[key] - scaling_factors[key][0]) / scaling_factors[key][1])
+        key: r2_score(prediction[key].flatten(), ((target[key] - scaling_factors[key][0]) / scaling_factors[key][1]).flatten())
         for key in AUX_HEAD_KEYS
     }
     return r2_scores

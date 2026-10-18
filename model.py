@@ -10,22 +10,39 @@ from utils import AUX_HEAD_KEYS
 import os
 
 class RecurrentTrunkModel(torch.nn.Module):
-    def __init__(self,
-                 num_stacked_lidar_frames: int,
-                 n_rays: int,
-                 hidden_size: int = 64,
-                 ):
+    """Runs a per-step encoder (e.g. TrunkModel) and feeds its features through a GRU.
+
+    Time is the last batch dim, so a rollout step is a length-1 sequence and a
+    PPO minibatch is (n_sequences, seq_len)."""
+
+    def __init__(self, encoder: torch.nn.Module, hidden_size: int = 64):
         super().__init__()
-        self.encoder = TrunkModel(encoder_kwargs)
-        self.cell = torch.nn.GRUCell(64, hidden_size)
+        self.encoder = encoder
+        self.hidden_size = hidden_size
+        self.cell = torch.nn.GRUCell(encoder.out_features, hidden_size)
         self.norm = torch.nn.LayerNorm(hidden_size)
 
-    def forward(self, lidar, steering_angle, cur_throttle, h, is_init) -> torch.Tensor:
+    def forward(self, lidar, steering_angle, cur_throttle, h, is_init):
         """lidar etc: (..., L, ...) with time as the last batch dim.
-        h: (..., hidden) state *before* the first step. is_init: (..., L, 1) bool."""
+        h: (..., L, hidden), only h[..., 0, :] (the state before the first step) is read.
+        is_init: (..., L, 1) bool, True on the first step of an episode."""
 
         x, cnn = self.encoder(lidar, steering_angle, cur_throttle)
+        *batch_shape, seq_len, n_features = x.shape
+        x = x.reshape(-1, seq_len, n_features)
+        is_init = is_init.reshape(-1, seq_len, 1)
+        h = h[..., 0, :].reshape(-1, self.hidden_size)
+
+        # Step through time by hand rather than with nn.GRU, since episodes can
+        # reset partway through a sequence
         outs = []
+        for t in range(seq_len):
+            h = torch.where(is_init[:, t], torch.zeros_like(h), h)
+            h = self.cell(x[:, t], h)
+            outs.append(h)
+        hs = torch.stack(outs, dim=1).reshape(*batch_shape, seq_len, self.hidden_size)
+
+        return self.norm(hs), cnn, hs
 
 
 class TrunkModel(torch.nn.Module):
@@ -44,6 +61,7 @@ class TrunkModel(torch.nn.Module):
         self.num_stacked_lidar_frames = num_stacked_lidar_frames
         self.time_subsample = time_subsample
         self.n_rays = n_rays
+        self.out_features = 64
 
         self.lidar_network = torch.nn.Sequential(
             torch.nn.Conv1d(
@@ -70,9 +88,9 @@ class TrunkModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(128, 72),
             torch.nn.ReLU(),
-            torch.nn.Linear(72, 64),
+            torch.nn.Linear(72, self.out_features),
             torch.nn.ReLU(),
-            torch.nn.LayerNorm(64)
+            torch.nn.LayerNorm(self.out_features)
         )
 
     def forward(self, lidar: torch.Tensor, steering_angle: torch.Tensor, cur_throttle: torch.Tensor):
@@ -112,10 +130,10 @@ class TrunkModel(torch.nn.Module):
 
 
 class ActionModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, in_features: int = 64):
         super().__init__()
         # 2 for throttle (loc, scale), 2 for steering (loc, scale)
-        self.head = torch.nn.Linear(64, 4)
+        self.head = torch.nn.Linear(in_features, 4)
         torch.nn.init.orthogonal_(self.head.weight, gain=0.01)
         torch.nn.init.zeros_(self.head.bias)
 
@@ -140,9 +158,9 @@ class ActionModel(torch.nn.Module):
 
 
 class AuxModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, in_features: int = 64):
         super().__init__()
-        self.head = torch.nn.Linear(64, len(AUX_HEAD_KEYS))
+        self.head = torch.nn.Linear(in_features, len(AUX_HEAD_KEYS))
 
     def forward(self, hidden_layer: torch.Tensor, lidar_cnn_output: torch.Tensor):
         out: torch.Tensor = self.head(hidden_layer)
@@ -150,9 +168,9 @@ class AuxModel(torch.nn.Module):
 
 
 class ValueModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, in_features: int = 64):
         super().__init__()
-        self.head = torch.nn.Linear(64, 1)
+        self.head = torch.nn.Linear(in_features, 1)
 
     def forward(self, hidden_layer: torch.Tensor):
         return self.head(hidden_layer)
@@ -186,6 +204,10 @@ class ActorValueAuxOperator(SafeSequential):
             )
         return SafeSequential(self.module[0], self.module[1])
 
+    def get_policy_value_operator(self) -> TensorDictSequential:
+        """Returns an operator that maps an observation to an action and a value estimate."""
+        return SafeSequential(self.module[0], self.module[1], self.module[2])
+
     def get_value_operator(self) -> TensorDictSequential:
         """Returns a standalone value network operator that maps an observation to a value estimate."""
         return SafeSequential(self.module[0], self.module[2])
@@ -214,6 +236,8 @@ def make_or_load_model(
     ray_kernel: int,
     ray_stride: int,
     time_subsample: int = 1,
+    trunk: str = "recurrent",
+    hidden_size: int = 64,
 ) -> tuple[ActorValueAuxOperator, dict[str, Any], int, dict[str, Any] | None]:
     if os.path.exists(f"checkpoints/{name}"):
         # get latest checkpoint
@@ -232,7 +256,46 @@ def make_or_load_model(
             ray_kernel=ray_kernel,
             ray_stride=ray_stride,
             time_subsample=time_subsample,
+            trunk=trunk,
+            hidden_size=hidden_size,
         ), 0, None)
+
+
+def make_trunk(
+    num_stacked_lidar_frames: int,
+    n_rays: int,
+    ray_kernel: int,
+    ray_stride: int,
+    time_subsample: int = 1,
+    trunk: str = "recurrent",
+    hidden_size: int = 64,
+) -> tuple[TensorDictModule, int]:
+    """Builds the shared trunk, returning it with the width of its hidden_layer output."""
+    encoder = TrunkModel(
+        num_stacked_lidar_frames=num_stacked_lidar_frames,
+        n_rays=n_rays,
+        ray_kernel=ray_kernel,
+        ray_stride=ray_stride,
+        time_subsample=time_subsample,
+    )
+    obs_keys = [("agents", "stacked_lidar"), ("agents", "steering_angle"),
+                ("agents", "throttle")]
+
+    if trunk == "stacked":
+        return TensorDictModule(
+            encoder,
+            in_keys=obs_keys,
+            out_keys=["hidden_layer", "lidar_cnn_output"]
+        ), encoder.out_features
+
+    if trunk == "recurrent":
+        return TensorDictModule(
+            RecurrentTrunkModel(encoder, hidden_size=hidden_size),
+            in_keys=[*obs_keys, "rnn_h", "is_init"],
+            out_keys=["hidden_layer", "lidar_cnn_output", "rnn_h_out"]
+        ), hidden_size
+
+    raise ValueError(f"Unknown trunk type {trunk!r}")
 
 
 def make_model(
@@ -241,28 +304,29 @@ def make_model(
     ray_kernel: int,
     ray_stride: int,
     time_subsample: int = 1,
+    trunk: str = "recurrent",
+    hidden_size: int = 64,
 ) -> tuple[ActorValueAuxOperator, dict[str, Any]]:
-    trunk_tensordict_model = TensorDictModule(
-        TrunkModel(
-            num_stacked_lidar_frames=num_stacked_lidar_frames,
-            n_rays=n_rays,
-            ray_kernel=ray_kernel,
-            ray_stride=ray_stride,
-            time_subsample=time_subsample,
-        ),
-        in_keys=[("agents", "stacked_lidar"), ("agents", "steering_angle"),
-                 ("agents", "throttle")],
-        out_keys=["hidden_layer", "lidar_cnn_output"]
-    )
+    model_config = {
+        "num_stacked_lidar_frames": num_stacked_lidar_frames,
+        "n_rays": n_rays,
+        "ray_kernel": ray_kernel,
+        "ray_stride": ray_stride,
+        "time_subsample": time_subsample,
+        "trunk": trunk,
+        "hidden_size": hidden_size,
+    }
+
+    trunk_tensordict_model, n_features = make_trunk(**model_config)
 
     aux = TensorDictModule(
-        AuxModel(),
+        AuxModel(n_features),
         in_keys=["hidden_layer", "lidar_cnn_output"],
         out_keys=[("aux", name) for name in AUX_HEAD_KEYS]
     )
 
     actor_tensordict_model = TensorDictModule(
-        ActionModel(),
+        ActionModel(n_features),
         in_keys=["hidden_layer"],
         out_keys=[
             ("params", "throttle", "loc"),
@@ -290,18 +354,10 @@ def make_model(
     )
 
     critic = ValueOperator(
-        ValueModel(),
+        ValueModel(n_features),
         in_keys=["hidden_layer"],
         out_keys=["state_value"]
     )
-
-    model_config = {
-        "num_stacked_lidar_frames": num_stacked_lidar_frames,
-        "n_rays": n_rays,
-        "ray_kernel": ray_kernel,
-        "ray_stride": ray_stride,
-        "time_subsample": time_subsample,
-    }
 
     return ActorValueAuxOperator(
         trunk_tensordict_model,
@@ -337,7 +393,42 @@ def load_model(path: str) -> tuple[ActorValueAuxOperator, dict[str, Any], int, d
         raise ValueError(f"{path} uses the removed conv2d lidar trunk")
     model_config.pop("time_stride", None)
     model_config.pop("time_kernel", None)
+    # checkpoints from before the recurrent trunk all used the stacked one
+    model_config.setdefault("trunk", "stacked")
     optim_state_dict = checkpoint["optim"]
     model, _ = make_model(**model_config)
     model.load_state_dict(checkpoint["model"])
     return model, model_config, checkpoint["iter"], optim_state_dict
+
+
+def is_recurrent(model: ActorValueAuxOperator) -> bool:
+    return "rnn_h" in model.get_trunk_operator().in_keys
+
+
+def initial_recurrent_state(model: ActorValueAuxOperator, batch_size: torch.Size) -> td.TensorDict:
+    """The recurrent state to start a rollout from (empty for a non-recurrent trunk)."""
+    if not is_recurrent(model):
+        return td.TensorDict({}, batch_size=batch_size)
+    hidden_size = model.get_trunk_operator().module.hidden_size
+    return td.TensorDict({
+        "rnn_h": torch.zeros(*batch_size, hidden_size),
+        "is_init": torch.ones(*batch_size, 1, dtype=torch.bool),
+    }, batch_size=batch_size)
+
+
+def step_operator(operator: TensorDictModule, tensordict: td.TensorDict, state: td.TensorDict) -> td.TensorDict:
+    """Runs operator on a single step, which the trunk sees as a length-1 sequence."""
+    tensordict.update(state)
+    return operator(tensordict.unsqueeze(-1)).squeeze(-1)
+
+
+def advance_recurrent_state(state: td.TensorDict, tensordict: td.TensorDict) -> td.TensorDict:
+    """The state for the step after tensordict, which has been through step_operator and env.step."""
+    if state.is_empty():
+        return state
+    # The env resets in-engine, so the step after a done is the first step of a
+    # new episode (CatFramesResetOnDone flushes the lidar stack on that step too)
+    return td.TensorDict({
+        "rnn_h": tensordict["rnn_h_out"],
+        "is_init": tensordict["next", "agents", "done"].clone(),
+    }, batch_size=state.batch_size)
