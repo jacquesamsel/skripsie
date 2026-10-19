@@ -54,7 +54,7 @@ class Trial:
     def name(self):
         # rnn_ prefix keeps these apart from the stacked-trunk runs' checkpoints,
         # tensorboard logs and done markers
-        return f"rnn_{self.group}_w{self.weight:g}_s{self.seed}"
+        return f"{self.group}_w{self.weight:g}_s{self.seed}"
 
     @property
     def params(self):
