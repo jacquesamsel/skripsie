@@ -28,7 +28,7 @@ HYPERPARAMETER_GROUPS = {
 }
 
 WEIGHT_VALUES = [0.1, 0.3, 1.0]
-SEEDS = [1, 2, 3]
+SEEDS = [4, 5, 6]
 
 RUNS_DIR = Path("run_done_flags")
 
@@ -37,7 +37,7 @@ MAX_WORKERS = 5
 NUM_PYTHON_THREADS = 16
 NUM_AREAS=6
 # Lidar frames the encoder sees each step; the GRU carries the longer history
-NUM_STACKED_FRAMES = 2
+NUM_STACKED_FRAMES = 50
 SEQ_LEN = 32
 
 _SLOT = None
@@ -116,7 +116,7 @@ def worker(trial: Trial):
         params=TrainParams(
             aux_weights=gen_aux_weights_default_zero(trial.params),
             num_stacked_lidar_frames=NUM_STACKED_FRAMES,
-            trunk="recurrent",
+            trunk="stacked",
             seq_len=SEQ_LEN,
             name=trial.name,
             n_rays=101,

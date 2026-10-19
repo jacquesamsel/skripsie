@@ -1,3 +1,5 @@
+from typing import Literal
+
 import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
@@ -30,7 +32,7 @@ class TrainParams:
     ray_kernel: int = 8
     ray_stride: int = 1
     # "recurrent" (GRU over a short lidar stack) or "stacked" (long lidar stack, no memory)
-    trunk: str = "recurrent"
+    trunk: Literal['recurrent', 'stacked'] = "recurrent"
     hidden_size: int = 64
     # PPO minibatches are made of whole sequences of this many steps, so the GRU
     # can be unrolled through them. Has to divide rollout_length.
