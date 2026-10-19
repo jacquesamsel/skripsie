@@ -414,7 +414,7 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 To evaluate whether privileged-information auxiliary losses can improve an end-to-end racing agent, this chapter establishes the theoretical foundation for how the agent learns and how we measure its internal representations.
 We first formulate the control problem as a Partially Observable Markov Decision Process (POMDP) in @sec:pomdp, as the agent drives using only local LiDAR data. @sec:rl and @sec:policy_gradient then introduce Reinforcement Learning (RL) and Proximal Policy Optimization (PPO), the policy gradient algorithm used to train the baseline driving behaviour.
 @sec:auxiliary_learning introduces the core intervention to improve the agent's performance: auxiliary learning. @sec:loss_weighting and @sec:huber_loss cover loss weighting and the Huber loss, which are necessary to keep this multi-objective training stable.
-To determine whether these auxiliary tasks actually change what the network encodes, @sec:linear_probing introduces linear probing as a method to analyze intermediate neural representations. The chapter concludes with @sec:related_work, reviewing related work and situating this project within the broader landscape of autonomous racing and auxiliary representation learning.
+To determine whether these auxiliary tasks actually change what the network encodes, @sec:linear_probing introduces linear probing as a method to analyze intermediate neural representations.
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
 Many control and robotics problems require an agent to make a sequence of
@@ -503,44 +503,20 @@ start of the episode. The policy that achieves this is the _optimal policy_ $pi^
 ) <mdp_iteration_diagram>
 
 === Value functions
-Throughout this section we assume a memoryless policy $pi(dot | o_t)$. Since
-$o_t = cal(Z)(s_t)$, the agent's action distribution in state $s$ is
-$pi(dot | cal(Z)(s))$, and because the state is Markov, the expected return from
-time $t$ depends only on $s_t$. The value functions below are therefore well
-defined as functions of the state.
-
-Value functions are a central concept in reinforcement learning, providing a measure of how good it is for the agent to be in a particular state or to take a particular action.
+Value functions measure how good it is for the agent to be in a state, or to take an action in that state, and are the basis for the critic in PPO, which will be discussed later.
 The state-value function,
 $
   V^pi (s) = EE_pi [G_t | S_t = s]
 $ <state_value_function>
-
-represents the expected discounted return, the agent can achieve starting from state $s$ and following policy $pi$ thereafter. The action-value function,
+is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter. The action-value function,
 $
   Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
-represents the expected discounted return the agent can achieve starting from state $s$, taking action $a$, and following policy $pi$ thereafter.
-The advantage function,
+measures the expected discounted return starting in state $s$, taking action $a$, and then following policy $pi$ thereafter. Their difference is the advantage function,
 $
-  A^pi (s, a) = Q^pi (s, a) - V^pi (s)
+  A^pi (s, a) = Q^pi (s, a) - V^pi (s),
 $ <advantage_function>
-measures the relative value of taking action $a$ in state $s$ compared to the average value of all actions in that state.
-
-These state-value and action-value functions satisfy the Bellman equations, which express the relationship between the value of a state and the values of its successor states. @bellman1957 The Bellman equation for the state-value function is given by:
-
-$
-  V^pi (s) = EE_pi [R_(t+1) + gamma V^pi (S_(t+1)) | S_t = s]
-$ <state_value_bellman_equation>
-
-and the Bellman equation for the action-value function is given by:
-
-$
-  Q^pi (s, a) = EE_pi [R_(t+1) + gamma Q^pi (S_(t+1), A_(t+1)) | S_t = s, A_t = a]
-$ <action_value_bellman_equation>
-
-These Bellman equations @state_value_bellman_equation and @action_value_bellman_equation provide a recursive relationship that allows the agent to update its value estimates based on the observed rewards and the estimated values of successor states.
-
-
+which measures how much better action $a$ is than the policy's average action in state $s$. Both value functions satisfy the Bellman equations @bellman1957, which express the value of a state recursively in terms of the immediate reward and the value of successor states; these recursions underpin the value-learning methods discussed below.
 
 == Reinforcement Learning (RL) <sec:rl>
 Reinforcement learning (RL) is a subfield of machine learning concerned with
@@ -573,9 +549,9 @@ necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateest
 combine both: a learned value function (the critic) is used to reduce the variance
 of the policy gradient, and since the critic is only used in training, it may
 condition on privileged information. We focus on policy-based and actor-critic
-methods in this report @sutton2018.
+methods in this report.
 
-== Policy gradient methods <sec:policy_gradient>
+=== Policy gradient methods <sec:policy_gradient>
 
 Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
 $
@@ -643,7 +619,7 @@ Monte Carlo estimate. In practice the factor $gamma^t$ is usually dropped;
 this yields a biased estimate of $nabla_theta J(theta)$ for $gamma < 1$
 @thomas2014bias.
 
-=== REINFORCE
+==== REINFORCE
 
 The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
@@ -658,7 +634,7 @@ $
 
 Although REINFORCE is simple to implement, it has several drawbacks. First, it has high variance in its gradient estimates, which can lead to slow convergence and instability during training. Second, it does not make use of a value function to estimate the expected return, which can further increase variance. Finally, it is an on-policy algorithm, meaning that it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
 
-=== Proximal Policy Optimization (PPO) <sec_ppo>
+==== Proximal Policy Optimization (PPO) <sec_ppo>
 PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
 
 Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalized Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
@@ -669,12 +645,19 @@ $
 
 where $r_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
 
+== The Limits of Standard End-to-End RL
+
+Reinforcement learning is a powerful framework for training agents to perform complex tasks. Various previous work has shown that end-to-end RL can learn to race a car from raw sensor inputs in simulation @wurman2022outracing @lee2025outracing, as well as real-world driving @czechmanowski2025learningracingpoliciesreinforcement.
+
+However, it has limitations, especially in complex environments. Standard end-to-end RL methods can struggle with reward attribution, and need for large amounts of compute and data. In the real world, there are costs associated with collecting data, and compute resources are not limitless.
 
 == Auxiliary Learning in Policy-Based Methods <sec:auxiliary_learning>
 
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$) in the policy-based approach. _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
+Auxiliary learning is a complementary method to standard RL. By modifying the objective, models are able to achieve better performance and training speed, therefore requiring less compute and data. For example, @lample2017fps found improved performance in VizDoom after adding auxiliary tasks, and @mirowski2017learningnavigatecomplexenvironments observed improvements in training time after implementing depth prediction in maze solving tasks. In fact, @mirowski2017learningnavigatecomplexenvironments observed better performance using this priviliged information for auxiliary training compared to as a direct input.
+
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$ in the policy-based approach). _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
 formulations: auxiliary *losses*, which leave the RL objective unchanged and
-shape only the shared representation, and auxiliary *rewards*, which modify the
+shape only the shared representation, and auxiliary rewards (or shaped rewards), which modify the
 objective itself and can therefore change the optimal policy.
 
 === Auxiliary Losses
@@ -761,39 +744,38 @@ Hyperparameter tuners differ in how they choose which weights to try next. Grid 
 
 Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
-=== Uncertainty weighting
-#todo("Will only include this if I have time to implement UW")
-Two kinds of uncertainty can be modelled in a model's predictions @kendall2017uncertainties:
-- _Epistemic_ uncertainty: the model is unsure because it hasn't been trained on enough data. More data reduces epistemic uncertainty.
-- _Aleatoric_ uncertainty: the data itself is noisy or incomplete, so even a perfect model can't predict exactly. In this case, more training data doesn't help.
+// === Uncertainty weighting
+// Two kinds of uncertainty can be modelled in a model's predictions @kendall2017uncertainties:
+// - _Epistemic_ uncertainty: the model is unsure because it hasn't been trained on enough data. More data reduces epistemic uncertainty.
+// - _Aleatoric_ uncertainty: the data itself is noisy or incomplete, so even a perfect model can't predict exactly. In this case, more training data doesn't help.
 
-Aleatoric uncertainty has two forms:
-- _Data-dependent_ or _Heteroscedastic_: the noise changes from input to input (e.g. a blurry image is harder to make inference from than a clear one).
-- _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task
+// Aleatoric uncertainty has two forms:
+// - _Data-dependent_ or _Heteroscedastic_: the noise changes from input to input (e.g. a blurry image is harder to make inference from than a clear one).
+// - _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task
 
-Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only @kendall2018multitask-cvpr.
+// Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only @kendall2018multitask-cvpr.
 
-Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
-$
-  hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
-$
+// Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
+// $
+//   hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
+// $
 
-The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
+// The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
 
-$
-  L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||_2^2 + log sigma_i
-$
+// $
+//   L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||_2^2 + log sigma_i
+// $
 
 
-A similar derivation can be made for L1 loss functions by assuming the predictions are $Y_i dot(~) "Laplace"(f_i (x), b_i)$:
+// A similar derivation can be made for L1 loss functions by assuming the predictions are $Y_i dot(~) "Laplace"(f_i (x), b_i)$:
 
-$
-  L_i = -log p(y_i | f_i (x)) = 1/(b_i) ||y_i - f_i (x)||_1 + log b_i
-$
+// $
+//   L_i = -log p(y_i | f_i (x)) = 1/(b_i) ||y_i - f_i (x)||_1 + log b_i
+// $
 
-Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
+// Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
-Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this Skripsie, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
+// Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this Skripsie, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
 
 == Huber loss <sec:huber_loss>
 The Huber loss @huber1964robust is a robust alternative to the squared-error (L2) loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero. The Huber loss is defined as:
@@ -831,15 +813,15 @@ In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses
 
 == Linear Probing of Representations <sec:linear_probing>
 
-Consider the network in @example_network_diagram. Once trained, each layer $l$
+Consider the arbitrary network in @example_network_diagram. Once trained, each layer $l$
 maps an input $bold(x)$ to an intermediate representation
-$bold(h)^((l)) = f_l (bold(x); theta)$. We would like to know what
+$bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
 information these representations encode, and in particular whether they encode
 privileged state variables (e.g. velocity, slip, upcoming curvature) that.
 
 
 #figure(
-  caption: "Example network architecture",
+  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 frames are fully connected layers with ReLU activations.",
   scale(80%, reflow: true, draw-network(
     (
       (
@@ -908,41 +890,44 @@ done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
 concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
 models for spatial and temporal encodings.
 
-== Related work <sec:related_work>
 
-Auxiliary representation learning has emerged as a key mechanism for addressing sample inefficiency in partially observable environments. Rather than relying solely on sparse or delayed scalar rewards, augmenting the objective with secondary prediction tasks encourages the shared network architecture to extract richer spatial and temporal features.
+// === Auxiliary prediction tasks
 
-=== Secondary Supervised and Measurement Prediction
+// Early implementations demonstrated the value of auxiliary prediction in visual, partially observable environments. Lample and Chaplot @lample2017fps introduced auxiliary heads to predict binary game-state indicators (e.g., enemy presence) in first-person environments, demonstrating that multi-task signals significantly enhanced performance when paired with recurrent architectures (DRQN). Extending this concept to rich feature prediction, Dosovitskiy and Koltun @dosovitskiy2016learning proposed Direct Future Prediction (DFP), using supervised regression to forecast future internal measurements across multiple time horizons. Their approach established that predicting multiple auxiliary targets provides strong supervisory signals even when targets are excluded from action selection, outperforming pure RL methods in visual combat tasks. However, DFP relies on an action-space argmax, making it intractable for continuous control tasks.
 
-Early implementations demonstrated the value of auxiliary prediction in visual, partially observable environments. Lample and Chaplot @lample2017fps introduced auxiliary heads to predict binary game-state indicators (e.g., enemy presence) in first-person environments, demonstrating that multi-task signals significantly enhanced performance when paired with recurrent architectures (DRQN). Extending this concept to rich feature prediction, Dosovitskiy and Koltun @dosovitskiy2016learning proposed Direct Future Prediction (DFP), using supervised regression to forecast future internal measurements across multiple time horizons. Their approach established that predicting multiple auxiliary targets provides strong supervisory signals even when targets are excluded from action selection, outperforming pure RL methods in visual combat tasks. However, DFP relies on an action-space argmax, making it intractable for continuous control tasks.
+// Navigational auxiliary tasks were explored by Mirowski et al. @mirowski2017learningnavigatecomplexenvironments, who trained a recurrent actor-critic agent on 3D maze exploration using depth prediction and loop-closure classification #footnote([Loop closure occurs when the agent returns to a previously visited location.]). Their findings included a 5x improvement in sample efficiency, and found that forcing the model to predict depth geometry provided superior performance compared to feeding depth directly as an input feature.
 
-Navigational auxiliary tasks were explored by Mirowski et al. @mirowski2017learningnavigatecomplexenvironments, who trained a recurrent actor-critic agent on 3D maze traversal using depth prediction and loop-closure classification #footnote([Loop closure occurs when the agent returns to a previously visited location.]). Their findings revealed a 5x improvement in sample efficiency, and found that forcing the model to predict depth geometry provided superior performance compared to feeding depth directly as an input feature.
+// === Self-Supervised Auxiliary Objectives in RL
 
-=== Self-Supervised Auxiliary Objectives in RL
+// Shelhamer et al. @shelhamer2017lossrewardselfsupervisionreinforcement investigated self-supervised auxiliary losses derived directly from environmental transitions. By combining policy optimization with objectives such as inverse dynamics, reward binning, and latent generative modeling (Variational Autoencoders and Bidirection Generative Adversarial Networks), they achieved a 2.7-fold increase in learning efficiency (AUC) during early training iterations. This highlighted that self-supervised signals stabilize latent feature representations prior to reward convergence.
 
-Addressing representation learning as a core bottleneck in reinforcement learning, Shelhamer et al. @shelhamer2017lossrewardselfsupervisionreinforcement investigated self-supervised auxiliary losses derived directly from environmental transitions. By combining policy optimization with objectives such as inverse dynamics, reward binning, and latent generative modeling (Variational Autoencoders and Bidirection Generative Adversarial Networks), they achieved a 2.7-fold increase in learning efficiency (AUC) during early training iterations. This highlighted that self-supervised signals stabilize latent feature representations prior to reward convergence.
+// === Imitation learning
 
-=== 
+// Another approach to making use of privileged information is imitation learning; first, an agent is trained with access to privileged state information as input, and then the learned policy is distilled into a second agent that only has access to the partial observations. This approach has successfully been applied to by Chen et al. in @chen2017gradnorm, who used a teacher-student architecture to distill a policy in the CARLA autonomous driving simulator.
 
-=== Synthesis and Identified Research Gap
+// === Previous work on the RoboRacer platform
 
-While existing literature validates the impact of auxiliary learning on sample efficiency, these foundational studies exhibit distinct constraints when applied to physical control domains:
-
-- *Visual vs. Low-Dimensional Physical Sensors:* The majority of auxiliary task architectures focus on dense visual inputs (RGB frames) in 3D grid environments. End-to-end autonomous racing relies on low-dimensional, high-frequency 2D LiDAR ranges and motion histories.
-
-- *Discrete vs. Continuous Control:* Methods such as DFP rely on discrete action selection mechanisms, making them inapplicable to continuous control where smooth steering and throttle inputs are required near dynamic handling limits.
-
-- *Recurrence vs. Stacked Temporal Representations:* Prior findings indicate that auxiliary losses provide the greatest benefit to recurrent architectures (e.g., LSTMs or DRQNs) @lample2017fps. We apply auxiliary losses to a feedforward architecture and show that it outperforms recurrent implementations.
+// Evans et al. in @evans2024unifyingf1tenthautonomousracing provide a survey of recent work on the RoboRacer platform, finding that performance of end-to-end RL agents is limited compared to classical control methods. Further, Evans et al. in @evans2023comparing find that privileged state information (i.e. upcoming center-/racing-line points) improved performance in end-to-end RL agents in simulation, although the advantage only held in simulation. This data is not generally available on unseen tracks in real-world scenarios, making it challenging to generalize the learned policies. Trajectory-aided rewards, which use privileged expert information only during training, improve end-to-end learning without adding deployment-time inputs. We extend this idea by using privileged information as an auxiliary learning signal.
 
 
+// === Synthesis and Identified Research Gap
 
-= System overview
+// While existing literature validates the impact of auxiliary learning on sample efficiency, these foundational studies exhibit distinct constraints when applied to physical control domains:
 
-The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+// - *Visual vs. Low-Dimensional Physical Sensors:* The majority of auxiliary task architectures focus on dense visual inputs (RGB frames) in 3D grid environments. End-to-end autonomous racing relies on low-dimensional, high-frequency 2D LiDAR ranges and motion histories.
 
-The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
+// - *Discrete vs. Continuous Control:* Methods such as DFP rely on discrete action selection mechanisms, making them inapplicable to continuous control where smooth steering and throttle inputs are required near dynamic handling limits.
 
-To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
+// - *Recurrence vs. Stacked Temporal Representations:* Prior findings indicate that auxiliary losses provide the greatest benefit to recurrent architectures (e.g., LSTMs or DRQNs) @lample2017fps. We apply auxiliary losses to a feedforward architecture and show that it outperforms recurrent implementations.
+
+
+// = System overview
+
+// The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+
+// The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
+
+// To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
 
 // Add a subsystem diagram
 #figure(

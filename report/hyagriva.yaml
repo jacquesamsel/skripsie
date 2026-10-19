@@ -792,6 +792,121 @@ pathak2017curiositydriven:
       title: ICML'17
 
 
+chen2019learningcheating:
+  type: misc
+  title: Learning by Cheating
+  author:
+  - Chen, Dian
+  - Zhou, Brady
+  - Koltun, Vladlen
+  - Krähenbühl, Philipp
+  date: 2019
+  url: https://arxiv.org/abs/1912.12294
+  serial-number:
+    arxiv: '1912.12294'
+
+evans2023comparing:
+  type: article
+  title: Comparing deep reinforcement learning architectures for autonomous racing
+  author:
+  - Evans, Benjamin David
+  - Jordaan, Hendrik Willem
+  - Engelbrecht, Herman Arnold
+  date: 2023
+  page-range: '100496'
+  url: https://www.sciencedirect.com/science/article/pii/S266682702300049X
+  serial-number:
+    doi: https://doi.org/10.1016/j.mlwa.2023.100496
+    issn: 2666-8270
+  abstract: 'In classical autonomous racing, a perception, planning, and control pipeline is employed to navigate vehicles around a track as quickly as possible. In contrast, neural network controllers have been used to replace either part of or the entire pipeline. This paper compares three deep learning architectures for F1Tenth autonomous racing: full planning, which replaces the global and local planner, trajectory tracking, which replaces the local planner and end-to-end, which replaces the entire pipeline. The evaluation contrasts two reward signals, compares the DDPG, TD3 and SAC algorithms and investigates the generality of the learned policies to different test maps. Training the agents in simulation shows that the full planning agent has the most robust training and testing performance. The trajectory tracking agents achieve fast lap times on the training map but low completion rates on different test maps. Transferring the trained agents to a physical F1Tenth car reveals that the trajectory tracking and full planning agents transfer poorly, displaying rapid side-to-side swerving (slaloming). In contrast, the end-to-end agent, the worst performer in simulation, transfers the best to the physical vehicle and can complete the test track with a maximum speed of 5 m/s. These results show that planning methods outperform end-to-end approaches in simulation performance, but end-to-end approaches transfer better to physical robots.'
+  parent:
+    type: periodical
+    title: Machine Learning with Applications
+    volume: 14
+
+
+czechmanowski2025learningracingpoliciesreinforcement:
+  type: misc
+  title: On learning racing policies with reinforcement learning
+  author:
+  - Czechmanowski, Grzegorz
+  - Węgrzynowski, Jan
+  - Kicki, Piotr
+  - Walas, Krzysztof
+  date: 2025
+  url: https://arxiv.org/abs/2504.02420
+  serial-number:
+    arxiv: '2504.02420'
+
+
+lee2025outracing:
+  type: article
+  title: A Champion-Level Vision-Based Reinforcement Learning Agent for Competitive Racing in Gran Turismo 7
+  author:
+  - Lee, Hojoon
+  - Seno, Takuma
+  - Tai, Jun Jet
+  - Subramanian, Kaushik
+  - Kawamoto, Kenta
+  - Stone, Peter
+  - Wurman, Peter R.
+  date: 2025-06
+  page-range: 5545-5552
+  url: http://dx.doi.org/10.1109/LRA.2025.3560873
+  serial-number:
+    doi: 10.1109/lra.2025.3560873
+    issn: 2377-3774
+  parent:
+    type: periodical
+    title: IEEE Robotics and Automation Letters
+    publisher: Institute of Electrical, Electronics Engineers (IEEE)
+    issue: 6
+    volume: 10
+
+
+wurman2022outracing:
+  type: article
+  title: Outracing champion Gran Turismo drivers with deep reinforcement learning
+  author:
+    - Wurman, Peter R.
+    - Barrett, Samuel
+    - Kawamoto, Kenta
+    - MacGlashan, James
+    - Subramanian, Kaushik
+    - Walsh, Thomas J.
+    - Capobianco, Roberto
+    - Devlic, Alisa
+    - Eckert, Franziska
+    - Fuchs, Florian
+    - Gilpin, Leilani
+    - Khandelwal, Piyush
+    - Kompella, Varun
+    - Lin, HaoChih
+    - MacAlpine, Patrick
+    - Oller, Declan
+    - Seno, Takuma
+    - Sherstan, Craig
+    - Thomure, Michael D.
+    - Aghabozorgi, Houmehr
+    - Barrett, Leon
+    - Douglas, Rory
+    - Whitehead, Dion
+    - Dürr, Peter
+    - Stone, Peter
+    - Spranger, Michael
+    - Kitano, Hiroaki
+  date: 2022-02-01
+  page-range: 223-228
+  serial-number:
+    doi: 10.1038/s41586-021-04357-7
+    issn: 1476-4687
+  url: https://doi.org/10.1038/s41586-021-04357-7
+  parent:
+    type: periodical
+    title: Nature
+    volume: 602
+    issue: 7896
+
 ng1999policy:
   type: article
   title: 'Policy Invariance Under Reward Transformations: Theory and Application to Reward Shaping'
