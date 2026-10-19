@@ -385,7 +385,11 @@ Meeting these objectives answers the research question: (a) and (b) provide the 
 == Summary of work
 A custom racing simulator was built in Unity, using PhysX-based vehicle dynamics for the RoboRacer vehicle and a procedural track generator that produces a new closed track for each training episode. It was benchmarked against the F1Tenth gym and found to run only about 20% slower despite its higher-fidelity physics, and so it was chosen over the F1Tenth gym.
 
-The baseline agent (a feedforward network) that takes a stack of 50 LiDAR scans, current steering and throttle as input was trained with PPO and a dense progress-based reward. To understand what this baseline encodes, linear regression probes were fitted to the activations of its final shared layer to predict privileged quantities. Even at random initialisation, some quantities are already linearly decodable: the car's lateral and angular velocity are predicted with mean out-of-sample $R^2$ of 92% and 85% respectively. Auxiliary heads predicting forward, lateral and angular velocity, per-wheel slip, and upcoming track curvature were then added to the network and trained with a weighted auxiliary loss. Close (< 3m ahead) track curvature heads resulted in improved training speed (+15.2% AUC on average), better performance after 600 PPO iterations (+12.4% average reward in the final 50 iterations), and a collision rate per timestep 44% lower than the baseline. On the other hand, far-ahead (6-8m ahead) curvature heads resulted in worse performance than the baseline. We hypothesise that this is because far-ahead curvature is often not visible in the LiDAR scans, so the network is forced to learn an impossible task and, since the gradient norm is limited, the auxiliary loss dominates the primary loss, preventing the network from 
+The baseline agent (a feedforward network) that takes a stack of 50 LiDAR scans, current steering and throttle as input was trained with PPO and a dense progress-based reward. To understand what this baseline encodes, linear regression probes were fitted to the activations of its final shared layer to predict privileged quantities. Even at random initialisation, some quantities are already linearly decodable: the car's lateral and angular velocity are predicted with mean out-of-sample $R^2$ of 92% and 85% respectively. 
+
+Auxiliary heads predicting forward, lateral and angular velocity, per-wheel slip, and upcoming track curvature were then added to the network and trained with a weighted auxiliary loss. When auxiliary heads for close- or medium-distance-ahead curvature (< 3m and 3-6m ahead respectively) were introduced, the model encoded measurably more information on these quantities (up to +0.5 $R^2$ on average). Close track curvature heads resulted in improved training speed (+15.2% reward AUC on average), better performance after 600 PPO iterations (+12.4% average reward, +12.5% average velocity, and +12.26% average progress around the track per timestep in the final 50 iterations), and a collision rate per timestep 44% lower than the baseline. On the other hand, far-ahead (6-8m ahead) curvature heads resulted in worse performance than the baseline. We hypothesise that this is because far-ahead curvature is often not visible in the LiDAR scans, so the network is forced to learn an impossible task and, since the gradient norm is limited, the auxiliary loss dominates the primary loss, preventing useful policy updates.
+
+Some wheel slip heads resulted in moderate performance improvements (e.g. -51.9% collision rate per timestep), but minor improvements in racing speed.
 
 
 == Scope
@@ -903,9 +907,11 @@ Dosovitskiy and Koltun @dosovitskiy2016learning proposed Direct Future Predictio
 
 Mirowski et al. in @mirowski2017learningnavigatecomplexenvironments trained an recurrent LSTM A3C agent to navigate 3D mazes from RGB frames with sparse rewards and randomised goal locations. They used auxiliary heads for depth prediction and loop-closure classification#footnote("Loop closure occurs when the agent returns to a previously visited location"). They observed a 5x training speedup, and depth prediction from the last LSTM layer outperformed depth prediction at the output of the convolutional encoder block. Further, they found that an auxiliary loss for depth prediction was more effective than depth as an input.
 
-Shelhamer et al. in @shelhamer2017lossrewardselfsupervisionreinforcement showed that representation learning is the bottleneck in RL and that self-supervised auxiliary losses can speed it up. They used A3C with auxiliary tasks built from the agent's own transitions: reward binning, inverse dynamics, and VAE or BiGAN #footnote("Variational autoencoders (VAEs) and bidirectional generative adversarial networks (BiGANs) are unsupervised generative models that learn a compact latent representation of their input without labels, and are trained so that the representation retains enough information to reproduce or model the data distribution."). They found that multi-task pre-training gave about 2.7x training efficiency (AUC) over the first 10M updates.
+Shelhamer et al. in @shelhamer2017lossrewardselfsupervisionreinforcement showed that representation learning is the bottleneck in RL and that self-supervised auxiliary losses can speed it up. They used A3C with auxiliary tasks built from the agent's own transitions: reward binning, inverse dynamics, and VAE or BiGAN #footnote("Variational autoencoders (VAEs) and bidirectional generative adversarial networks (BiGANs) are unsupervised generative models that learn a compact latent representation of their input without labels, and are trained so that the representation retains enough information to reproduce or model the data distribution."). They found that multi-task pre-training gave about 2.7x training efficiency (AUC) over the first 10M updates vs the baseline.
 
-Much of the previous work made use of recurrent neural networks to handle observations that are not Markov, but we implement a memoryless policy with stacked LiDAR frames as input.
+
+
+The previous work on auxiliary learning in RL has found it to be effective in improving sample efficiency and performance, especially in partially observable environments such as Doom in @lample2017fps @dosovitskiy2016learning and with recurrent neural networks @lample2017fps @mirowski2017learningnavigatecomplexenvironments. However, most of the work has focused on visual inputs and discrete action spaces. We apply auxiliary learning to a continuous control problem of autonomous racing from LiDAR using a memoryless policy.
 
 #todo("Should I cite regular RL papers in F1Tenth that are not auxiliary learning? Feels useless...")
 
@@ -1708,7 +1714,7 @@ additionally soft-clamped to roughly $[-5, 5]$ (`tanh_loc=True` in TorchRL's
 The standard deviation is made positive with a softplus, with a small floor:
 $sigma = op("softplus")(x) + 10^(-3).$
 
-*Initialisation.* The policy head's linear layer uses a weight initialisation with
+The policy head's linear layer uses a weight initialisation with
 gain $0.01$ and zero bias, so every output is close to $0$ at the start. Hence
 $mu approx 0$, and both actions are centred near the middle of their range
 ($tanh(0) = 0$).
@@ -1758,38 +1764,41 @@ Because the auxiliary targets are heavy-tailed, we use the Huber loss to reduce 
 == Training
 The agent is trained using the PPO algorhtm (@sec_ppo) using Generalised Advantage Estimation. The total loss minimised is
 $ cal(L) = cal(L)_"PPO" + c_v cal(L)_V - c_e H[pi_theta] + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)), $
-where $cal(L)_V$ is the value loss, $H$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs <epochs> epochs of minibatch updates.
+where $cal(L)_V$ is the value loss, $H$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs <epochs> 4 epochs of minibatch updates with a learning rate of $1 times 10^(-4)$.
 
+Once the car collides with a wall, the episode is terminated and the agent is reset to a random position along the centerline with a heading offset sampled from $U(-20 degree, 20 degree)$ with a newly generated track every 3 resets. The track direction is also randomised to prevent the agent from forming a bias towards a particular direction. Every 45s of sim time, the episode is truncated and the agent is again reset. Because the tracks have a radius of roughly 6m, and the car travels at around 3m/s, the agent is afforded enough time to complete approximately 4 laps before the episode is truncated. In all examples, we train the agent fo 600 timesteps, where it experiences $(256 "control steps") / (25 "Hz") dot 48 "agents" = 8.2 "mins"$ of driving time.
 == Metrics
-=== Reward function
-The agent receives a dense reward at each timestep that encourages fast,
-collision-free progress along the track:
+=== Progress
+Let $L$ be the total length of the track centerline, and let $xi_t in [0, L)$ be the agent's _position along the track_ at time $t$: the arc length, in metres, from the start of the centerline spline to the point on the spline closest to the agent. The _progress per step_ is the distance travelled along the centerline between consecutive timesteps, i.e. the change in this position, $xi_t - xi_(t-1)$.
 
-$ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
-
-Here, $xi_t in [0, L)$ is the agent's *progress* at time $t$: the arc length
-along the track centerline, in meters, of the centerline point closest to the
-agent's position. $L$ is the total length of the centerline.
-
-The first term rewards forward progress. Because the track is a loop, $xi$
-resets from $L$ to $0$ at the finish line, which would make the raw difference
-$xi_t - xi_(t-1)$ jump to $-L$. The wrap function maps the difference
-to the equivalent displacement in $[-L/2, L/2)$:
+Because the track is a closed loop, $xi$ wraps from $L$ to $0$ at the finish line, which would cause the raw difference $xi_t - xi_(t-1)$ to jump to $-L$. We therefore define the progress per step as $"wrap"(xi_t - xi_(t-1))$, where
 
 $ "wrap"(Delta) = ((Delta + L/2) mod L) - L/2 $
 
-so crossing the finish line gives a small positive reward rather than a large
-negative spike. Moving backward along the track gives a negative reward.
-
-The second term penalizes collisions. The indicator $c_t$ equals 1 if the
-agent collides with an obstacle at time $t$ and 0 otherwise.
-
-The weights $w_p$ (reward per meter of progress) and $w_c$ (penalty per collision)
-balance speed against safety, so must be chosen based on the risk tolerance of the application. We use $w_p = 1.0$ and $w_c = 1.0$. It is important to note that, since the agent is terminated on collision, there already exists a strong implicit penalty for collisions, so $w_c$ can be set relatively low.
+maps the difference back into the interval $[-L/2, L/2)$. Crossing the finish line thus yields a continuous positive progress value rather than a large negative spike, and moving backward along the track yields negative progress.
 
 === Crash rates
-The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the maximum episode length.
+The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the maximum episode length. The _crash rate per timestep_ is the fraction of timesteps in which a collision occurs.
 
+=== Reward function
+The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the track:
+
+$ r_t = w_p dot "wrap"(xi_t - xi_(t-1)) - w_c dot c_t $
+
+The first term rewards forward progress, using the progress per step defined above. The second term penalizes collisions: the indicator variable $c_t$ equals 1 if a collision occurs with an obstacle at time $t$, and 0 otherwise.
+
+The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) balance speed against safety based on the risk tolerance of the application. We set $w_p = 1.0$ and $w_c = 1.0$. Because an episode terminates immediately upon collision, there is already a strong implicit penalty for crashing, allowing $w_c$ to remain relatively low.
+
+=== Area Under the Curve (AUC)
+The _Area Under the Curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., episodic return or progress per step) over the total training time or timesteps $T$:
+
+$ "AUC" = integral_0^T y(t) dif t $
+
+In practice, evaluation metrics are recorded at discrete interval checkpoints $t_0, t_1, ..., t_N$, and the AUC is computed using the trapezoidal rule:
+
+$ "AUC" approx sum_(i=1)^N frac(y(t_(i-1)) + y(t_i), 2) (t_i - t_(i-1)) $
+
+A higher AUC indicates faster learning and superior performance throughout the entire training process rather than merely achieving high final performance.
 
 == Trainer Performance Tuning
 Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
