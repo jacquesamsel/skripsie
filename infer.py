@@ -10,7 +10,8 @@ from environment import RoboRacerEnv, RoboRacerParallelEnvs
 from model import advance_recurrent_state, initial_recurrent_state, load_model, make_model, step_operator
 from visualize import LidarVisualiser, OccupancyGridVisualiser, RewardVisualiser
 from model import ActorValueAuxOperator
-
+import seaborn as sns
+from matplotlib import pyplot as plt
 
 def do_rollout(
         env: RoboRacerEnv | RoboRacerParallelEnvs,
@@ -54,12 +55,23 @@ if __name__ == "__main__":
         #else "linux_build/linux_build.x86_64",
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
         no_graphics=False,
-        time_scale=1.0,
-        num_areas=2,
-        seed=45,
+        time_scale=20.0,
+        num_areas=1,
+        seed=45
     )
+    tensordict = env.reset()
+    frames = []
     try:
-        rollout = do_rollout(env, model, num_steps=4086)
+        for i in tqdm.tqdm(range(512)):
+            tensordict["action", "steering"] = torch.zeros(env.action_spec["action", "steering"].shape)
+            tensordict["action", "throttle"] = torch.ones(env.action_spec["action", "throttle"].shape)
+            env.step(tensordict)
+            frames.append(tensordict)
+            tensordict = env.step_mdp(tensordict)
+        rollout = torch.stack(frames)
+        print("Velocity forward mean:", rollout["agents", "velocity_forward"].mean())
+        sns.lineplot(rollout["agents", "velocity_forward"].numpy().reshape(-1))
+        plt.show()
     except KeyboardInterrupt:
         pass
     finally:

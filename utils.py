@@ -14,17 +14,25 @@ CURVATURE_LOOKAHEAD_KEYS = [
 AUX_HEAD_KEYS = [
     "velocity_forward",
     "velocity_lateral",
+    "angular_velocity_y",
     *CURVATURE_LOOKAHEAD_KEYS,
     "wheel_slip_forward_front_left",
-    "wheel_slip_lateral_front_left",
-    "wheel_slip_forward_back_left",
-    "wheel_slip_lateral_back_left",
     "wheel_slip_forward_front_right",
+    "wheel_slip_lateral_front_left",
     "wheel_slip_lateral_front_right",
+    "wheel_slip_forward_back_left",
     "wheel_slip_forward_back_right",
-    "wheel_slip_lateral_back_right",
-    "angular_velocity_y"
+    "wheel_slip_lateral_back_left",
+    "wheel_slip_lateral_back_right"
 ]
+
+
+def compare_aux_head_keys_sort(a: str, b: str) -> int:
+    if a in AUX_HEAD_KEYS and b in AUX_HEAD_KEYS:
+        return AUX_HEAD_KEYS.index(a) - AUX_HEAD_KEYS.index(b)
+    else:
+        raise ValueError(f"Keys {a} and {b} must both be in AUX_HEAD_KEYS")
+
 
 REWARD_TERM_KEYS: dict[str, NestedKey] = {
     "progress": ("agents", "reward_progress"),
@@ -46,6 +54,7 @@ def get_aux_head_predicted_values(td: TensorDict) -> dict[str, float]:
         key: td["aux", key]
         for key in AUX_HEAD_KEYS
     }
+
 
 def gen_aux_weights_default_zero(aux_weights_override: dict[str, float]) -> dict[str, float]:
     return {
@@ -69,15 +78,18 @@ def gen_aux_losses(td: TensorDict, scaling_factors: dict[str, tuple[float, float
     aux_losses = {
         key: smooth_l1_loss(
             predicted_values[key],
-            (true_values[key] - scaling_factors[key][0]) / scaling_factors[key][1],
+            (true_values[key] - scaling_factors[key][0]) /
+            scaling_factors[key][1],
             reduction='mean',
         ) for key in AUX_HEAD_KEYS
     }
     return aux_losses
 
+
 def get_aux_head_r2_scores(prediction: TensorDict, target: TensorDict, scaling_factors: dict[str, tuple[float, float]]):
     r2_scores = {
-        key: r2_score(prediction[key].flatten(), ((target[key] - scaling_factors[key][0]) / scaling_factors[key][1]).flatten())
+        key: r2_score(prediction[key].flatten(), ((
+            target[key] - scaling_factors[key][0]) / scaling_factors[key][1]).flatten())
         for key in AUX_HEAD_KEYS
     }
     return r2_scores

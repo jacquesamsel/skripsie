@@ -824,6 +824,36 @@ evans2023comparing:
     title: Machine Learning with Applications
     volume: 14
 
+benjamini1995controlling:
+  type: article
+  title: 'Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing'
+  author:
+  - Benjamini, Yoav
+  - Hochberg, Yosef
+  date: 1995
+  page-range: 289-300
+  url: https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1995.tb02031.x
+  serial-number:
+    doi: https://doi.org/10.1111/j.2517-6161.1995.tb02031.x
+  abstract: SUMMARY The common approach to the multiplicity problem calls for controlling the familywise error rate (FWER). This approach, though, has faults, and we point out a few. A different approach to problems of multiple significance testing is presented. It calls for controlling the expected proportion of falsely rejected hypotheses — the false discovery rate. This error rate is equivalent to the FWER when all hypotheses are true but is smaller otherwise. Therefore, in problems where the control of the false discovery rate rather than that of the FWER is desired, there is potential for a gain in power. A simple sequential Bonferronitype procedure is proved to control the false discovery rate for independent test statistics, and a simulation study shows that the gain in power is substantial. The use of the new procedure and the appropriateness of the criterion are illustrated with examples.
+  parent:
+    type: periodical
+    title: 'Journal of the Royal Statistical Society: Series B (Methodological)'
+    issue: 1
+    volume: 57
+
+
+kingma2017adammethodstochasticoptimization:
+  type: misc
+  title: 'Adam: A Method for Stochastic Optimization'
+  author:
+  - Kingma, Diederik P.
+  - Ba, Jimmy
+  date: 2017
+  url: https://arxiv.org/abs/1412.6980
+  serial-number:
+    arxiv: '1412.6980'
+
 
 czechmanowski2025learningracingpoliciesreinforcement:
   type: misc

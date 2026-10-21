@@ -16,6 +16,7 @@ def curvature_keys(lo, hi):
 HYPERPARAMETER_GROUPS = {
     "velocity_forward": ["velocity_forward"],
     "velocity_lateral": ["velocity_lateral"],
+    "angular_velocity_y": ["angular_velocity_y"],
     "curvature_close": curvature_keys(0.0, 3.0),
     "curvature_medium": curvature_keys(3.0, 6.0),
     "curvature_far": curvature_keys(6.0, 8.0),
@@ -23,7 +24,6 @@ HYPERPARAMETER_GROUPS = {
     "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
     "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
     "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
-    "angular_velocity_y": ["angular_velocity_y"],
     "all": AUX_HEAD_KEYS
 }
 

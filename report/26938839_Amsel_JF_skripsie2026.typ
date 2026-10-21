@@ -56,7 +56,7 @@
 // --- Paragraphs: justified, \onehalfspacing, \parindent, \parskip=0
 // The title page itself stays centred and unindented, so justification
 // and the paragraph indent are switched on where the front matter starts.
-#set par(leading: 1.05em, spacing: 1.05em)
+#set par(leading: 1.0em, spacing: 1.05em)
 
 // --- Page: \usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
 // with the fancyhdr header (centred running mark + rule) and the
@@ -226,7 +226,7 @@
   #v(1cm)
 
   #block(width: 400pt)[
-    Report submitted in partial fulfilment of the requirements of the module
+    Report submitted in partial fulfillment of the requirements of the module
     Project (E) 448 for the degree Baccalaureus in Engineering in the Department of Electrical
     and Electronic Engineering at the University of Stellenbosch
   ]
@@ -324,10 +324,16 @@
   ("RL", "Reinforcement Learning"),
   ("MDP", "Markov Decision Process"),
   ("POMDP", "Partially Observable Markov Decision Process"),
-  ("PPO", "Proximal Policy Optimization"),
+  ("PPO", "Proximal Policy Optimisation"),
   ("MSE", "Mean Squared Error"),
   ("RMSE", "Root Mean Squared Error"),
   ("MAE", "Mean Absolute Error"),
+  ("H2H", "Head-to-head"),
+  ("GAE", "Generalised Advantage Estimation"),
+  ("AUC", "Area Under the Curve"),
+  ("IMU", "Inertial Measurement Unit"),
+  ("FOV", "Field of View"),
+  ("C.I", "Confidence Interval"),
 )
 
 #table(
@@ -386,22 +392,22 @@ Meeting these objectives answers the research question: (a) and (b) provide the 
 
 To answer the research question, the project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation.
 
-First, a custom 3D racing sumulator was built in Unity. It uses PhysX-based vehicle dynamics from the RoboRacer platform and features a procedural track generator. It was benchmarked against the 2D F1Tenth gym and, despite offering high-fidelity physics (including weight transfer and non-linear tyre slip), it ran only 20% slower, justifying its use for training.
+First, a custom 3D racing simulator was built in Unity. It uses PhysX-based vehicle dynamics from the RoboRacer platform and features a procedural track generator. It was benchmarked against the 2D F1Tenth gym and, despite offering high-fidelity physics (including weight transfer and non-linear tyre slip), it ran only 19% slower, justifying its use for training.
 
-Second, a baseline end-to-end RL agent was trained using Proximal Policy Optimisation (PPO) and a dense progress-based reward. The agent's memoryless feedforward policy drove using only a stack 50 LiDAR scans (the previous 2s) and the current throttle and steering angle. To understand what representations this baseline naturally encoded, linear regression probes were fitted to the activations of its final shared layer. Even at random initialisation, the network natively captured certain targets: lateral and angular velocities were linearly decodable with mean out-of-sample $R^2$ scores of 92% and 85% respectively.
+Second, a baseline end-to-end RL agent was trained using Proximal Policy Optimisation (PPO) and a dense progress-based reward. The agent's memoryless feedforward policy drove using only a stack of 50 LiDAR scans (the previous 2s) and the current throttle and steering angle. To understand what representations this baseline naturally encoded, linear regression probes were fitted to the activations of its final shared layer. Even at random initialisation, the network natively captured certain targets: lateral and angular velocities were linearly decodable with mean out-of-sample $R^2$ scores of 92% and 85% respectively.
 
 Finally, auxiliary heads were added to the network to predict privileged state information (forward, lateral, and angular velocity; per-wheel slip; and upcoming track curvature) during training. The models were trained with a weighted auxiliary loss, yielding these primary findings:
-  - Predicting close track curvature (< 3m ahead) forced the network to encode measurably more spatial information (an absolute increase of between +51% to +58% in $R^2$ scores for the close track curvature probes, and +28% and +10% for the 3.5m- and 4.0m-ahead probes which are outside of the auxiliary supervision range). The agent also drove measurably faster (+12.5%) and had fewer collisions per metre of progress (-37.67%) than the baseline.
+- Predicting close track curvature ($<= 3m$ ahead) forced the network to encode measurably more spatial information (an absolute increase of between +51 to +58 percentage points in $R^2$ scores for the close track curvature probes, and +28 and +10 for the 3.5m- and 4.0m-ahead probes which are outside of the auxiliary supervision range). The agent also drove measurably faster (+12.5%) and had fewer collisions per metre of progress (-37.67%) than the baseline.
 - Predicting far-ahead track curvature (6m to 8m ahead) was not learned well by the model, and resulted in degraded performance (-24.6% average velocity) and an elevated crash rate per metre progress (up to +265%).
-- Predicting the forward slip of either the front or rear wheels decreased the agent's crash rate per metre of progress for both back and front wheels (-42.6% and -48.5% respectively), but only forward wheel slip prediction improved the agent's velocity (+7.0%), though both only when the auxiliary loss had a low weight (0.1)
+- Predicting the forward slip of either the front or rear wheels decreased the agent's crash rate per metre of progress for both back and front wheels (-42.6% and - 48.5% respectively), but only forward wheel slip prediction improved the agent's velocity (+7.0%), though both only when the auxiliary loss had a low weight (0.1)
 
 
 == Scope
-This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its previous action only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Representations are analysed with linear probes only, so non-linearly encoded information is not measured. Only single-agent racing is studied, so opponent information is not considered.
+This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Representations are analysed with linear probes only, so non-linearly encoded information is not measured. Only single-agent racing is studied, so opponent information is not considered.
 
 == Roadmap
 
-*Chapter 2* reviews the background and related literature: Partially Observable Markov Decision Processes (POMDPs), value functions, policy gradient methods, auxiliary losses and rewards, loss weighting, and linear probing of representations, and closes with related work on auxiliary tasks in RL.
+*Chapter 2* reviews the background and related literature: Partially Observable Markov Decision Processes (POMDPs), value functions, policy gradient methods, auxiliary losses and rewards, loss weighting, and linear probing of representations.
 
 *Chapter 3* describes the system: the Unity simulator and its comparison with the F1Tenth gym, the vehicle and tyre model, procedural track generation, performance tuning of the trainer, and the reward function and evaluation metrics, as well as the auxiliary targets and the network architecture.
 
@@ -412,9 +418,9 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 = Background and Related Literature
 
 To evaluate whether privileged-information auxiliary losses can improve an end-to-end racing agent, this chapter establishes the theoretical foundation for how the agent learns and how we measure its internal representations.
-We first formulate the control problem as a Partially Observable Markov Decision Process (POMDP) in @sec:pomdp, as the agent drives using only local LiDAR data. @sec:rl and @sec:policy_gradient then introduce Reinforcement Learning (RL) and Proximal Policy Optimization (PPO), the policy gradient algorithm used to train the baseline driving behaviour.
+We first formulate the control problem as a Partially Observable Markov Decision Process (POMDP) in @sec:pomdp, as the agent drives using only local LiDAR data. @sec:rl and @sec:policy_gradient then introduce Reinforcement Learning (RL) and Proximal Policy Optimisation (PPO), the policy gradient algorithm used to train the baseline driving behaviour.
 @sec:auxiliary_learning introduces the core intervention to improve the agent's performance: auxiliary learning. @sec:loss_weighting and @sec:huber_loss cover loss weighting and the Huber loss, which are necessary to keep this multi-objective training stable.
-To determine whether these auxiliary tasks actually change what the network encodes, @sec:linear_probing introduces linear probing as a method to analyze intermediate neural representations.
+To determine whether these auxiliary tasks actually change what the network encodes, @sec:linear_probing introduces linear probing as a method to analyse intermediate neural representations.
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
 Many control and robotics problems require an agent to make a sequence of
@@ -535,15 +541,10 @@ equation
 $
   Q^*(s, a) = EE[r_t + gamma max_(a' in cal(A)) Q^*(s_(t+1), a') | s_t = s, a_t = a],
 $
-and act greedily with respect to it, $pi(s) = argmax_(a in cal(A)) Q^*(s, a)$.
-In a fully observable MDP this greedy policy is optimal, but the agent is
-restricted to deterministic policies (which are not always optimal in partially observed problems), and the maximisation over $cal(A)$ can be
-intractable for continuous actions @lillicrap2015continuous. In a POMDP, the
-observation is not necessairily Markov, so $Q(o, a)$ does not satisfy a Bellman equation,
-and a state-based $Q(s, a)$ cannot define a deployable policy
-as the agent does not observe $s$. _Policy-based_ methods, on the other hand,
+and act greedily with respect to it: $pi(s) = argmax_(a in cal(A)) Q^*(s, a)$.
+_Policy-based_ methods, on the other hand,
 learn a parameterised policy $pi_theta$ directly by ascending the gradient of
-$J(pi_theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
+$J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
 $arg max$ over actions. They can also represent stochastic policies, which may be
 necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
 combine both: a learned value function (the critic) is used to reduce the variance
@@ -634,28 +635,28 @@ $
 
 Although REINFORCE is simple to implement, it has several drawbacks. First, it has high variance in its gradient estimates, which can lead to slow convergence and instability during training. Second, it does not make use of a value function to estimate the expected return, which can further increase variance. Finally, it is an on-policy algorithm, meaning that it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
 
-==== Proximal Policy Optimization (PPO) <sec_ppo>
+=== Proximal Policy Optimisation (PPO) <sec_ppo>
 PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
 
-Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalized Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
+Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
 In PPO, the clipped surrogate objective is given by
 $
-  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(r_t (theta) dot hat(A)_t, "clip"(r_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
+  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(r_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
 $
 
-where $r_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
+where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
 
-== The Limits of Standard End-to-End RL
+=== The Limits of Standard End-to-End RL
 
 Reinforcement learning is a powerful framework for training agents to perform complex tasks. Various previous work has shown that end-to-end RL can learn to race a car from raw sensor inputs in simulation @wurman2022outracing @lee2025outracing, as well as real-world driving @czechmanowski2025learningracingpoliciesreinforcement.
 
-However, it has limitations, especially in complex environments. Standard end-to-end RL methods can struggle with reward attribution, and need for large amounts of compute and data. In the real world, there are costs associated with collecting data, and compute resources are not limitless.
+However, it has limitations, especially in complex environments. Standard end-to-end RL methods can struggle with credit assignment, and need for large amounts of compute and data. In the real world, there are costs associated with collecting data, and compute resources are not limitless.
 
 == Auxiliary Learning in Policy-Based Methods <sec:auxiliary_learning>
 
-Auxiliary learning is a complementary method to standard RL. By modifying the objective, models are able to achieve better performance and training speed, therefore requiring less compute and data. For example, @lample2017fps found improved performance in VizDoom after adding auxiliary tasks, and @mirowski2017learningnavigatecomplexenvironments observed improvements in training time after implementing depth prediction in maze solving tasks. In fact, @mirowski2017learningnavigatecomplexenvironments observed better performance using this priviliged information for auxiliary training compared to as a direct input.
+Auxiliary learning is a complementary method to standard RL. By modifying the objective, models are able to achieve better performance and training speed, therefore requiring less compute and data. For example, @lample2017fps found improved performance in VizDoom after adding auxiliary tasks, and @mirowski2017learningnavigatecomplexenvironments observed improvements in training time after implementing depth prediction in maze solving tasks. In fact, @mirowski2017learningnavigatecomplexenvironments observed better performance using this privileged information for auxiliary training compared to as a direct input.
 
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximises the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$ in the policy-based approach). _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unline general multi-task learning, perfromance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
+In RL, the _primary task_ is to update a policy $pi_theta$ to maximise the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$ in the policy-based approach). _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unlike general multi-task learning, performance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
 formulations: auxiliary *losses*, which leave the RL objective unchanged and
 shape only the shared representation, and auxiliary rewards (or shaped rewards), which modify the
 objective itself and can therefore change the optimal policy.
@@ -691,15 +692,15 @@ $
 
 Only the shared parameters $theta_"s"$ receive gradients from both the primary
 and auxiliary losses, which is how the auxiliary tasks influence the policy:
-they shape the representation it is built on
+they shape the representation it is built on.
 
 The primary loss, such as $cal(L)_"PPO"$, is still a policy-gradient surrogate
 with a high-variance gradient estimate. Auxiliary losses, by contrast, are
 usually ordinary supervised or self-supervised objectives (for example
 predicting the next observation, or the immediate reward), so their gradients
-are exact and low-variance. This is what makes them useful when rewards are sparse or
+are lower-variance. This is what makes them useful when rewards are sparse or
 delayed. Their cost is that the auxiliary and primary gradients can conflict
-on the shared parameters, $theta_"s"$ so the weights $w^((k))$ must be chosen
+on the shared parameters, $theta_"s"$, so the weights $w^((k))$ must be chosen
 with care.
 
 === Auxiliary Rewards/Shaped Rewards
@@ -734,15 +735,19 @@ still when the auxiliary rewards are themselves sparse or delayed.
 
 == Loss weighting <sec:loss_weighting>
 
-When composing the $L_"total"$, the question naturally arises: what should be the values of the weights ${w^((1)), ..., w^((N))}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $cal(L)_"total"$), we must use another technique.
+When composing the $cal(L)_"total"$, the question naturally arises: what should be the values of the weights ${w^((1)), ..., w^((K))}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $cal(L)_"total"$), we must use another technique, such as hyperparameter tuning.
 
 === Hyperparameter tuning
 
 One may empirically estimate the optimal weights using hyperparameter tuning tools such as Optuna @akiba2019optuna, or a simple grid search. However, when it is expensive to train a model, this method of search quickly becomes impractical, since every candidate set of weights requires its own training run.
 
-Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill RL trials that perform more exploration early on, so are not ideal for such scenarios.
+Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill RL trials that perform more exploration early on, so is not ideal for such scenarios.
 
-Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
+Despite perfect loss weighting, the agent may still fail to learn the primary task if the auxiliary task losses are not well-chosen; for data that has extreme outliers, the choice of loss function is also important.
+
+//Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
+
+
 
 // === Uncertainty weighting
 // Two kinds of uncertainty can be modelled in a model's predictions @kendall2017uncertainties:
@@ -787,7 +792,7 @@ $
   )
 $
 
-In actuality, PyTorch's implementation of the Huber loss (`smooth_l1_loss`) uses a rescaled definition, $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
+In actuality, we uses PyTorch's rescaled implementation of the Huber loss: (`smooth_l1_loss`), $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
 
 
 #{
@@ -817,7 +822,7 @@ Consider the arbitrary network in @example_network_diagram. Once trained, each l
 maps an input $bold(x)$ to an intermediate representation
 $bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
 information these representations encode, and in particular whether they encode
-privileged state variables (e.g. velocity, slip, upcoming curvature) that.
+privileged state variables (e.g. velocity, slip, upcoming curvature).
 
 
 #figure(
@@ -869,7 +874,7 @@ privileged state variables (e.g. velocity, slip, upcoming curvature) that.
 
 Alain and Bengio @alain2018understandingintermediatelayersusing introduced
 _linear probes_ for this purpose. The main network's weights are frozen, and a
-separate linear classifier (the probe) is trained on the representations
+separate linear classifier (the probe) is trained in a supervised manner on the representations
 $bold(h)^((l))$ of each layer to predict the desired target. Since the
 probe cannot change the representation, its test accuracy measures how much
 class information is _linearly_ available at that layer. Anand et al.
@@ -899,7 +904,7 @@ models for spatial and temporal encodings.
 
 // === Self-Supervised Auxiliary Objectives in RL
 
-// Shelhamer et al. @shelhamer2017lossrewardselfsupervisionreinforcement investigated self-supervised auxiliary losses derived directly from environmental transitions. By combining policy optimization with objectives such as inverse dynamics, reward binning, and latent generative modeling (Variational Autoencoders and Bidirection Generative Adversarial Networks), they achieved a 2.7-fold increase in learning efficiency (AUC) during early training iterations. This highlighted that self-supervised signals stabilize latent feature representations prior to reward convergence.
+// Shelhamer et al. @shelhamer2017lossrewardselfsupervisionreinforcement investigated self-supervised auxiliary losses derived directly from environmental transitions. By combining policy Optimisation with objectives such as inverse dynamics, reward binning, and latent generative modelling (Variational Autoencoders and Bidirectional Generative Adversarial Networks), they achieved a 2.7-fold increase in learning efficiency (AUC) during early training iterations. This highlighted that self-supervised signals stabilize latent feature representations prior to reward convergence.
 
 // === Imitation learning
 
@@ -921,13 +926,13 @@ models for spatial and temporal encodings.
 // - *Recurrence vs. Stacked Temporal Representations:* Prior findings indicate that auxiliary losses provide the greatest benefit to recurrent architectures (e.g., LSTMs or DRQNs) @lample2017fps. We apply auxiliary losses to a feedforward architecture and show that it outperforms recurrent implementations.
 
 
-// = System overview
+= System overview
 
-// The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
 
-// The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
+The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
 
-// To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
+To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
 
 // Add a subsystem diagram
 #figure(
@@ -1017,9 +1022,9 @@ models for spatial and temporal encodings.
 
 == Simulator
 
-Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among methods suveyed in @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
+Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among methods surveyed in @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
 
-The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine, is a 3D simulator that models the vehicle and its environment using PhysX, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and allows for higher-fidelity simulations, including weight transfer dynamics, and suspsension deformation.
+The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine, is a 3D simulator that models the vehicle and its environment using PhysX, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and allows for higher-fidelity simulations, including weight transfer dynamics, and suspension deformation.
 
 #figure(
   stb-table(
@@ -1028,8 +1033,8 @@ The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engin
     header: ([], [*Unity (PhysX)*], [*F1Tenth gym*]),
     align: (left, left, left),
     [Integrator],
-    [Runge-Kutta 4th order],
     [Euler],
+    [Runge-Kutta 4th order],
     [Car model],
     [3D, 4-wheel rigid body with suspension, weight transfer, non-linear wheel slip dynamics],
     [2-wheel bicycle model with linearised slip dynamics],
@@ -1050,13 +1055,13 @@ However, the AutoDrive simulator by default does not provide various features th
 In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. Both environments were configured for 100Hz physics and 25Hz control with one vehicle per environment. Then, a rollout of 10 000 control timesteps (400 sim-seconds) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode.
 
 
-Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed in this environment, as shown in @sim_benchmarks. The Unity simulator is slower than the F1Tenth gym by $20%$. The memory usage of the Unity simulator is also higher than that of the F1Tenth gym, but this is a marginal diffence of 115 MB on average.
+Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed, using a comparable amount of CPU resources in this environment, as shown in @sim_benchmarks, with the Unity simulator being only 19% slower compared to the F1Tenth Gym in terms of steps per second.
 
-Due to the relatively minor performance difference, and Unity's more realistic 3D physics #todo("Do I need to cite here/prove it? I feel as though it's obvious."), the Unity simulator was chosen for training the RL agent.
+Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent.
 
 #figure(
   image("../results/sim_benchmarks.pdf"),
-  caption: "Benchmark of Unity simulator vs F1Tenth gym. Note that memory y-axis does not start at 0 to aid interpretability.",
+  caption: "Benchmark of Unity simulator vs F1Tenth gym. In the CPU chart, a value greater than 100 indicates that the simulator used more than one CPU core. Includes child processes spawned by the simulator (e.g. in Unity's case)",
 ) <sim_benchmarks>
 
 === Unity Vehicle Model
@@ -1064,7 +1069,7 @@ The vehicle is modelled as a `Rigidbody` with four wheels, each simulated by a
 `WheelCollider`. The two components divide the work: the `Rigidbody` represents the
 car as a single moving mass, and the `WheelCollider`s generate the forces that move it. Near the front of the car, a `RayPerceptionSensor` from the ML-Agents toolkit simulates a 2D LiDAR sensor with 101 rays, which is used as the agent's observation.
 
-==== The Rigidbody
+==== The RigidBody
 A `Rigidbody` is the Unity component that gives an object physical behaviour. It
 stores the car's mass, centre of mass and moment of inertia. At each fixed timestep
 the physics engine (PhysX) integrates the forces and torques acting on it to update
@@ -1076,7 +1081,7 @@ by the wheels. `BoxColliders` were used to model the car's body and collisions b
 #figure(
   image("figures/unity_isometric_colliders.png", width: 300pt),
   caption: [Custom Unity car's colliders: the body colliders handle collisions, and
-    the four `WheelCollider`s handle suspension and tyre forces.],
+    the four `WheelCollider`s handle suspension and tyre forces. The red lines show the raycasts by the `RayPerceptionSensor` that simulates the LiDAR.],
 ) <unity_colliders>
 
 ==== The WheelCollider <sec_wheelcollider>
@@ -1181,7 +1186,7 @@ therefore gives less force, not more, which is a regime a racing agent must
 learn to avoid. The curve is defined separately for the forward direction
 (accelerating and braking) and the sideways direction (cornering). Note that in real life, at low slip values, the rubber stretches instead of actually sliding on the road. This is modelled by the rising part of the curve at low slip values.
 
-@wheel_friction_curve shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve.
+@wheel_friction_curve shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve. The values used for our simulations are detailed in @wheel_collider_properties and are the default values configured in the AutoDrive simulator, ported to our custom Unity simulator.
 
 #[
   #let asymptote-slip = 0.25
@@ -1280,7 +1285,7 @@ learn to avoid. The curve is defined separately for the forward direction
         mark: none,
       ),
     ),
-    caption: [Approximated WheelCollider friction curves for the RoboRacer @unitydocsWheelFrictionCurve #footnote([The parameter values rendered in this chart are the default values configured in the AutoDrive simulator for the forward direction. See @wheel_collider_properties for the values.])],
+    caption: [Approximated WheelCollider friction curves @unitydocsWheelFrictionCurve for the RoboRacer compared to the Pacejka "magic formula" @pacejka1992magicformula],
   )<wheel_friction_curve>
 ]
 
@@ -1290,7 +1295,7 @@ The vehicle is equipped with a simulated 2D LiDAR sensor, which is implemented u
 
 === Track generation
 
-During training, a variety of tracks is used to prevent the policy from overfitting to any single layout. Training on diverse environments has been shown to improve generalisation to unseen environments @cobbe2019quantifying, and is closely related to domain randomisation, where simulator parameters are randomised to produce more robust policies @tobin2017domain @peng2018sim
+During training, a variety of tracks is used to prevent the policy from overfitting to any single layout. Training on diverse environments has been shown to improve generalisation to unseen environments @cobbe2019quantifying, and is closely related to domain randomisation, where simulator parameters are randomised to produce more robust policies @tobin2017domain @peng2018sim.
 
 ==== Centerline generation
 
@@ -1313,7 +1318,7 @@ of segments. For $i = 0, 1, ..., N-1$, with progress $t_i = (i+1) \/ N$:
   circle at $hat(p)_i = R dot (cos 2 pi t_i, sin 2 pi t_i)$.
 + We take a random turn (@fig:walk-step a), drawing $epsilon_i ~ cal(U)(-Delta_max, Delta_max)$
   and adding it to the offset.
-+ As depicted in @fig:walk-step b, we shrink the offset the offset towards zero by a factor
++ As depicted in @fig:walk-step b, we shrink the offset towards zero by a factor
   $1 - kappa_i$, where
   $ kappa_i = kappa_0 + (1 - kappa_0) t_i^s. $
   The restoring strength $kappa_i$ starts at $kappa_0$ and ramps up to exactly 1 on
@@ -1485,13 +1490,13 @@ The gap is (usually) small, so this correction barely distorts the track.
 )
 
 
-This method is not immune to generating self-intersecting (degenerate) tracks, but the probability is low enough, that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.14%, 0.19%)$ assuming a binomial distribution.
+This method is not immune to generating self-intersecting (degenerate) tracks, but the probability is low enough that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.037%, 0.065%)$ assuming a binomial distribution.
 
 ==== Track walls
 
-Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti in @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may producce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
+Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti in @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may produce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
 
-Empirically, we find that at 135 of the 100 000 tracks produce these islands (C.I. $(1.28%, 1.42%)$), so we simply discard any tracks with islands and re-generate them.
+Empirically, we find that 1350 of the 100 000 tracks produce these islands (C.I. $(1.28%, 1.42%)$), so we simply discard any tracks with islands and re-generate them.
 
 
 
@@ -1506,10 +1511,10 @@ At every control step (25 Hz, i.e. 40 ms, or four 100 Hz physics steps), each of
 
 - a 101-ray LiDAR scan, reduced to its normalised distance channel (the hit/miss and object-type flags are discarded by the environment wrapper, because the policy only uses distance), and
 - its current steering angle and throttle.
-- privledged quantities including
+- privileged quantities including
   - the agent's forward and lateral velocity ($v_f$ and $v_l$) in m/s
   - the agent's yaw rate $omega_y$ in rad/s
-  - the track curvature #footnote("The reciprocal of the radius of curvature is also known as the curvature. It is used to prevent large values on straight sections of the track") at 17 equally spaced points between 0.5m and 8m ahead of the agent along the centerline, in 1/m
+  - the track curvature #footnote("The reciprocal of the radius of curvature is also known as the curvature. It is used to prevent large values on straight sections of the track") at 16 equally spaced points between 0.5m and 8m ahead of the agent along the centerline, in 1/m
   - the forward and lateral per-wheel slip values for each wheel, $kappa_x$ and $tan(alpha_x)$ with $x in {"FR", "FL", "BR", "BL"}$, which are unitless
 
 The trainer stacks the 50 most recent scans for each agent (2 s of history at 25 Hz) and passes the stack, together with the steering and throttle, to the policy. The policy returns a steering and throttle command for each agent, which the simulator applies for the next control step. Privileged quantities (velocities, per-wheel slip, upcoming curvature) are sent alongside the observation, and are used only as auxiliary targets.
@@ -1519,192 +1524,205 @@ Because there are `num_inst` Unity instances, the trainer waits for all of them 
 
 == The Agent
 
-The agent is a feedforward actor-critic network implemented in PyTorch, with the TorchRL library handling the action distribution and the PPO loss. It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ (@trunk_network_architecture) followed by three independent heads (@head_network_architecture), each of which takes as input the same 64-dimensional feature vector output from the trunk:
+The agent is a feedforward actor-critic network implemented in PyTorch, with the TorchRL library handling the action distribution and the PPO loss. It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
 
 - the _policy head_ outputs the parameters of the action distribution,
 - the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
 - the _auxiliary head_ outputs predictions of the privileged targets
 
-The trunk (@trunk_network_architecture) has a convolutional part followed by a dense part. The input is a tensor of shape $50 times 101$ (time steps by rays). Four 1D convolutions with ReLU activations slide along the ray axis and treat the time steps as input channels, so the first layer mixes the whole history at each angular position. They have 32, 16, and 16 output channels respectively; all have the same kernel size of 8 (roughly $21 degree$ of FOV). The output is flattened and concatenated with the current steering angle and throttle, and passed through fully connected layers of 128, 72 and 64 units with ReLU activations, followed by layer normalisation of the 64-dimensional output to prevent gradient explosion when the car is under heavy acceleration, pointing the LiDAR above the track walls and resulting in large ray lengths as input.
+The trunk (@network_architecture) has a convolutional part followed by a dense part. The input is a tensor of shape $50 times 101$ (time steps by rays). Three 1D convolutions with ReLU activations slide along the ray axis and treat the time steps as input channels, so the first layer mixes the whole history at each angular position. They have 32, 16, and 16 output channels respectively; all have the same kernel size of 8 (roughly $21 degree$ of FOV). The output is flattened and concatenated with the current steering angle and throttle, and passed through fully connected layers of 128, 72 and 64 units with ReLU activations, followed by layer normalisation of the 64-dimensional output to prevent gradient explosion when the car is under heavy acceleration, pointing the LiDAR above the track walls and resulting in large normalised ray lengths as input ($approx 1$).
 
-#[
+#{
+  // Box heights grow with layer size, with a minimum so the rotated labels fit.
+  let conv-height = ch => 1.2cm + ch * 0.05cm
+  let fc-height = size => 1.2cm + size * 0.02cm
 
-  #let get-conv1d-height = channels => {
-    return channels / 10
-  }
-  #let get-fc-height = size => {
-    return size / 30
-  }
-  #let main-net = draw-network(
-    (
-      (
-        type: "custom",
-        image: rotate(90deg)[
-          #image("figures/lidar_input.png", width: 4cm, height: 4cm)
-          #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101")]
-        ],
-        channels: ("", 50),
-        width: 0,
-      ),
-      (
-        type: "conv",
-        widths: (0.5,),
-        height: get-conv1d-height(50),
-        depth: 4,
-        show-relu: true,
-        channels: ("", 50),
-        legend: "Conv1d",
-        name: "conv1d",
-      ),
-      (
-        type: "conv",
-        widths: (0.5,),
-        height: get-conv1d-height(32),
-        depth: 4,
-        show-relu: true,
-        channels: ("", 32),
-        name: "conv1d",
-        offset: 0.5,
-      ),
-      (
-        type: "conv",
-        widths: (0.5,),
-        height: get-conv1d-height(16),
-        depth: 4,
-        show-relu: true,
-        channels: ("", 16),
-        name: "conv1d",
-        offset: 0.5,
-      ),
-      (
-        type: "conv",
-        widths: (0.5,),
-        height: get-conv1d-height(16),
-        depth: 4,
-        show-relu: true,
-        channels: ("", 16),
-        name: "conv1d",
-        offset: 0.5,
-      ),
-      (
-        type: "custom",
-        width: 0.4,
-        height: 4,
-        depth: 0.5,
-        label: "Flatten",
-        name: "flat",
-        offset: 1.5,
-        legend: "Flatten",
-        fill: green,
-      ),
-      (type: "concat", width: 0.4, height: 4, depth: 0.5, label: "Concat", name: "cat", offset: 1, fill: teal),
-      (type: "fc", channels: (128,), offset: 0.5, name: "fc1", height: get-fc-height(128), label: "fc1"),
-      (type: "fc", channels: (72,), name: "fc2", offset: 0.5, height: get-fc-height(72), label: "fc2"),
-      (type: "fc", channels: (64,), offset: 0.5, name: "fc3", height: get-fc-height(64), label: "fc3"),
-      (
-        type: "custom",
-        channels: (64,),
-        depth: 0.5,
-        height: 3,
-        offset: 0.5,
-        name: "fc3",
-        label: "LayerNorm",
-        legend: "LayerNorm",
-        fill: red,
-      ),
+  // Generic layer box: tall, narrow, tinted fill, rotated label.
+  // The label is laid out in a block as wide as the box is tall *before*
+  // rotating, so it doesn't wrap to the box's narrow width.
+  let layer = (pos, name, label, color, height, width: 0.9cm) => node(
+    pos,
+    rotate(
+      -90deg,
+      reflow: true,
+      block(width: height, align(center, text(size: 0.7em, weight: "bold", fill: color.darken(30%), label))),
     ),
-    connections: (),
-    show-legend: true,
-    legend-title: "Layers",
-    scale: 100%,
-    stroke-thickness: 1,
-    depth-multiplier: 0.3,
+    name: name,
+    fill: color.transparentize(80%),
+    stroke: (paint: color, thickness: 1.5pt),
+    width: width,
+    height: height,
+    inset: 2pt,
+    corner-radius: 0.15cm,
   )
 
-  #figure(
-    caption: [Trunk trunk network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector.],
-    scale(80%, reflow: true, cetz.canvas(length: 1cm, {
-      import cetz.draw: *
-      content((0, 0), main-net, anchor: "north-west", name: "main")
-      let x_pos = 7.9
-      // Second input: the previous action, concatenated with the flattened
-      // conv features. Coordinates are in cm, measured from the top-left of
-      // the network image; (8.95, -1.28) is the top face of the "Concat" block.
-      content((x_pos, 0), text(size: 8.5pt, weight: "bold")[Current steering, throttle], anchor: "south", name: "act")
-      line(
-        (x_pos, -0.1),
-        (x_pos, -1.0),
-        mark: (end: "stealth", fill: rgb("#0f4d52")),
-        stroke: (paint: rgb("#0f4d52"), thickness: 1pt),
-      )
-    })),
-  ) <trunk_network_architecture>
-]
+  let conv = (pos, name, ch) => layer(
+    pos,
+    name,
+    [Conv1d · #ch \ #text(weight: "regular")[\+ ReLU]],
+    orange,
+    conv-height(ch),
+  )
 
-#figure(
-  scale(70%, reflow: true, [
-    #let get-fc-height = size => {
-      return size / 5
-    }
+  let fc = (pos, name, size) => layer(
+    pos,
+    name,
+    [Dense · #size \ #text(weight: "regular")[\+ ReLU]],
+    blue,
+    fc-height(size),
+  )
 
-    #let create-head = (name, label, color, n-outputs, show-legend: false) => {
-      return [
-        #draw-network(
-          (
-            (
-              type: "custom",
-              image: rotate(90deg)[
-                #image("figures/lidar_input.png", width: 4cm, height: 4cm)
-                #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101")]
-              ],
-              channels: ("", 50),
-              width: 0,
-            ),
-            (
-              type: "custom",
-              widths: (2,),
-              height: 3,
-              depth: 4,
-              legend: "Trunk network",
-              name: "conv1d",
-            ),
-            (
-              type: "fc",
-              width: 2,
-              height: get-fc-height(n-outputs),
-              depth: 0.5,
-              fill: green,
-              show-relu: true,
-              legend: "Head",
-              name: "conv1d",
-              channels: (n-outputs,),
-            ),
-          ),
-          connections: (),
-          show-legend: show-legend,
-          legend-title: "Layers",
-          scale: 100%,
-          stroke-thickness: 1,
-          depth-multiplier: 0.3,
+  // Horizontal (unrotated) box for the output heads.
+  // The node itself is ~zero-width so it doesn't widen the grid columns shared
+  // with the trunk; the visible box is drawn with `place` and overhangs.
+  let head = (pos, name, label, size) => node(
+    pos,
+    place(center + horizon, box(
+      width: 2.6cm + 24pt,
+      height: 0.9cm + 24pt,
+      fill: black.transparentize(90%),
+      stroke: (paint: black, thickness: 1pt),
+      radius: 0.2cm,
+      inset: 12pt,
+      {
+        place(left + top, dy: -25pt, box(width: 4cm, text(size: 1em, weight: "bold")[#label]))
+        box(
+          width: 2.6cm,
+          height: 0.9cm,
+          fill: blue.transparentize(80%),
+          stroke: (paint: blue, thickness: 1.5pt),
+          radius: 0.15cm,
+          align(center + horizon, text(size: 0.7em, weight: "bold", fill: blue.darken(30%))[Dense · #size]),
         )
-        *(#label)* #name
-      ]
-    }
-    #grid(
-      columns: (1fr, 1fr, 1fr),
-      [
-        #create-head("Policy head", "a", blue, 4)
-      ],
-      [
-        #create-head("Value head", "b", blue, 1)
-      ],
-      [
-        #create-head("Auxiliary head", "c", blue, 26, show-legend: true)
-      ],
-    )
-  ]),
-  caption: [Heads attached to the shared 64-dimensional trunk output. Each head is a single linear layer (no activation): the policy head outputs 4 values (location and scale for throttle and steering), the value head 1, and the auxiliary head 27 (one per privileged target).],
-)<head_network_architecture>
+      },
+    )),
+    name: name,
+    stroke: none,
+    width: 1pt,
+    height: 0.9cm,
+    inset: 2pt,
+  )
+
+  // Main chain, left to right; each consecutive pair gets an arrow.
+  let chain = (
+    <lidar>,
+    <c1>,
+    <c2>,
+    <c3>,
+    <c4>,
+    <flat>,
+    <cat>,
+    <fc1>,
+    <fc2>,
+    <fc3>,
+    <ln>,
+    <out>,
+  )
+
+  let other_networks = (
+    (name: "Policy head", size: 4, output: "Action distribution parameters"),
+    (name: "Value head", size: 1, output: "State-value estimate"),
+    (name: "Auxiliary head", size: 27, output: "Predictions of privileged targets"),
+  )
+
+  figure(
+    // Draw at full size with comfortable gaps, then shrink to fit the page.
+    scale(70%, reflow: true, diagram(
+      spacing: (0.8cm, 0.6cm),
+      edge-stroke: 1pt,
+
+      // Input: 50-frame LiDAR stack
+      node(
+        (0, 0),
+        [
+          #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101 rays")]
+          #place(horizon + left, dx: -10pt)[#rotate(-90deg, text(size: 0.6em, "50 frames"), reflow: true)]
+          #image("figures/lidar_input.png", width: 2cm, height: 2cm)
+        ],
+        name: <lidar>,
+      ),
+
+      // Four 1D convolutions
+      conv((1, 0), <c1>, 50),
+      conv((2, 0), <c2>, 32),
+      conv((3, 0), <c3>, 16),
+      conv((4, 0), <c4>, 16),
+
+      // Flatten + concat with the current action
+      layer((5, 0), <flat>, [Flatten], green, 3cm),
+      layer((6, 0), <cat>, [Concat], teal, 3cm),
+      node(
+        (6, -1),
+        // `place` takes the text out of layout, so the node stays small and
+        // the text overhangs instead of being squeezed into the column width.
+        place(center + horizon, box(width: 4cm, align(center, text(
+          size: 0.7em,
+          weight: "bold",
+        )[Current steering \ & throttle]))),
+        name: <steer>,
+        width: 0.9cm,
+        height: 0.8cm,
+        stroke: none,
+      ),
+
+      // Dense head
+      fc((7, 0), <fc1>, 128),
+      fc((8, 0), <fc2>, 72),
+      fc((9, 0), <fc3>, 64),
+      layer((10, 0), <ln>, [LayerNorm], red, 2.5cm),
+
+      node(
+        enclose: (<lidar>, <c1>, <c2>, <c3>, <c4>, <flat>, <cat>, <fc1>, <fc2>, <fc3>, <ln>, <out>),
+        fill: black.transparentize(90%),
+        stroke: (paint: black, thickness: 1pt),
+        corner-radius: 0.2cm,
+        [
+          #place(left + top, dy: -25pt)[#text(size: 1.25em, weight: "bold")[Trunk network]]
+        ],
+      ),
+
+      // Output
+      node((11, 0), align(center, text(size: 0.7em)[64-d \ feature]), name: <out>, stroke: none),
+
+      // Arrows along the main chain
+      ..chain.zip(chain.slice(1)).map(((a, b)) => edge(a, b, "-|>")),
+      edge(<steer>, <cat>, "-|>", stroke: rgb("#0f4d52")),
+
+      // Output heads: horizontal boxes placed side by side below <out>,
+      // each with its own arrow from <out>.
+      ..other_networks
+        .enumerate()
+        .map(((i, net)) => {
+          let x = 5 + (i - 1) * 3.5 // centred under <out> (x = 11)
+          let n = label("head-" + str(i))
+          let out_n = label("out-" + str(i))
+          (
+            head((x, 4), n, net.name, net.size),
+
+            // down from <out>, across at y = 1, then down into the head
+            // (the middle head sits at x = 11, so skip the duplicate vertex there)
+            edge(..(<out>, (11, 1), (x, 1), n).dedup(), "-|>"),
+
+            edge(n, out_n, "-|>"),
+
+            node(
+              (x, 6),
+              place(center + horizon, box(width: 4cm, align(center, text(size: 1em)[#net.output]))),
+              name: out_n,
+              stroke: none,
+              width: 1pt,
+              height: 0.9cm,
+            ),
+          )
+        })
+        .flatten(),
+    )),
+    caption: [
+      The agent's neural network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector. This shared feature vector is then passed to three independent heads: the policy head outputs the parameters of the action distribution, the value head outputs the state-value estimate, and the auxiliary head outputs predictions of privileged targets. The network is drawn at 70% scale to fit on the page.
+    ],
+  )
+} <network_architecture>
+
 
 === Action Distributions
 The policy head outputs a location $mu$ and a raw scale value $x$ for each of
@@ -1731,7 +1749,7 @@ $mu$ is almost zero, and the policy cannot recover. In early experiments this
 is exactly what happened: the car locked at full throttle and full steering in either the positive or negative direction.
 
 == Auxiliary Targets
-Each frame, the environment emits a set of privledged quantities to the trainer, which are used as auxiliary targets to improve the policy's internal representation of the environment. These targets are listed in @auxiliary_targets.
+Each frame, the environment emits a set of privileged quantities to the trainer, which are used as auxiliary targets to improve the policy's internal representation of the environment. These targets are listed in @auxiliary_targets.
 
 #figure(
   stb-table(
@@ -1766,25 +1784,30 @@ In order to ensure the targets are on a similar scale, the targets are normalise
 Because the auxiliary targets are heavy-tailed, we use the Huber loss to reduce the influence of outliers and prevent the policy from (a) overfitting to them; and (b) producing large gradients that destabilise training.
 
 == Training
-The agent is trained using the PPO algorhtm (@sec_ppo) using Generalised Advantage Estimation. The total loss minimised is
+The agent is trained using the PPO algorithm (@sec_ppo) using Generalised Advantage Estimation. The total loss minimised is
 $ cal(L) = cal(L)_"PPO" + c_v cal(L)_V - c_e H[pi_theta] + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)), $
-where $cal(L)_V$ is the value loss, $H$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs <epochs> 4 epochs of minibatch updates with a learning rate of $1 times 10^(-4)$.
+where $cal(L)_V$ is the value loss, $H[pi_theta]$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs 4 epochs of minibatch updates using the Adam optimiser @kingma2017adammethodstochasticoptimization with a static learning rate of $1 times 10^(-4)$.
 
-Once the car collides with a wall, the episode is terminated and the agent is reset to a random position along the centerline with a heading offset sampled from $U(-20 degree, 20 degree)$ with a newly generated track every 3 resets. The track direction is also randomised to prevent the agent from forming a bias towards a particular direction. Every 45s of sim time, the episode is truncated and the agent is again reset. Because the tracks have a radius of roughly 6m, and the car travels at around 3m/s, the agent is afforded enough time to complete approximately 4 laps before the episode is truncated. In all examples, we train the agent fo 600 timesteps, where it experiences $(256 "control steps") / (25 "Hz") dot 48 "agents" = 8.2 "mins"$ of driving time.
+Once the car collides with a wall, the episode is terminated and the agent is reset to a random position along the centerline with a heading offset sampled from $U(-20 degree, 20 degree)$ with a newly generated track every 3 resets. The track direction is also randomised to prevent the agent from forming a bias towards a particular direction. Every 45s of sim time, the episode is truncated and the agent is again reset. Because the tracks have a radius of roughly 6m, and the car travels at around 3m/s, the agent is afforded enough time to complete approximately 4 laps before the episode is truncated. In all examples, we train the agent for 600 iterations, where it experiences $(256 "control steps") / (25 "Hz") dot 48 "agents" = 8.2 "mins"$ of driving time.
+
 == Metrics
 === Progress
-Let $L$ be the total length of the track centerline. At any time $t$, let $d_t in [0, L)$ be the agent's current arc length from the start of the centerline to the point closest to the agent, and let $N_t$ be the total number of completed laps. We define the agent's _absolute progress_ along the track as the total continuous distance travelled from the start: 
+Let $L$ be the total length of the track centreline. At any time $t$, let $d_t in [0, L)$ be the agent's current arc length from the start of the centerline to the point closest to the agent, and let $N_t$ be the total number of completed laps. We define the agent's _absolute progress_ along the track as the total continuous distance travelled from the start:
 
 $ xi_t = d_t + N_t L $
 
 The _progress per step_ is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
 
-Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as the difference in potential, $Phi(s_t) - Phi(s_(t-1))$, it heavily incentivizes continuous forward movement along the track while theoretically preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
+Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as the difference in potential, $Phi(s_t) - Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
 
 === Crash rates
-The _crash rate per episode_ is the fraction of episodes that end in a collision, instead of reaching the maximum episode length. The _crash rate per timestep_ is the fraction of timesteps in which a collision occurs. These metrics are distinct, because an agent that crashes early in an episode will have a high crash rate per episode but a low crash rate per timestep, while an agent that crashes late in an episode will have the opposite.
+The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length.
 
-=== Reward function
+The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed. These metrics diverge because episodes terminate early upon a crash; surviving longer before a collision increases the timestep denominator, inherently lowering the per-timestep crash rate.
+
+The _collisions per metre of progress along the centerline_ is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against spatial progression rather than time, isolating driving competence from the agent's velocity.
+
+=== Reward function <sec:reward_function>
 The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the track:
 
 $ r_t = w_p dot (xi_t - xi_(t-1)) - w_c dot c_t $
@@ -1794,7 +1817,7 @@ The first term rewards forward progress, using the progress per step defined abo
 The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) balance speed against safety based on the risk tolerance of the application. We set $w_p = 1.0$ and $w_c = 1.0$. Because an episode terminates immediately upon collision, there is already a strong implicit penalty for crashing, allowing $w_c$ to remain relatively low.
 
 === Area Under the Curve (AUC)
-The _Area Under the Curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., episodic return or progress per step) over the total training time or timesteps $T$:
+The _Area Under the Curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., return or progress per step) over the total training time or timesteps $T$:
 
 $ "AUC" = integral_0^T y(t) dif t $
 
@@ -1807,13 +1830,13 @@ A higher AUC indicates faster learning and superior performance throughout the e
 == Trainer Performance Tuning
 Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
-We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (>128 concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
+We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (128 or more concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
 
 $ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
 
 We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
 
-As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `parallel_envs`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
+As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `num_inst`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
 
 By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
 
@@ -1828,7 +1851,7 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
     [`python_threads`],
     [${8, 16}$],
     [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
-    [`parallel_envs`],
+    [`num_inst`],
     [${4, 8, 10, 16}$],
     [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
   ),
@@ -1837,80 +1860,65 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
 
 = Experiments & results
 
-== Probing intermediate layers for auxiliary information
-The intuition rests on the geometry of the feature space. Each input is mapped
-to a point $bold(z)_i$ in the space of `fc3` activations, and a linear probe
-predicts $hat(bold(y))_i = bold(W) bold(z)_i + bold(b)$. Each output of the
-probe is therefore a weighted sum of the features, which is equivalent to
-projecting $bold(z)_i$ onto a single direction in the feature space. If the
-model has learnt to encode a quantity along some direction, so that moving
-along that direction corresponds to a change in the quantity, the probe can
-learn that direction and read the quantity off directly. In this case the
-information is _linearly decodable_, and the probe will predict $bold(y)_i$
-well. If instead the information is absent from the features, no direction
-exists that correlates with $bold(y)_i$, and the probe can do no better than a
-trivial baseline such as predicting the mean of $bold(y)$ (an $R^2$ near zero).
+== Baseline Model Performance
 
-Because the probe is restricted to linear projections, it cannot construct new
-features of its own. Any predictive performance must therefore come from
-structure already present in the representation, rather than from the probe
-doing the learning. This makes probe accuracy a measure of how explicitly, not
-merely whether, the information is represented at that layer.
+The baseline model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a crash rate per meter of progress of #todo("Amount") and a reward AUC of #todo("Amount").
 
-To construct the probing dataset, we perform a rollout using baseline model for 2048 steps (82 s of simulated time) in each of 32 parallel agents. At every step we record each agent's LIDAR observation $bold(o)_(i,t) in RR^101$ together with the corresponding labelled information $bold(y)_(i,t)$, giving an observation tensor $bold(O) in RR^(32 times 2048 times 101)$. Then, for each checkpoint of each training run of the baseline model, each observation is passed through the trunk to obtain the `fc3` activations $bold(z)_(i,t)$, which serve as inputs to the linear probe. We fit the probe on the rollouts of 25 agents (≈78% train split) and evaluate it on the remaining 7, so that the train and test sets share no trajectories or track layouts.
+To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer (fc3) to predict each auxiliary target. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). Figure 4.1 reports out-of-sample R² at initialisation and after 600 PPO iterations, with error bars showing the standard deviation between each different trained agent model.
 
-Interestingly, we observe that even before the first epoch of gradient descent (i.e. with LeCun-randomly initialised weights), some features are already encoded by the model, as shown in @baseline_lr_model_dumbell. This is especially true for the car's lateral velocity $v_l$ and angular velocity $omega_y$, which is predicted with a mean out-of-sample $R^2$ of $overline(R)^2 = 92%$ and $overline(R)^2 = 85%$ respectively. #todo([
-  We hypothesise that this is because the car's lateral and angular velocities are strongly correlated with the LIDAR observations, and any LeCun-random projection of these observations will maintain some of this correlation. Then, with many such observations (101 rays x 50 time steps), this correlation is strongly preserved.
-]). A similar effect has been observed in @alain2018understandingintermediatelayersusing, where the authors show that, on a small MNIST convolutional neural network, the the probe error decreases with the number of layers, even on randomly initialised weights.
+Two distinct patterns emerge. Quantities describing the vehicle’s instantaneous dynamics (yaw rate, lateral velocity and lateral wheel slip) are already linearly decodable at initialisation (R² ≈ 0.8–0.9). Since the network is untrained, this reflects information that is close to linear in the observation and survives a series of random LeCun-initialised projections, rather than a learned representation. A similar effect was observed in @alain2018understandingintermediatelayersusing when investigating the same phenomenon in toy MNIST models. Training does not improve the $R^2$ for these quantities, and decodability declines modestly (e.g. rear lateral slip falls from $R^2 = \~0.67$ to \~0.50), suggesting that PPO discards some of this information.
+
+@probe_baseline_heatmap visualises the trend over time: as the model trains, the decodability of the instantaneous dynamics quantities declines, while the decodability of the close-ahead ($<= 3m$) track curvature improves almost monotonically (highlighted in white boxes). This suggests that these quantities may prove to be useful auxiliary targets, as the auxiliary losses will encourage the model to learn their representations earlier. The model does not significantly learn to represent the further-ahead curvature (4.0m - 8.0m), which presents itself as another candidate for an auxiliary target.
 
 #figure(
-  scale(80%, reflow: true, image("../results/figures/probe_dumbbell.pdf")),
-  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk (`fc3`) on the baseline model],
+  image("../results/figures/probe_dumbbell.pdf", height: 150pt),
+  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model.],
 ) <baseline_lr_model_dumbell>
 
 #figure(
-  image("../results/figures/probe_heatmap.pdf"),
-)
+  image("../results/figures/probe_heatmap.pdf", height: 200pt),
+  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model, showing how much each quantity is linearly decodable at each iteration of training. Note that the y-axis is not evenly spaced.],
+) <probe_baseline_heatmap>
 
-== Meeting questions
-First, explain the findings I have.
-Then:
+== Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
-+ Should I be reporting p-values/statistical significance for the probe deltas?
-+ Should I be doing a False Discovery Rate (FDR) correction for testing multiple probes?
-+ How should I present this information - we have 4 axes: (target, aux heads active, aux heads weight, iteration) with a scalar in each point? Maybe, a grid (targest x aux heads active) of line plots (iteration on x axis, R^2 with variance on Y axis)?
-+ Going forward, should I test H2H or rather add uncertainty weighting?
+The model is now trained with the same reward function (@sec:reward_function) as the baseline model, but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
+
+=== Forward velocity, lateral velocity, and yaw rate
+
+=== Track curvature
+
+The close-ahead ($<= 3m$) track curvature auxiliary loss was extremely effective in improving the decodability of the trunk's final layer. It improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +35 to +49 percentage points, and even improved the decodability of unsupervised quantities such as the 3.5m-ahead curvature and 4.0m-ahead curvature by between +5 to +10 percentage points on average.
+
+To a lesser extent, the medium-ahead (between 3m- and 6m-ahead) curvature auxiliary loss improved the decodability of its supervised quantities, resulting in a +7 to +26 percentage point improvement in out-of-sample $R^2$ scores.
+
+However, far ahead curvature failed to improve the decodability significantly, with small gains of up to +4 percentage points, and all groups of auxiliary losses decreased performance on the forward slips of wheels. #todo("WHY?")
 
 
-- Clarify naming of "auxiliary features" => "auxiliary targets"
-
-== Learned features after auxiliary learning
+=== Wheel slips
 
 
 #figure(
-  image("../results/figures/probe_heatmap_delta_vs_baseline.pdf", height: 600pt),
-  caption: [Mean out-of-sample $R^2$ deltas compared to the baseline model, showing how much more (or less) linearly decodable each quantity is after auxiliary learning],
-) <probe_heatmap_delta_vs_baseline>
-
-== Primary Task Performance
-
-#figure(
-  image("../results/figures/primary_task_auc_dumbbells.pdf", height: 600pt),
-  caption: [AUC for the primary task reward $r_t$ by auxiliary head],
+  image("../results/figures/probe_heatmap_aux_summary.pdf"),
+  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on models trained with different auxiliary heads enabled. Bold = C.I. excludes 0, corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
 )
 
-=== Variation in Primary Task Performancee
 
 
-= What I did
-- *Car always going full throttle + full steering*: This is because tanhnormal saturates at 1, so the model cannot learn when the output is close to 1 or -1. This is a problem because the car is always going full throttle, and the steering angle is often close to 1 or -1. The model cannot learn to output values further away. So, the scale of weights & biases was changed to start in the center
-- *LIDAR angle pointing up, causing large lidar values input* - increase wall height, mask "miss" rays to 0
-- *Huber loss is invariant* to scale if the parameter beta is updated:
-$
-  L_beta (x/alpha, hat(x)/alpha) = (L_(alpha*beta) (x, hat(x))) / alpha^2
-$
-- *Regression based on the hidden layer output of the PPO model*: The PPO model is trained to predict the value function and policy, so the hidden layer output contains information about the state of the environment. This information can be used to predict the auxiliary targets. The regression results show that the hidden layer output contains information about the auxiliary targets, and that this information can be extracted by a simple linear regression model. @alain2018understandingintermediatelayersusing
-- By default, BLAS spawns 128 threads. Did hyperparameter tuning to find the best combination of (num_pytorch_threads, num_parallel_trainers, num_envs_per_trainer). Also Unity spawns 128 GC threads, which can be controlled via `"-job-worker-count", str(num_unity_threads), "-gc-helper-count", str(num_unity_threads)`
+
+== Agent Performance After Auxiliary Learning
+In line with the findings from @sec:learned_features_after_auxiliary_learning, the auxiliary head that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the model restarts after a crash, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the curvature close model achieves both higher racing performance, as well as safety: it achieves a +12.5% higher mean progress per timestep along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronouncd results are achieved by the front wheel forward slip head, which is, in fact, safer (-)
+
+#figure(
+  image("../results/figures/auc_comparison.pdf"),
+  caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model],
+) <fig:auc_comparison>
+
+#figure(
+  image("../results/figures/last_50_means_heatmap.pdf"),
+  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = C.I. excludes 0, corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
+) <fig:last_50_means_heatmap>
+
 
 = Conclusions and recommendations
 
@@ -1932,6 +1940,18 @@ $
     numbering("A.1.1", ..nums.slice(1))
   }
 })
+
+== AI Declaration
+
+- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain why certain training setups may perform badly on the hardware available. Claude was used to provide code to perform the FDR analysis on @aux_head_regression_results
+
+- #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver Videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way.
+
+- #link("https://scholar.google.co.za/scholar_labs/search")[Google Scholar Labs] was used extensively in searching for literature.
+- #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality.
+
+AI was not used to generate the training code or the model definition code - that was completely hand-written.
+
 == WheelCollider properties <wheel_collider_properties>
 
 #figure(
@@ -1977,14 +1997,11 @@ $
 )
 
 #pagebreak()
-#set page(flipped: true)
-== Auxiliary Head Regression Results
-#[
-  #let aux_head_regression_scores = csv("../results/aux_head_regression_scores.csv")
-
-
-]
-#set page(flipped: false)
+== Auxiliary Head Regression Results <aux_head_regression_results>
+#figure(
+  image("../results/figures/probe_heatmap_aux.pdf", height: 84%),
+  caption: [Difference in mean out-of-sample $R^2$ vs the baseline PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the C.I. excludes 0, corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
+)
 
 #pagebreak()
 == Training Performance Benchmark Results <training_performance_results>
