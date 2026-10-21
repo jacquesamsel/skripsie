@@ -28,7 +28,7 @@ HYPERPARAMETER_GROUPS = {
 }
 
 WEIGHT_VALUES = [0.1, 0.3, 1.0]
-SEEDS = [4, 5, 6]
+SEEDS = [3, 4, 5]
 
 RUNS_DIR = Path("run_done_flags")
 
