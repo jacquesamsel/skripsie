@@ -11,7 +11,7 @@ from car_model import Action, default_params, init_state, step
 DT = 1e-3
 STEPS = 4000
 STEER = jnp.array([0.0, 0.08, 0.16, 0.24, -0.16])
-TORQUE = 0.6
+TORQUE = 0.25   # per driven wheel; above ~0.45 Nm the rear tyres break traction
 
 
 def rollout(params, states, actions, dt, steps):

@@ -15,8 +15,8 @@ import jax
 import jax.numpy as jnp
 import pygame
 
-from car_model import (Action, default_params, init_state, quat_to_mat, step,
-                       wheel_centres)
+from car_model import (Action, default_drivetrain, default_params, drivetrain,
+                       init_state, quat_to_mat, step, wheel_centres)
 
 DT = 1e-3
 SUBSTEPS = 20
@@ -26,8 +26,7 @@ WHEELBASE = 0.33
 TRACK = 0.24
 MAX_STEER = 0.35
 STEER_RATE = 2.5
-MOTOR_TORQUE = 0.35
-MOTOR_OMEGA = 300.0
+REVERSE_THROTTLE = 0.4
 BRAKE_TORQUE = 0.5
 BRAKE_OMEGA = 3.0   # rad/s, brake blend width; too tight is stiff for RK4
 
@@ -45,9 +44,8 @@ def advance(state, action, params):
                         state, None, length=SUBSTEPS)[0]
 
 
-def control(state, keys, steer):
+def control(state, keys, steer, dtp):
     """Map key state to a per-wheel steer angle and torque."""
-    throttle = float(keys[pygame.K_w])
     braking = float(keys[pygame.K_s])
     target = MAX_STEER * (float(keys[pygame.K_a]) - float(keys[pygame.K_d]))
     steer = steer + np.clip(target - steer, -STEER_RATE * DT * SUBSTEPS,
@@ -60,16 +58,14 @@ def control(state, keys, steer):
     omega = np.asarray(state.wheel_omega[0])
     forward = np.asarray(quat_to_mat(state.quat[0]))[:, 0]
     speed = float(np.asarray(state.vel[0]) @ forward)
-    drive = MOTOR_TORQUE * np.clip(1.0 - np.abs(omega) / MOTOR_OMEGA, 0.0, 1.0)
 
-    torque = np.zeros(4)
-    torque[2:] = throttle * drive[2:]
-    if braking:
-        # Signed speed, so holding S reverses instead of chattering at a stop.
-        if speed > 0.3:
-            torque -= BRAKE_TORQUE * np.tanh(omega / BRAKE_OMEGA)
-        else:
-            torque[2:] -= 0.5 * drive[2:]
+    # Signed speed, so holding S reverses instead of chattering at a stop.
+    throttle = float(keys[pygame.K_w])
+    if braking and speed <= 0.3:
+        throttle = -REVERSE_THROTTLE
+    torque = np.array(drivetrain(throttle, state.wheel_omega[0], dtp))
+    if braking and speed > 0.3:
+        torque -= BRAKE_TORQUE * np.tanh(omega / BRAKE_OMEGA)
     if keys[pygame.K_SPACE]:
         torque[2:] -= BRAKE_TORQUE * np.tanh(omega[2:] / BRAKE_OMEGA)
 
@@ -162,6 +158,7 @@ def main():
     clock = pygame.time.Clock()
 
     params = default_params()
+    dtp = default_drivetrain()
     state = jax.tree.map(lambda x: x[None], init_state(params))
     steer, cam_yaw, angles = 0.0, 0.0, np.zeros(4)
 
@@ -175,7 +172,7 @@ def main():
                 steer, angles = 0.0, np.zeros(4)
 
         keys = pygame.key.get_pressed()
-        action, steer, throttle, braking = control(state, keys, steer)
+        action, steer, throttle, braking = control(state, keys, steer, dtp)
         state = advance(state, action, params)
         angles = (angles + np.asarray(state.wheel_omega[0]) * DT * SUBSTEPS) % (2 * np.pi)
 
@@ -198,9 +195,9 @@ def main():
             f"slip   {np.degrees(np.arctan2(lat, max(abs(fwd), 0.1))):+6.1f} deg",
             f"steer  {np.degrees(steer):+6.1f} deg    yaw rate {state.ang_vel[0, 2]:+.2f} rad/s",
             f"wheels {' '.join(f'{w * 0.05:6.2f}' for w in state.wheel_omega[0])} m/s",
-            f"height {pos[2] * 1000:6.1f} mm",
+            f"height {pos[2] * 1000:6.1f} mm   throttle {throttle:+.2f}",
             "",
-            f"W {'#' if throttle else '.'}  S {'#' if braking else '.'}  "
+            f"W {'#' if keys[pygame.K_w] else '.'}  S {'#' if braking else '.'}  "
             f"SPACE {'#' if keys[pygame.K_SPACE] else '.'}   R reset   ESC quit",
             f"{clock.get_fps():.0f} fps",
         ]

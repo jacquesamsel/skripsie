@@ -22,7 +22,7 @@ class CarParams:
     inertia: jax.Array          # (3,) body-frame inertia diagonal
     mounts: jax.Array           # (4, 3) strut mounts in body frame
     wheel_radius: jax.Array     # (4,)
-    wheel_inertia: jax.Array    # (4,)
+    wheel_inertia: jax.Array    # (4,) N/(m^2) moment of inertia
     spring_k: jax.Array         # (4,) N/m
     damper_c: jax.Array         # (4,) N/(m/s)
     rest_length: jax.Array      # (4,) m
@@ -38,6 +38,20 @@ class CarParams:
     gravity: float = -9.81
     v_eps: float = 1.0          # slip-denominator floor, m/s
     omega_eps: float = 1.0      # rad/s, smooths rolling resistance through zero
+
+
+@struct.dataclass
+class DrivetrainParams:
+    driven: jax.Array           # (4,) 1.0 for driven wheels
+    gear: float                 # motor revolutions per wheel revolution
+    kt: float                   # Nm/A
+    ke: float                   # V.s/rad (equal to kt in SI units)
+    resistance: float           # ohm
+    volts: float                # pack voltage
+    max_current: float          # A, ESC limit
+    drag_brake: float           # 0-1, bridge duty at zero throttle
+    friction: float             # Nm per driven wheel, gear mesh and cogging
+    omega_eps: float = 1.0      # rad/s, smooths friction through zero
 
 
 @struct.dataclass
@@ -111,7 +125,7 @@ def wheel_force(mount, radius, inertia, k, c, rest, mu, roll_res,
     # force gains a vertical component as the chassis pitches.
     heading = R @ jnp.array([jnp.cos(steer), jnp.sin(steer), 0.0])
     forward = heading.at[2].set(0.0)
-    forward = forward / jnp.maximum(jnp.linalg.norm(forward), 1e-6)
+    forward = forward / jnp.sqrt(forward @ forward + 1e-12)
     lateral = jnp.cross(jnp.array([0.0, 0.0, 1.0]), forward)
     vx = v_contact @ forward
     vy = v_contact @ lateral
@@ -124,7 +138,7 @@ def wheel_force(mount, radius, inertia, k, c, rest, mu, roll_res,
 
     # Friction circle.
     limit = mu * fz
-    mag = jnp.sqrt(fx * fx + fy * fy) + 1e-9
+    mag = jnp.sqrt(fx * fx + fy * fy + 1e-12)
     scale = jnp.minimum(1.0, limit / mag)
     fx, fy = fx * scale, fy * scale
 
@@ -154,7 +168,8 @@ def dynamics(state, action, params):
     )
 
     gravity = jnp.array([0.0, 0.0, params.gravity])
-    drag = -params.drag * jnp.linalg.norm(state.vel) * state.vel
+    # Softened norm: jnp.linalg.norm has a NaN gradient at exactly zero speed.
+    drag = -params.drag * jnp.sqrt(state.vel @ state.vel + 1e-12) * state.vel
     acc = (force.sum(0) + drag) / params.mass + gravity
     net_torque = body_torque.sum(0)
     ang_acc = (net_torque - jnp.cross(state.ang_vel, params.inertia * state.ang_vel)) / params.inertia
@@ -187,6 +202,47 @@ def rk4_step(state, action, params, dt):
 step = jax.jit(jax.vmap(rk4_step, in_axes=(0, 0, None, None)))
 
 
+def drivetrain(throttle, wheel_omega, p):
+    """Per-wheel torque from a DC motor through a gearbox and an open diff.
+
+    Stateless: the electrical time constant is far below any usable timestep.
+    An open diff splits torque equally whatever the wheel speeds, so the only
+    coupling is back-EMF, which sees the mean speed of the driven wheels. At
+    zero throttle this returns a torque proportional to -omega, which is the
+    drivetrain drag that slows a real car when you lift off.
+
+    How hard the motor brakes off-throttle depends on how much the bridge is
+    connected: full duty gives the textbook torque-speed curve, zero duty
+    leaves only drag_brake of it. Shorting the bridge outright (drag_brake=1)
+    brakes hard enough to lock the driven wheels.
+
+    Gear mesh and cogging add a Coulomb term, which unlike back-EMF does not
+    fade with speed and so is what actually brings the car to a stop.
+    """
+    n = p.driven.sum()
+    omega_motor = p.gear * (wheel_omega * p.driven).sum() / n
+    connected = p.drag_brake + (1.0 - p.drag_brake) * jnp.abs(throttle)
+    current = (p.volts * throttle - connected * p.ke * omega_motor) / p.resistance
+    current = jnp.clip(current, -p.max_current, p.max_current)
+    torque = p.driven * p.gear * p.kt * current / n
+    return torque - p.friction * p.driven * jnp.tanh(wheel_omega / p.omega_eps)
+
+
+def default_drivetrain():
+    """Rear-wheel drive, 2200 kv motor on 3S through a 7:1 reduction."""
+    return DrivetrainParams(
+        driven=jnp.array([0.0, 0.0, 1.0, 1.0]),
+        gear=7.0,
+        kt=0.00434,
+        ke=0.00434,
+        resistance=0.06,
+        volts=11.1,
+        max_current=35.0,
+        drag_brake=0.12,
+        friction=0.03,
+    )
+
+
 def wheel_centres(state, params):
     """World position of each wheel centre, for rendering."""
     R = quat_to_mat(state.quat)
@@ -210,12 +266,14 @@ def default_params():
             [-0.165, -0.12, 0.03],
         ]),
         wheel_radius=0.05 * four,
-        wheel_inertia=1.25e-4 * four,
+        # Driven wheels also carry the motor's reflected inertia, gear^2 *
+        # I_rotor, shared by the two wheels the open diff feeds.
+        wheel_inertia=jnp.array([1.25e-4, 1.25e-4, 4.9e-4, 4.9e-4]),
         spring_k=600.0 * four,
         damper_c=18.0 * four,
         rest_length=0.05 * four,
         mu=1.0 * four,
-        roll_res=0.02 * four,
+        roll_res=0.05 * four,
         b_long=10.0 * four,
         c_long=1.9 * four,
         e_long=0.97 * four,
