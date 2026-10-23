@@ -34,6 +34,176 @@ medina2004relationshipinfrastructuredrivererror:
     issue: 16
     volume: 48
 
+glassner2019closinggapendtoendautonomous:
+  type: misc
+  title: Closing the gap towards end-to-end autonomous vehicle system
+  author:
+  - Glassner, Yonatan
+  - Gispan, Liran
+  - Ayash, Ariel
+  - Shohet, Tal Furman
+  date: 2019
+  url: https://arxiv.org/abs/1901.00114
+  serial-number:
+    arxiv: '1901.00114'
+
+
+vasco2024superhumanvisionbasedreinforcementlearning:
+  type: misc
+  title: A Super-human Vision-based Reinforcement Learning Agent for Autonomous Racing in Gran Turismo
+  author:
+  - Vasco, Miguel
+  - Seno, Takuma
+  - Kawamoto, Kenta
+  - Subramanian, Kaushik
+  - Wurman, Peter R.
+  - Stone, Peter
+  date: 2024
+  url: https://arxiv.org/abs/2406.12563
+  serial-number:
+    arxiv: '2406.12563'
+
+
+pinto2017asymmetricactorcriticimagebased:
+  type: misc
+  title: Asymmetric Actor Critic for Image-Based Robot Learning
+  author:
+  - Pinto, Lerrel
+  - Andrychowicz, Marcin
+  - Welinder, Peter
+  - Zaremba, Wojciech
+  - Abbeel, Pieter
+  date: 2017
+  url: https://arxiv.org/abs/1710.06542
+  serial-number:
+    arxiv: '1710.06542'
+
+
+hinton2015distillingknowledgeneuralnetwork:
+  type: misc
+  title: Distilling the Knowledge in a Neural Network
+  author:
+  - Hinton, Geoffrey
+  - Vinyals, Oriol
+  - Dean, Jeff
+  date: 2015
+  url: https://arxiv.org/abs/1503.02531
+  serial-number:
+    arxiv: '1503.02531'
+
+
+mallon2026roboracer:
+  type: web
+  title: 'From Course to Competition: {RoboRacer} Students'' Journey'
+  author: Mallon, Jillian
+  date: 2026-09-17
+  url: https://www.grasp.upenn.edu/news/grasp-graduate-students-roboracer/
+  note: 'Accessed: 2026-10-22'
+
+
+samek2017explainableartificialintelligenceunderstanding:
+  type: misc
+  title: 'Explainable Artificial Intelligence: Understanding, Visualizing and Interpreting Deep Learning Models'
+  author:
+  - Samek, Wojciech
+  - Wiegand, Thomas
+  - Müller, Klaus-Robert
+  date: 2017
+  url: https://arxiv.org/abs/1708.08296
+  serial-number:
+    arxiv: '1708.08296'
+
+
+chi2017deepsteeringlearningendtoend:
+  type: misc
+  title: 'Deep Steering: Learning End-to-End Driving Model from Spatial and Temporal Visual Cues'
+  author:
+  - Chi, Lu
+  - Mu, Yadong
+  date: 2017
+  url: https://arxiv.org/abs/1708.03798
+  serial-number:
+    arxiv: '1708.03798'
+
+
+yurtsever2020surveyofautonomousdriving:
+  type: article
+  title: 'A Survey of Autonomous Driving: <i>Common Practices and Emerging Technologies</i>'
+  author:
+  - Yurtsever, Ekim
+  - Lambert, Jacob
+  - Carballo, Alexander
+  - Takeda, Kazuya
+  date: 2020
+  page-range: 58443-58469
+  url: http://dx.doi.org/10.1109/ACCESS.2020.2983149
+  serial-number:
+    doi: 10.1109/access.2020.2983149
+    issn: 2169-3536
+  parent:
+    type: periodical
+    title: IEEE Access
+    publisher: Institute of Electrical, Electronics Engineers (IEEE)
+    volume: 8
+
+tampuu2022surveyofendtoenddriving:
+  type: article
+  title: 'A Survey of End-to-End Driving: Architectures and Training Methods'
+  author:
+  - Tampuu, Ardi
+  - Matiisen, Tambet
+  - Semikin, Maksym
+  - Fishman, Dmytro
+  - Muhammad, Naveed
+  date: 2022-04
+  page-range: 1364-1384
+  url: http://dx.doi.org/10.1109/TNNLS.2020.3043505
+  serial-number:
+    doi: 10.1109/tnnls.2020.3043505
+    issn: 2162-2388
+  parent:
+    type: periodical
+    title: IEEE Transactions on Neural Networks and Learning Systems
+    publisher: Institute of Electrical, Electronics Engineers (IEEE)
+    issue: 4
+    volume: 33
+
+
+who2018roadsafety:
+  type: book
+  title: Global Status Report on Road Safety 2018
+  author: World Health Organization
+  date: 2018
+  publisher:
+    name: World Health Organization
+    location: Geneva, Switzerland
+  page-range: '403'
+  url:
+    value: https://www.who.int/publications/i/item/9789241565684
+    date: 2026-10-22
+  serial-number:
+    isbn: 978-92-4-156568-4
+  note: 'Licence: CC BY-NC-SA 3.0 IGO'
+
+
+bosello2022traininaustria:
+  type: article
+  title: 'Train in Austria, Race in Montecarlo: Generalized RL for Cross-Track F1tenth LIDAR-Based Races'
+  author:
+  - Bosello, Michael
+  - Tse, Rita
+  - Pau, Giovanni
+  date: 2022
+  page-range: 290-298
+  serial-number:
+    doi: 10.1109/CCNC49033.2022.9700730
+  parent:
+    type: proceedings
+    title: 2022 IEEE 19th Annual Consumer Communications & Networking Conference (CCNC)
+    issue: ''
+    volume: ''
+
+
 hankey1999identification:
   type: article
   title: 'Identification and evaluation of driver errors: Task c report, driver error taxonomy development'
@@ -395,6 +565,16 @@ sparse-rewards-auxiliary-tasks:
   serial-number:
     arxiv: "1910.09281"
   url: "https://arxiv.org/abs/1910.09281"
+
+ruder2017overviewmultitasklearningdeep:
+  type: misc
+  title: An Overview of Multi-Task Learning in Deep Neural Networks
+  author: Ruder, Sebastian
+  date: 2017
+  url: https://arxiv.org/abs/1706.05098
+  serial-number:
+    arxiv: '1706.05098'
+
 
 roboracer_rules:
   type: Web

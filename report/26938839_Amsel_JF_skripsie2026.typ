@@ -211,8 +211,6 @@
 #show cite: set text(fill: link-colour)
 
 #align(center + horizon)[
-
-
   #set page(background: image("stb-thesis-frntp.pdf", width: 110%, height: 107%, fit: "stretch"))
 
 
@@ -247,6 +245,12 @@
 
 = Acknowledgements
 
+#align(center)[
+  A meaningful quote
+
+  \- Whoever
+]
+
 #pagebreak()
 
 = Plagarism declaration
@@ -269,6 +273,9 @@
 #pagebreak()
 
 = Abstract
+
+End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them: the progress-based reward is dense, but it is an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This Skripie investigates whether auxiliary losses that predict privileged information from the policy's shared representation improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+
 
 #pagebreak()
 
@@ -358,7 +365,7 @@
 
 == Background and motivation
 
-Road traffic crashes remain a leading cause of death and serious injury worldwide, and the overwhelming majority are attributed to human error @hankey1999identification, as cited in @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly.
+Road traffic crashes remain a leading cause of death and serious injury worldwide @who2018roadsafety, and the overwhelming majority are attributed to human error @hankey1999identification, as cited by Medina et al. @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly.
 
 Autonomous racing is a demanding testbed for exactly these situations. The high speeds, tight control margins, and short time available to recover from bad decisions make it a proxy for developing and evaluating autonomous driving algorithms.
 
@@ -376,7 +383,7 @@ Privileged information is, however, available in simulation. This report investi
 ]
 
 == Objectives
-The objectives of this Skripsie are to:
+The objectives of this project are to:
 
 #set enum(numbering: "(a)")
 + select an appropriate simulation environment for autonomous racing;
@@ -416,6 +423,57 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 *Chapter 5* concludes by showing how the objectives were met and makes recommendations for future work.
 
 = Background and Related Literature
+
+== Background
+
+== Related literature 
+=== Previous Approaches
+Evans et al. @evans2024unifyingf1tenthautonomousracing present a survey breaking down the autonomous racing in RoboRacer literature into two categories: _classical approaches_ and _learning approaches_. We shall provide a brief overview of classical approaches, and then focus on learning approaches, which are more relevant to this project.
+
+==== Classical approaches
+
+Classical approaches generally decompose the driving task into three stages: perception, planning, and control @evans2024unifyingf1tenthautonomousracing. Perception is the process of converting raw sensor inputs into a representation of the environment, such as a map of the track and the location of other vehicles. Planning uses this representation to generate a trajectory for the vehicle to follow, and control executes this trajectory by sending commands to the vehicle's actuators. These approaches tend to be more interpretable and easier to debug @tampuu2022surveyofendtoenddriving, as each component can be analysed separately @yurtsever2020surveyofautonomousdriving.
+
+==== Learning approaches
+
+Learning approaches, which have recently shown promise in the field of autonomous driving, are often end-to-end, mapping raw sensor inputs directly to control outputs @yurtsever2020surveyofautonomousdriving. This can be done using supervised learning, where the model is trained on a dataset of expert demonstrations, or using reinforcement learning, where the model learns by interacting with the environment and receiving feedback in the form of rewards.
+
+Learning approaches have the potential to learn complex behaviours that are difficult to hand-engineer, and can adapt to changing environments @bosello2022traininaustria. However, they often require large amounts of data and computational resources, and can be less interpretable than classical approaches: deep end-to-end learning approaches are often regarded as "black boxes" @samek2017explainableartificialintelligenceunderstanding, which may be undesirable in safety-critical applications @chi2017deepsteeringlearningendtoend. In RoboRacer, learning approaches have shown promise, but were unable to outperform classical approaches in benchmarks @evans2024unifyingf1tenthautonomousracing, and recently the majority of 27th RoboRacer Autonomous Racing Competition entries were classical approaches @mallon2026roboracer, despite learning approaches generalising better to unseen tracks @bosello2022traininaustria.
+
+== Methods using privileged informaton
+
+Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as a teacher for distillation, and as auxiliary losses or rewards.
+
+=== Asymetric critics
+Asymetric critic methods @pinto2017asymmetricactorcriticimagebased train two distinct models: one for the policy, which only receives the agent's observations, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, $V^pi (s)$, which is then used to update the policy model. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve super-human performance of a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
+
+=== Teacher-student distillation
+
+Teacher-student distillation @hinton2015distillingknowledgeneuralnetwork involves training a teacher model with access to privileged information, and then using the teacher's outputs to train a student model that does not have access to this information. The student model is trained to mimic the teacher's behaviour, effectively learning from the teacher's understanding of its privileged knowledge.
+
+=== Auxiliary rewards
+
+=== Auxiliary losses
+
+@glassner2019closinggapendtoendautonomous
+
+@ruder2017overviewmultitasklearningdeep
+
+Incorporation of auxiliary losses has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal. Auxiliary learning achieves this by augmenting a model’s primary task with a set of auxiliary tasks during training, in the hope that learning them concurrently will improve the model’s internal representations and, in turn, its performance on the primary task.
+
+Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information as input.
+
+In the field of autonomous driving, 
+
+== Summary
+
+
+
+== END
+
+
+
+
 
 To evaluate whether privileged-information auxiliary losses can improve an end-to-end racing agent, this chapter establishes the theoretical foundation for how the agent learns and how we measure its internal representations.
 We first formulate the control problem as a Partially Observable Markov Decision Process (POMDP) in @sec:pomdp, as the agent drives using only local LiDAR data. @sec:rl and @sec:policy_gradient then introduce Reinforcement Learning (RL) and Proximal Policy Optimisation (PPO), the policy gradient algorithm used to train the baseline driving behaviour.
@@ -641,7 +699,7 @@ PPO is a modern algorithm for policy learning introduced in 2017 by researchers 
 Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
 In PPO, the clipped surrogate objective is given by
 $
-  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(r_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
+  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
 $
 
 where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
@@ -780,7 +838,7 @@ Despite perfect loss weighting, the agent may still fail to learn the primary ta
 
 // Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
-// Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this Skripsie, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
+// Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this project, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
 
 == Huber loss <sec:huber_loss>
 The Huber loss @huber1964robust is a robust alternative to the squared-error (L2) loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero. The Huber loss is defined as:
@@ -792,7 +850,7 @@ $
   )
 $
 
-In actuality, we uses PyTorch's rescaled implementation of the Huber loss: (`smooth_l1_loss`), $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
+In actuality, we use PyTorch's rescaled implementation of the Huber loss: (`smooth_l1_loss`), $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
 
 
 #{
@@ -826,7 +884,7 @@ privileged state variables (e.g. velocity, slip, upcoming curvature).
 
 
 #figure(
-  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 frames are fully connected layers with ReLU activations.",
+  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 layers are fully connected layers with ReLU activations.",
   scale(80%, reflow: true, draw-network(
     (
       (
@@ -1531,6 +1589,8 @@ The agent is a feedforward actor-critic network implemented in PyTorch, with the
 - the _auxiliary head_ outputs predictions of the privileged targets
 
 The trunk (@network_architecture) has a convolutional part followed by a dense part. The input is a tensor of shape $50 times 101$ (time steps by rays). Three 1D convolutions with ReLU activations slide along the ray axis and treat the time steps as input channels, so the first layer mixes the whole history at each angular position. They have 32, 16, and 16 output channels respectively; all have the same kernel size of 8 (roughly $21 degree$ of FOV). The output is flattened and concatenated with the current steering angle and throttle, and passed through fully connected layers of 128, 72 and 64 units with ReLU activations, followed by layer normalisation of the 64-dimensional output to prevent gradient explosion when the car is under heavy acceleration, pointing the LiDAR above the track walls and resulting in large normalised ray lengths as input ($approx 1$).
+
+#todo([Lidar was used due to @bosello2022traininaustria finding it to be best performing])
 
 #{
   // Box heights grow with layer size, with a minimum so the rotated labels fit.
