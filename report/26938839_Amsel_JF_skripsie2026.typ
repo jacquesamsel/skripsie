@@ -11,6 +11,23 @@
 #show: style-algorithm
 #show: latex-lookalike.style-outline
 
+#set ref(supplement: it => {
+  if it.func() == heading {
+    if it.level == 1 { "Chapter" } else { "Section" }
+  } else if it.func() == figure {
+    if it.kind == image { "Figure" } else if it.kind == table { "Table" } else { "Figure" }
+  } else if it.func() == table {
+    "Table"
+  } else if it.func() == math.equation {
+    "Equation"
+  } else if it.func() == algorithm-figure {
+    "Algorithm"
+  } else {
+    assert(false, "Unknown reference type: " + it.func())
+  }
+})
+
+
 // ============================================================
 // Styling after the Stellenbosch University thesis class
 // (stb-thesis.cls + imports.tex), see su_latex_template/.
@@ -65,23 +82,6 @@
   paper: "a4",
   margin: (left: 2.5cm, right: 2.5cm, top: 2.5cm, bottom: 2.5cm),
   number-align: right + bottom,
-  header: context {
-    let this-page = here().page()
-    let seen = query(heading).filter(h => h.location().page() <= this-page)
-    // \fancypagestyle{plain}: no header on chapter-opening pages
-    if seen.any(h => h.level == 1 and h.location().page() == this-page) { return }
-    let marks = seen.filter(h => h.level <= 2)
-    if marks.len() == 0 { return }
-    let mark = marks.last()
-    let number = if mark.numbering != none {
-      numbering(mark.numbering, ..counter(heading).at(mark.location())) + " "
-    } else { "" }
-    set par(justify: false, leading: 0.65em, first-line-indent: 0pt)
-    set align(center)
-    text(fill: oracle-colour)[#number#smallcaps(mark.body)]
-    v(-0.4em)
-    line(length: 100%, stroke: 0.1pt + rule-colour)
-  },
 )
 
 // --- Headings: \titleformat from imports.tex -----------------
@@ -245,11 +245,16 @@
 
 = Acknowledgements
 
-#align(center)[
-  A meaningful quote
+I would like to thank my supervisor Dr. JC Schoeman for his guidance and support throughout this project. #todo("Finish")
 
-  \- Whoever
+#pagebreak()
+#v(1fr)
+#align(center)[
+  "Now, this is podracing!"
+
+  \- _Anakin Skywalker in Star Wars: The Phantom Menace_
 ]
+#v(1fr)
 
 #pagebreak()
 
@@ -282,6 +287,26 @@ End-to-end reinforcement learning (RL) agents can drive a car directly from raw 
 #outline(title: "Table of contents", indent: 32pt)
 
 #pagebreak()
+
+#set page(
+  header: context {
+    let this-page = here().page()
+    let seen = query(heading).filter(h => h.location().page() <= this-page)
+    // \fancypagestyle{plain}: no header on chapter-opening pages
+    if seen.any(h => h.level == 1 and h.location().page() == this-page) { return }
+    let marks = seen.filter(h => h.level <= 2)
+    if marks.len() == 0 { return }
+    let mark = marks.last()
+    let number = if mark.numbering != none {
+      numbering(mark.numbering, ..counter(heading).at(mark.location())) + " "
+    } else { "" }
+    set par(justify: false, leading: 0.65em, first-line-indent: 0pt)
+    set align(center)
+    text(fill: oracle-colour)[#number#smallcaps(mark.body)]
+    v(-0.4em)
+    line(length: 100%, stroke: 0.1pt + rule-colour)
+  },
+)
 
 = Notation
 
@@ -440,15 +465,15 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 
 *Chapter 5* concludes by showing how the objectives were met and makes recommendations for future work.
 
-= Background and Related Literature
+= Background and Related Literature <sec:related_literature>
 
-== Related literature <sec:related_literature>
+== Related literature
 === Previous Approaches
 Evans et al. @evans2024unifyingf1tenthautonomousracing present a survey breaking down the autonomous racing literature in RoboRacer into two categories: _classical approaches_ and _learning approaches_. We shall provide a brief overview of classical approaches, and then focus on learning approaches, which are more relevant to this project.
 
 ==== Classical approaches
 
-Classical approaches generally decompose the driving task into three stages: perception, planning, and control @evans2024unifyingf1tenthautonomousracing. Perception is the process of converting raw sensor inputs into a representation of the environment, such as a map of the track and the location of other vehicles. Planning uses this representation to generate a trajectory for the vehicle to follow, and control executes this trajectory by sending commands to the vehicle's actuators. These approaches tend to be more interpretable and easier to debug @tampuu2022surveyofendtoenddriving, as each component can be analysed separately @yurtsever2020surveyofautonomousdriving. 
+Classical approaches generally decompose the driving task into three stages: perception, planning, and control @evans2024unifyingf1tenthautonomousracing. Perception is the process of converting raw sensor inputs into a representation of the environment, such as a map of the track and the location of other vehicles. Planning uses this representation to generate a trajectory for the vehicle to follow, and control executes this trajectory by sending commands to the vehicle's actuators. These approaches tend to be more interpretable and easier to debug @tampuu2022surveyofendtoenddriving, as each component can be analysed separately @yurtsever2020surveyofautonomousdriving.
 
 ==== Learning approaches
 
@@ -486,99 +511,11 @@ Incorporation of auxiliary losses alongside the primary loss has emerged as a pr
 
 Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
 
-In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability and 
+In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability and
 
-=== Summary
+== Evaluation of exiting approaches
 
 End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but unused at deployment. Existing ways of exploiting it each leave a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
-
-== Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
-
-In order to formally describe the problem of autonomous racing, we first introduce the framework of partially observable Markov decision processes (POMDPs). POMDPs are a generalisation of Markov decision processes (MDPs) that account for the fact that an agent may not have access to the full state of the environment. In a POMDP, the agent receives observations that provide partial information about the underlying state, and must make decisions based on this incomplete information.
-
-A POMDPs is defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$, based on the work by Kaelbling et al.
-@kaelbling1998:
-
-At each time step $t$, the environment is in state $s_t in cal(S)$, where
-$cal(S)$ is the state space. This state is a _complete_ description of the
-environment at that time. The first state $s_0$ is sampled from an initial state distribution $rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
-$o_t ~ cal(Z)(dot | s_t)$. The information in $s_t$ that is missing from
-$o_t$ is called _privileged information_. For example, a car may observe its lidar measurements, but not the road surface conditions directly.
-
-Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
-$cal(A)$ is the action space. The policy therefore maps an
-observation to a probability distribution over actions; we write
-$a_t ~ pi(dot | o_t)$ #footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator in that case.]). The policy is what we want to find: it describes the
-agent's behaviour. For simplicity, we let the policy depend only on the current observation;
-should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
-to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
-function. By the _Markov property_, the next state $s_(t+1)$ depends only on the current
-state $s_t$ and action $a_t$, not on earlier history @sutton2018. Then, the agent receives a scalar reward
-$r_t = cal(R)(s_t, a_t, s_(t+1))$, where $cal(R)$ is the reward function, together with
-the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_iteration_diagram.
-
-
-#let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
-#let o-node(pos, body) = node(
-  pos,
-  body,
-  shape: circle,
-  radius: 1.1em,
-  stroke: (thickness: 1pt, dash: "dashed"),
-)
-#let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
-#let r-node(pos, body) = node(pos, body, shape: fletcher.shapes.diamond, inset: 5pt)
-
-#let party(pos, body) = node(pos, strong(body), stroke: 1pt, corner-radius: 3pt)
-#let step(pos, body) = node(pos, body, stroke: 0.5pt, fill: white)
-#let msg(from, to, label) = edge(from, to, "-|>", label, label-angle: auto)
-#let lifeline(x, end) = edge((x, 0), (x, end), stroke: (paint: gray, dash: "dashed"), layer: -1)
-
-#figure(
-  scale(80%, reflow: true, diagram(
-    spacing: (26em, 2em),
-    node-inset: 6pt,
-
-    // Participants and lifelines
-    party((0, 0), [Agent]),
-    party((1, 0), [Environment]),
-    lifeline(0, 6),
-    lifeline(1, 6),
-
-    edge((-0.15, 1), (-0.15, 5), layer: -1, "-|>", $t$),
-
-    // Local computations
-    step((1, 1), $s_0 ~ rho_0$),
-    step((0, 2), $a_0 ~ pi(dot | o_0)$),
-    step((1, 3), $s_1 ~ P(dot | s_0, a_0)$),
-    step((0, 4), $a_1 ~ pi(dot | o_1)$),
-    step((1, 5), $s_2 ~ P(dot | s_1, a_1)$),
-    node((0, 6), $dots.v$, fill: white),
-    node((1, 6), $dots.v$, fill: white),
-
-    // Messages
-    msg((1, 1), (0, 2), $o_0 ~ cal(Z)(dot | s_0)$),
-    msg((0, 2), (1, 3), $a_0$),
-    msg((1, 3), (0, 4), $r_0 = R(s_0, a_0, s_1), o_1 ~ cal(Z)(dot | s_1)$),
-    msg((0, 4), (1, 5), $a_1$),
-    msg((1, 5), (0, 6), $r_1 = R(s_1, a_1, s_2), o_2 ~ cal(Z)(dot | s_2)$),
-  )),
-  caption: [
-    Interaction between the agent and the environment over time ($t$).
-  ],
-) <mdp_iteration_diagram>
-
-The agent's goal is to maximise the _expected discounted return_. The
-_discounted return_ (or simply _return_) from time step $t$ is the discounted sum of all rewards the agent
-receives from $t$ onward,
-$ G_t = sum_(k=0)^(T-t) gamma^k r_(t+k), $
-where $T$ is the final time step and $gamma in [0, 1]$ is the discount
-factor. A reward received $k$ steps ahead is scaled by $gamma^k$, so later
-rewards are worth less than immediate ones: when $gamma$ is close to 1 the
-agent is far-sighted, and when $gamma$ is close to 0 it is short-sighted.
-Since $G_t$ depends on random states, observations and actions, it is a
-random variable, and the agent maximises its expectation, $EE[G_0]$, from the
-start of the episode. The policy that achieves this maximum is the _optimal policy_ $pi^*$.
 
 === Value functions
 Value functions measure how good it is for the agent to be in a state, or to take an action in that state, and are the basis for the critic in PPO.
@@ -595,79 +532,6 @@ $
   A^pi (s, a) = Q^pi (s, a) - V^pi (s),
 $ <advantage_function>
 which measures how much better action $a$ is than the policy's average action in state $s$.
-
-== Reinforcement Learning (RL) <sec:rl>
-Reinforcement learning (RL) is a subfield of machine learning concerned with
-finding a policy $pi$ that maximises the expected discounted return
-$J(pi) = EE_pi [G_0]$ using only data sampled from interaction with the
-environment, without labelled optimal actions or a known model. RL differs from
-supervised learning in that feedback is evaluative rather than instructive: the
-agent is told how good its actions were, not which action was correct, and
-rewards may arrive long after the actions that caused them. Furthermore, the
-data distribution depends on the agent's own policy, so the agent must explore.
-
-So-called model-free RL algorithms fall into three broad classes: _Value-based_ methods learn the
-optimal action-value function
-$Q^*(s, a) = max_pi Q^pi (s, a)$
-and act greedily with respect to it, choosing the action with the highest value in the current state: $pi(s) = argmax_(a in cal(A)) Q^pi (s, a)$.
-_Policy-based_ methods, on the other hand,
-learn a parameterised policy $pi_theta$ directly by ascending the gradient of
-$J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
-$arg max$ over actions. They can also represent stochastic policies, which may be
-necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
-combine both: a learned value function (the critic) is used to reduce the variance
-of the policy gradient, and since the critic is only used in training, it may take privileged information as input as in . We focus on policy-based and actor-critic
-methods in this report.
-
-=== Policy gradient methods <sec:policy_gradient>
-
-Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
-$
-  J(theta) = EE_(tau tilde p_theta) [G_0]
-  = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
-  = integral p_theta (tau) G(tau) dif tau
-$
-
-The past-reward terms therefore vanish in expectation, leaving
-$
-  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
-$
-Removing these zero-mean terms typically reduces the variance of the
-Monte Carlo estimate. In practice the factor $gamma^t$ is usually dropped;
-this yields a biased estimate of $nabla_theta J(theta)$ for $gamma < 1$
-@thomas2014bias.
-
-==== REINFORCE
-
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
-
-$
-  hat(nabla_theta J)(theta) = 1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
-$
-
-In order to run REINFORCE in an AutoGrad engine (such as PyTorch or TensorFlow), a loss function $cal(L)_"REINFORCE"$ is defined such that its gradient with respect to the policy parameters $theta$ is equal to the policy gradient estimate above. This loss function is given by:
-$
-  cal(L)_"REINFORCE" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
-$
-
-Although REINFORCE is simple to implement, it has several drawbacks. First, it has high variance in its gradient estimates, which can lead to slow convergence and instability during training. Second, it does not make use of a value function to estimate the expected return, which can further increase variance. Finally, it is an on-policy algorithm, meaning that it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
-
-=== Proximal Policy Optimisation (PPO) <sec_ppo>
-PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
-
-Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t = hat(A)^pi (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
-In PPO, the clipped surrogate objective is given by
-$
-  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
-$
-
-where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely.
-
-=== The Limits of Standard End-to-End RL
-
-Reinforcement learning is a powerful framework for training agents to perform complex tasks. Various previous work has shown that end-to-end RL can learn to race a car from raw sensor inputs in simulation @wurman2022outracing @lee2025outracing, as well as real-world driving @czechmanowski2025learningracingpoliciesreinforcement.
-
-However, it has limitations, especially in complex environments. Standard end-to-end RL methods can struggle with credit assignment, and need for large amounts of compute and data. In the real world, there are costs associated with collecting data, and compute resources are not limitless.
 
 == Auxiliary Learning in Policy-Based Methods <sec:auxiliary_learning>
 
@@ -914,28 +778,28 @@ models for spatial and temporal encodings.
 
 = System overview
 
-The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a Unity simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity. 
 
-The subsystems advance in lockstep, following the interaction loop in @mdp_iteration_diagram. At each timestep, the simulator sends each agent's observation, along with privileged state information, to the training script. The script replies with the action each vehicle should take next. The privileged information is used only during training and is never given to the policy, so the trained agent can drive from LiDAR alone. Rewards are computed in Python rather than in Unity, so the reward function can be changed without rebuilding the simulator.
+At each timestep $t$, the simulator sends each agent's observation $o_t$ and a subset of the privileged state information, $b_t in s_t$ to keep performance high, and the training script performs a forward pass through the policy using only the observation data as input, to compute the next action $a_t$. This action is sent back to the simulator, and is applied to the vehicle, stepping the environment forward to the next timestep $t+1$. This represents the standard POMDP interaction loop in @mdp_iteration_diagram, albeit with the addition of privileged information for auxiliary learning. It is important to note that the privileged information is _not_ used by the policy, and is only used for auxiliary learning during training.
 
-To speed up data collection, the simulator is replicated: each Unity instance contains `num_areas` independent training areas - each with its own unique agent, and each trainer runs `num_inst` instances in parallel (the stacked boxes in @system_diagram). The rest of this chapter describes the components in turn.
+To speed up training, multiple instances of the simulator are run in parallel, each with its own set of agent running in separate sandboxed simulation environments. 
 
 // Add a subsystem diagram
 #figure(
-  scale(55%, reflow: true)[
+  scale(50%, reflow: true)[
 
     #let enclose-color = luma(230)
     #let offset-rect(dx, dy) = (node, extrude) => {
       let (w, h) = node.size.map(i => i / 2 + extrude)
       fletcher.cetz.draw.rect((-w + dx, -h + dy), (w + dx, h + dy))
     }
-    #let stack-shadow(enclose, inset: 24pt, layer: -2) = node(
+    #let stack-shadow(enclose, inset: 24pt, layer: -2, lighten) = node(
       enclose: enclose,
       inset: inset,
       snap: false,
       layer: layer,
-      shape: offset-rect(-5pt, 5pt),
-      fill: enclose-color,
+      shape: offset-rect(-6pt, 6pt),
+      fill: enclose-color.lighten(lighten),
       stroke: (dash: "dashed", thickness: 1pt),
     )
     #diagram(
@@ -952,11 +816,11 @@ To speed up data collection, the simulator is replicated: each Unity instance co
       node((3, 1), [Auxiliary feature\ extractor], name: <aux>),
       node((4, 1), [Vehicle Controller], name: <vc>),
       node((4, 2), [Wheel Colliders], name: <wheels>),
-      node((5.3, 0), [ML Agents], name: <mla>),
-      node((40, 0), [TorchRL], name: <torch>),
-      node((40, 1), [Environment Transforms], name: <env>),
-      node((40, 1.75), [Reward Calculator], name: <reward>),
-      node((40, 2.75), [PPO], name: <ppo>),
+      node((5, 0), [ML Agents], name: <mla>),
+      node((6, 0), [TorchRL], name: <torch>),
+      node((6, 1), [Environment Transforms], name: <env>),
+      node((6, 1.75), [Reward Calculator], name: <reward>),
+      node((6, 2.75), [PPO], name: <ppo>),
       edge(<track>, "<->", <cm>),
       edge(<track>, "<->", <spline>),
       edge(<cm>, "<->", <mla>),
@@ -969,11 +833,11 @@ To speed up data collection, the simulator is replicated: each Unity instance co
       edge(<env>, "<->", <reward>),
       edge(<reward>, "<->", <ppo>),
 
-      stack-shadow((<track>, <spline>, <cm>, <lidar>, <aux>, <vc>, <wheels>), layer: -2),
+      stack-shadow((<track>, <spline>, <cm>, <lidar>, <aux>, <vc>, <wheels>), layer: -2, 80%),
       node(
         align(top + center, move([*Training area* ($times$ `num_areas`)], dy: -18pt)),
         enclose: (<track>, <spline>, <cm>, <lidar>, <aux>, <vc>, <wheels>),
-        fill: enclose-color,
+        fill: enclose-color.lighten(80%),
         stroke: (dash: "dashed", thickness: 1pt),
         inset: 24pt,
         snap: false,
@@ -981,11 +845,11 @@ To speed up data collection, the simulator is replicated: each Unity instance co
         name: <training_area>,
       ),
 
-      stack-shadow((<training_area>, <mla>), layer: -4),
+      stack-shadow((<training_area>, <mla>), layer: -4, 30%),
       node(
         align(top + center, move([*Unity simulator*  ($times$ `num_inst`)], dy: -18pt)),
         enclose: (<training_area>, <mla>),
-        fill: enclose-color,
+        fill: enclose-color.lighten(30%),
         stroke: (dash: "dashed", thickness: 1pt),
         inset: 24pt,
         snap: false,
@@ -995,18 +859,30 @@ To speed up data collection, the simulator is replicated: each Unity instance co
       node(
         align(top + center, move([*Python training script*], dy: -18pt)),
         enclose: (<torch>, <env>, <ppo>),
-        fill: enclose-color,
+        fill: enclose-color.lighten(30%),
         stroke: (dash: "dashed", thickness: 1pt),
         inset: 24pt,
         snap: false,
         name: <python>,
       ),
+
+      stack-shadow((<unity>, <python>), layer: -6, -10%),
+      node(
+        align(top + center, move([*Training run* ($times$ `num_concurrent_runs`)], dy: -18pt)),
+        enclose: (<unity>, <python>),
+        fill: enclose-color.darken(10%),
+        layer: -5,
+        stroke: (dash: "dashed", thickness: 1pt),
+        inset: 24pt,
+        snap: false,
+        name: <shared>,
+      ),
     )
   ],
-  caption: "System diagram",
+  caption: [System diagram. There are `num_concurrent_runs` concurrent training runs running simultaneously, each with `num_inst` parallel simulator instances. Each simulator instance simulates `num_areas` vehicles, each with its own track. The simulator communicates with the Python training script over gRPC, and the training script updates the policy using PPO.],
 ) <system_diagram>
 
-== Simulator
+= Simulator
 
 Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among methods surveyed in @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
 
@@ -1036,7 +912,7 @@ The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engin
 
 However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator.
 
-=== Simulator performance comparison
+== Simulator performance comparison
 
 In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. Both environments were configured for 100Hz physics and 25Hz control with one vehicle per environment. Then, a rollout of 10 000 control timesteps (400 sim-seconds) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode.
 
@@ -1055,7 +931,7 @@ The vehicle is modelled as a `Rigidbody` with four wheels, each simulated by a
 `WheelCollider`. The two components divide the work: the `Rigidbody` represents the
 car as a single moving mass, and the `WheelCollider`s generate the forces that move it. Near the front of the car, a `RayPerceptionSensor` from the ML-Agents toolkit simulates a 2D LiDAR sensor with 101 rays, which is used as the agent's observation.
 
-==== The RigidBody
+=== The RigidBody
 A `Rigidbody` is the Unity component that gives an object physical behaviour. It
 stores the car's mass, centre of mass and moment of inertia. At each fixed timestep
 the physics engine (PhysX) integrates the forces and torques acting on it to update
@@ -1070,7 +946,7 @@ by the wheels. `BoxColliders` were used to model the car's body and collisions b
     the four `WheelCollider`s handle suspension and tyre forces. The red lines show the raycasts by the `RayPerceptionSensor` that simulates the LiDAR.],
 ) <unity_colliders>
 
-==== The WheelCollider <sec_wheelcollider>
+=== The WheelCollider <sec_wheelcollider>
 In our custom simulator, each wheel of the RoboRacer is
 modelled as a `WheelCollider`, which simulates the wheel's suspension,
 rotation and tyre friction @unitydocsWheelFrictionCurve. This kind of collider uses physics similar to that modelled by the semi-empirical "magic formula" wheel dynamics proposed by Pacejka et al. in @pacejka1992magicformula, and further described in @pacejka2002tyre.
@@ -1275,15 +1151,15 @@ learn to avoid. The curve is defined separately for the forward direction
   )<wheel_friction_curve>
 ]
 
-==== LiDAR
+=== LiDAR
 
 The vehicle is equipped with a simulated 2D LiDAR sensor, which is implemented using a `RayPerceptionSensor` from the ML-Agents toolkit. The sensor emits 101 rays in a fan pattern, covering a field of view of $270 degree$. Each ray measures the distance to the nearest obstacle, such as walls or other vehicles, and returns a normalized value between 0 and 1, where 1 indicates no obstacle within the maximum range of the sensor (20m). The sensor also exposes a hit/miss flag for each ray, as well as flags for which object type was hit (opponent, wall, floor etc.).
 
-=== Track generation
+== Track generation
 
 During training, a variety of tracks is used to prevent the policy from overfitting to any single layout. Training on diverse environments has been shown to improve generalisation to unseen environments @cobbe2019quantifying, and is closely related to domain randomisation, where simulator parameters are randomised to produce more robust policies @tobin2017domain @peng2018sim.
 
-==== Centerline generation
+=== Centerline generation
 
 To this end, we implemented a procedural track generator in C\# in Unity. The idea
 is a _mean-reverting random walk_: a polyline of $N$ equal-length segments whose
@@ -1478,7 +1354,7 @@ The gap is (usually) small, so this correction barely distorts the track.
 
 This method is not immune to generating self-intersecting (degenerate) tracks, but the probability is low enough that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.037%, 0.065%)$ assuming a binomial distribution.
 
-==== Track walls
+=== Track walls
 
 Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti in @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may produce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
 
@@ -1507,10 +1383,160 @@ The trainer stacks the 50 most recent scans for each agent (2 s of history at 25
 
 Because there are `num_inst` Unity instances, the trainer waits for all of them to report before running a single batched inference pass.
 
+= The Agent
 
-== The Agent
+In this chapter, we describe the architecture of the agent and the auxiliary losses used to improve its performance. Because we are comparing the effect of auxiliary losses, we train multiple agents with the same architecture, but with different auxiliary losses enabled each time.
 
-The agent is a feedforward actor-critic network implemented in PyTorch, with the TorchRL library handling the action distribution and the PPO loss. It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
+We shall first formalise the problem of autonomous racing as a partially observable Markov decision process (POMDP) in @sec:pomdp, then describe the process of reinforcement learning in @sec:rl, describe the architecture of the agent in @sec:agent, and finally discuss the auxiliary losses in @sec:auxiliary.
+
+
+== Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
+
+In order to formally describe the problem of autonomous racing, we first introduce the framework of partially observable Markov decision processes (POMDPs). POMDPs are a generalisation of Markov decision processes (MDPs) that account for the fact that an agent may not have access to the full state of the environment. In a POMDP, the agent receives observations that provide partial information about the underlying state, and must make decisions based on this incomplete information.
+
+A POMDPs is defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$, based on the work by Kaelbling et al.
+@kaelbling1998:
+
+At each time step $t$, the environment is in state $s_t in cal(S)$, where
+$cal(S)$ is the state space. This state is a _complete_ description of the
+environment at that time. The first state $s_0$ is sampled from an initial state distribution $rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
+$o_t ~ cal(Z)(dot | s_t)$. The information in $s_t$ that is missing from
+$o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road surface conditions directly.
+
+Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
+$cal(A)$ is the action space. The policy therefore maps an
+observation to a probability distribution over actions; we write
+$a_t ~ pi(dot | o_t)$ #footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator in that case.]). The policy is what we want to find: it describes the
+agent's behaviour. For simplicity, we let the policy depend only on the current observation;
+should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
+to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
+function. By the _Markov property_, the next state $s_(t+1)$ depends only on the current
+state $s_t$ and action $a_t$, not on earlier history @sutton2018. Then, the agent receives a scalar reward
+$r_t = cal(R)(s_t, a_t, s_(t+1))$, where $cal(R)$ is the reward function, together with
+the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_iteration_diagram.
+
+
+#let s-node(pos, body) = node(pos, body, shape: circle, radius: 1.1em)
+#let o-node(pos, body) = node(
+  pos,
+  body,
+  shape: circle,
+  radius: 1.1em,
+  stroke: (thickness: 1pt, dash: "dashed"),
+)
+#let a-node(pos, body) = node(pos, body, shape: rect, width: 2.2em, height: 2.2em)
+#let r-node(pos, body) = node(pos, body, shape: fletcher.shapes.diamond, inset: 5pt)
+
+#let party(pos, body) = node(pos, strong(body), stroke: 1pt, corner-radius: 3pt)
+#let step(pos, body) = node(pos, body, stroke: 0.5pt, fill: white)
+#let msg(from, to, label) = edge(from, to, "-|>", label, label-angle: auto)
+#let lifeline(x, end) = edge((x, 0), (x, end), stroke: (paint: gray, dash: "dashed"), layer: -1)
+
+#figure(
+  scale(80%, reflow: true, diagram(
+    spacing: (26em, 1.5em),
+    node-inset: 6pt,
+
+    // Participants and lifelines
+    party((0, 0), [Agent]),
+    party((1, 0), [Environment]),
+    lifeline(0, 6),
+    lifeline(1, 6),
+
+    edge((-0.15, 1), (-0.15, 5), layer: -1, "-|>", $t$),
+
+    // Local computations
+    step((1, 1), $s_0 ~ rho_0$),
+    step((0, 2), $a_0 ~ pi(dot | o_0)$),
+    step((1, 3), $s_1 ~ P(dot | s_0, a_0)$),
+    step((0, 4), $a_1 ~ pi(dot | o_1)$),
+    step((1, 5), $s_2 ~ P(dot | s_1, a_1)$),
+    node((0, 6), $dots.v$, fill: white),
+    node((1, 6), $dots.v$, fill: white),
+
+    // Messages
+    msg((1, 1), (0, 2), $o_0 ~ cal(Z)(dot | s_0)$),
+    msg((0, 2), (1, 3), $a_0$),
+    msg((1, 3), (0, 4), $r_0 = R(s_0, a_0, s_1), o_1 ~ cal(Z)(dot | s_1)$),
+    msg((0, 4), (1, 5), $a_1$),
+    msg((1, 5), (0, 6), $r_1 = R(s_1, a_1, s_2), o_2 ~ cal(Z)(dot | s_2)$),
+  )),
+  caption: [
+    Interaction between the agent and the environment over time ($t$).
+  ],
+) <mdp_iteration_diagram>
+
+The agent's goal is to maximise the _expected discounted return_. The
+_discounted return_ (or simply _return_) from time step $t$ is the discounted sum of all rewards the agent
+receives from $t$ onward,
+$ G_t = sum_(k=0)^(T-t) gamma^k r_(t+k), $
+where $T$ is the final time step and $gamma in [0, 1]$ is the discount
+factor. A reward received $k$ steps ahead is scaled by $gamma^k$, so later
+rewards are worth less than immediate ones: when $gamma$ is close to 1 the
+agent is far-sighted, and when $gamma$ is close to 0 it is short-sighted.
+Since $G_t$ depends on random states, observations and actions, it is a
+random variable, and the agent maximises its expectation, $EE[G_0]$, from the
+start of the episode. The policy that achieves this maximum is the _optimal policy_ $pi^*$.
+
+== Reinforcement Learning (RL) <sec:rl>
+
+In order to find the optimal policy, $pi^*$ that maximises the expected discounted return, $J(theta) = EE_pi [G_0]$, we use reinforcement learning (RL) as introduced by Sutton and Barto @sutton2018. In RL, the agent learns to maximise its expected discounted return by interacting with the environment and receiving feedback in the form of rewards. The agent updates its policy based on the observed rewards and transitions, gradually improving its performance over time. We use RL instead of supervised learning due to lack of labelled data for the optimal policy.
+
+So-called model-free RL algorithms fall into three broad classes: _Value-based_ methods learn the
+optimal action-value function
+$Q^*(s, a) = max_pi Q^pi (s, a)$
+and act greedily with respect to it, choosing the action with the highest value in the current state: $pi(s) = argmax_(a in cal(A)) Q^pi (s, a)$.
+_Policy-based_ methods, on the other hand,
+learn a parameterised policy $pi_theta$ directly by ascending the estimated gradient of
+$J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
+$arg max$ over actions. They can also represent stochastic policies, which may be
+necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
+combine both: a learned value function (the critic) is used to reduce the variance
+of the policy gradient, and since the critic is only used in training, it may take privileged information as input as in . We focus on policy-based and actor-critic
+methods in this report.
+
+=== Policy gradient theorem <sec:policy_gradient>
+
+Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
+$
+  J(theta) = EE_(tau tilde p_theta) [G_0]
+  = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
+  = integral p_theta (tau) G(tau) dif tau
+$
+
+Taking the gradient of $J(theta)$ with respect to $theta$ and applying the log-derivative trick @williams1992, we obtain the policy gradient theorem @sutton2018:
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
+$ <eq:policy_gradient_theorem>
+
+@eq:policy_gradient_theorem shows in what direction to update the policy parameters in order to increase the expected return. Of course, we cannot compute the expectation exactly without simulating all possible trajectories, and instead have to rely on estimates such as those detailed in @sec:reinforce and @sec:ppo.
+
+
+=== REINFORCE <sec:reinforce>
+
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
+
+$
+  hat(nabla_theta J)(theta) = 1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
+$
+Although REINFORCE is simple to implement, it has several drawbacks, including having high variance in its gradient estimates, which can lead to slow convergence and instability during training @santana2026introductiondeepreinforcementimitation, and, being an on-policy algorithm, it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
+
+=== Proximal Policy Optimisation (PPO) <sec:ppo>
+PPO is a modern actor-critic algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, being an actor-critic method, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate, $hat(nabla_theta J)(theta)$. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
+
+Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t = hat(A)^pi (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
+In PPO, the clipped surrogate objective is given by
+$
+  cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
+$
+
+where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely. These two mechanisms together ensure that the policy is updated in a way that improves performance while avoiding large, destabilising changes that are common in other policy gradient methods @schulman2017ppo.
+
+== Neural Network Architecture <sec:agent>
+
+The agent is a feedforward actor-critic network implemented in PyTorch @paszke2019pytorch, with the TorchRL library @bou2023torchrldatadrivendecisionmakinglibrary.
+
+It has no recurrent state, so the stack of past scans is its only source of temporal information, since during testing, the agent . It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
 
 - the _policy head_ outputs the parameters of the action distribution,
 - the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
@@ -1771,8 +1797,10 @@ In order to ensure the targets are on a similar scale, the targets are normalise
 
 Because the auxiliary targets are heavy-tailed, we use the Huber loss to reduce the influence of outliers and prevent the policy from (a) overfitting to them; and (b) producing large gradients that destabilise training.
 
+== Auxiliary Heads <sec:auxiliary>
+
 == Training
-The agent is trained using the PPO algorithm (@sec_ppo) using Generalised Advantage Estimation. The total loss minimised is
+The agent is trained using the PPO algorithm (@sec:ppo) using Generalised Advantage Estimation. The total loss minimised is
 $ cal(L) = cal(L)_"PPO" + c_v cal(L)_V - c_e H[pi_theta] + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)), $
 where $cal(L)_V$ is the value loss, $H[pi_theta]$ the policy entropy and $cal(L)_"aux"^((k))$ the loss of the $k$-th auxiliary target (Huber loss on normalised targets). The baseline model uses the same loss with all $w^((k)) = 0$, so the two differ only in the auxiliary term. Each iteration collects a 256-step rollout from all agents, then runs 4 epochs of minibatch updates using the Adam optimiser @kingma2017adammethodstochasticoptimization with a static learning rate of $1 times 10^(-4)$.
 
