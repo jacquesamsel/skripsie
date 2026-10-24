@@ -375,6 +375,38 @@ sutton2018:
   edition: 2
   publisher: MIT Press
 
+srinivasan2023reinforcementlearningadvancementslimitations:
+  type: article
+  title: 'Reinforcement Learning: Advancements, Limitations, and Real-world Applications'
+  author: Srinivasan, Avanthikaa
+  date: 2023-08
+  page-range: ''
+  serial-number:
+    doi: 10.55041/IJSREM25118
+  parent:
+    type: periodical
+    title: INTERANTIONAL JOURNAL OF SCIENTIFIC RESEARCH IN ENGINEERING AND MANAGEMENT
+    volume: 7
+
+
+pomerleau1988alvinn:
+  type: article
+  title: 'ALVINN: an autonomous land vehicle in a neural network'
+  author: Pomerleau, Dean A.
+  date: 1988
+  page-range: 305-313
+  abstract: ALVINN (Autonomous Land Vehicle In a Neural Network) is a 3-layer back-propagation network designed for the task of road following. Currently ALVINN takes images from a camera and a laser range finder as input and produces as output the direction the vehicle should travel in order to follow the road. Training has been conducted using simulated road images. Successful tests on the Carnegie Mellon autonomous navigation test vehicle indicate that the network can effectively follow real roads under certain field conditions. The representation developed to perform the task differs dramatically when the network is trained under various conditions, suggesting the possibility of a novel adaptive autonomous navigation system capable of tailoring its processing to the conditions at hand.
+  parent:
+    type: proceedings
+    title: Proceedings of the 2nd International Conference on Neural Information Processing Systems
+    publisher:
+      name: MIT Press
+      location: Cambridge, MA, USA
+    parent:
+      type: proceedings
+      title: NIPS'88
+
+
 kaelbling1998:
   type: article
   title: Planning and acting in partially observable stochastic domains
@@ -575,6 +607,54 @@ ruder2017overviewmultitasklearningdeep:
   serial-number:
     arxiv: '1706.05098'
 
+navon2021auxiliarylearningimplicitdifferentiation:
+  type: misc
+  title: Auxiliary Learning by Implicit Differentiation
+  author:
+  - Navon, Aviv
+  - Achituve, Idan
+  - Maron, Haggai
+  - Chechik, Gal
+  - Fetaya, Ethan
+  date: 2021
+  url: https://arxiv.org/abs/2007.02693
+  serial-number:
+    arxiv: '2007.02693'
+
+
+xu2026visionbasedpolicylearninghighspeedautonomousracing:
+  type: article
+  title: 'Vision-Based Policy Learning for High-Speed Autonomous Racing: A Two-Phase Learning Paradigm'
+  author:
+  - Xu, Haoran
+  - Chen, Xianwei
+  - Lang, Yilin
+  - Ren, Qinyuan
+  date: 2026
+  page-range: 101-114
+  serial-number:
+    doi: 10.1109/MRA.2025.3639812
+  parent:
+    type: periodical
+    title: IEEE Robotics & Automation Magazine
+    issue: 1
+    volume: 33
+
+
+abouelazm2026diverseadaptivebehaviorcurriculum:
+  type: misc
+  title: 'Diverse and Adaptive Behavior Curriculum for Autonomous Driving: A Student-Teacher Framework with Multi-Agent RL'
+  author:
+  - Abouelazm, Ahmed
+  - Ratz, Johannes
+  - Schörner, Philip
+  - Zöllner, J. Marius
+  date: 2026
+  url: https://arxiv.org/abs/2507.19146
+  serial-number:
+    arxiv: '2507.19146'
+
+
 
 roboracer_rules:
   type: Web
@@ -687,6 +767,22 @@ kendall2018multitask-cvpr:
     type: Proceedings
     title: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)
     publisher: IEEE
+
+chitta2022transfuserimitationtransformerbasedsensor:
+  type: misc
+  title: 'TransFuser: Imitation with Transformer-Based Sensor Fusion for Autonomous Driving'
+  author:
+  - Chitta, Kashyap
+  - Prakash, Aditya
+  - Jaeger, Bernhard
+  - Yu, Zehao
+  - Renz, Katrin
+  - Geiger, Andreas
+  date: 2022
+  url: https://arxiv.org/abs/2205.15997
+  serial-number:
+    arxiv: '2205.15997'
+
 
 kendall2017uncertainties:
   type: Article

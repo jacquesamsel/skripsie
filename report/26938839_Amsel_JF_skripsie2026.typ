@@ -274,7 +274,7 @@
 
 = Abstract
 
-End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them: the progress-based reward is dense, but it is an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This Skripie investigates whether auxiliary losses that predict privileged information from the policy's shared representation improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them: the progress-based reward is dense, but it is an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
 
 
 #pagebreak()
@@ -444,90 +444,77 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 
 == Related literature <sec:related_literature>
 === Previous Approaches
-Evans et al. @evans2024unifyingf1tenthautonomousracing present a survey breaking down the autonomous racing in RoboRacer literature into two categories: _classical approaches_ and _learning approaches_. We shall provide a brief overview of classical approaches, and then focus on learning approaches, which are more relevant to this project.
+Evans et al. @evans2024unifyingf1tenthautonomousracing present a survey breaking down the autonomous racing literature in RoboRacer into two categories: _classical approaches_ and _learning approaches_. We shall provide a brief overview of classical approaches, and then focus on learning approaches, which are more relevant to this project.
 
 ==== Classical approaches
 
-Classical approaches generally decompose the driving task into three stages: perception, planning, and control @evans2024unifyingf1tenthautonomousracing. Perception is the process of converting raw sensor inputs into a representation of the environment, such as a map of the track and the location of other vehicles. Planning uses this representation to generate a trajectory for the vehicle to follow, and control executes this trajectory by sending commands to the vehicle's actuators. These approaches tend to be more interpretable and easier to debug @tampuu2022surveyofendtoenddriving, as each component can be analysed separately @yurtsever2020surveyofautonomousdriving.
+Classical approaches generally decompose the driving task into three stages: perception, planning, and control @evans2024unifyingf1tenthautonomousracing. Perception is the process of converting raw sensor inputs into a representation of the environment, such as a map of the track and the location of other vehicles. Planning uses this representation to generate a trajectory for the vehicle to follow, and control executes this trajectory by sending commands to the vehicle's actuators. These approaches tend to be more interpretable and easier to debug @tampuu2022surveyofendtoenddriving, as each component can be analysed separately @yurtsever2020surveyofautonomousdriving. 
 
 ==== Learning approaches
 
-Learning approaches, which have recently shown promise in the field of autonomous driving, are often end-to-end, mapping raw sensor inputs directly to control outputs @yurtsever2020surveyofautonomousdriving. This can be done using supervised learning, where the model is trained on a dataset of expert demonstrations, or using reinforcement learning, where the model learns by interacting with the environment and receiving feedback in the form of rewards.
+Learning approaches, which have recently shown promise in the field of autonomous driving in simulation @wurman2022outracing @lee2025outracing as well as in deployment on a physical vehicle @czechmanowski2025learningracingpoliciesreinforcement, are often end-to-end, mapping raw sensor inputs directly to control outputs @yurtsever2020surveyofautonomousdriving. This can be done using supervised learning (such as behaviour cloning @pomerleau1988alvinn), where the model is trained on a dataset of expert demonstrations, or using reinforcement learning @sutton2018, where the model learns by interacting with the environment and receiving feedback in the form of rewards.
 
-Learning approaches have the potential to learn complex behaviours that are difficult to hand-engineer, and can adapt to changing environments @bosello2022traininaustria. However, they often require large amounts of data and computational resources, and can be less interpretable than classical approaches: deep end-to-end learning approaches are often regarded as "black boxes" @samek2017explainableartificialintelligenceunderstanding, which may be undesirable in safety-critical applications @chi2017deepsteeringlearningendtoend. In RoboRacer, learning approaches have shown promise, but were unable to outperform classical approaches in benchmarks @evans2024unifyingf1tenthautonomousracing, and recently the majority of 27th RoboRacer Autonomous Racing Competition entries were classical approaches @mallon2026roboracer, despite learning approaches generalising better to unseen tracks @bosello2022traininaustria.
+Learning approaches have the potential to learn complex behaviours that are difficult to hand-engineer, and can adapt to changing environments @bosello2022traininaustria. However, they often require large amounts of data and computational resources @srinivasan2023reinforcementlearningadvancementslimitations, and can be less interpretable than classical approaches: deep end-to-end learning approaches are often regarded as "black boxes" @samek2017explainableartificialintelligenceunderstanding, which may be undesirable in safety-critical applications @chi2017deepsteeringlearningendtoend. In RoboRacer, learning approaches have shown promise, but were unable to outperform classical approaches in benchmarks @evans2024unifyingf1tenthautonomousracing, and recently the majority of 27th RoboRacer Autonomous Racing Competition entries were classical approaches @mallon2026roboracer, despite learning approaches generalising better to unseen tracks @bosello2022traininaustria.
 
-== Methods using privileged informaton
+== Learning Methods Using Privileged Informaton
 
-Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as a teacher for distillation, and as auxiliary losses or rewards.
+During training in simulation, information that is not available to the agent at inference time, is available. This information is referred to as _privileged information_, and is usually unused. There are, however, several methods that use privileged information to improve the performance of an agent.
 
-=== Asymetric critics
-Asymetric critic methods @pinto2017asymmetricactorcriticimagebased train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance of a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
+Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as inputs to a teacher for distillation, and as auxiliary rewards or losses. We provide these examples to illustrate how other methods use privileged information, and to motivate the use of auxiliary losses as an alternative method in this project.
+
+=== Asymetric Actor-critic Methods
+Asymetric actor-critic methods @pinto2017asymmetricactorcriticimagebased are a variant of actor-critic methods that train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance of a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
 
 === Teacher-student distillation
 
-Teacher-student distillation @hinton2015distillingknowledgeneuralnetwork involves training a teacher model with access to privileged information, and then using the teacher's outputs to train a student model that does not have access to this information. The student model is trained to mimic the teacher's behaviour, effectively learning from the teacher's understanding of its privileged knowledge.
-
-=== Auxiliary Rewards
-
-When privileged information is available in RL contexts, it can be used to construct auxiliary rewards that guide the agent toward desirable behaviors by evaluating performance against sub-goals. For example, in autonomous racing, privileged knowledge of track layout or opponent positions can generate bonuses for staying centered or avoiding near-misses.
-
-While auxiliary rewards act as a form of reward shaping - supplying denser feedback to accelerate learning - there is a crucial distinction between auxiliary rewards and reward shaping. Traditional potential-based shaping, where the agent is, for example, rewarded for moving towards a target and penalised for moving away from it, mathematically guarantees that the underlying task and optimal policy remain unchanged @ng1999policy. Auxiliary rewards, however, act as heuristic bonuses that are rarely potential-based. Consequently, they risk altering the task being solved, which can cause the agent to converge on suboptimal policies for the original objective.
-
-=== Auxiliary losses
-
-@glassner2019closinggapendtoendautonomous
-
-@ruder2017overviewmultitasklearningdeep
-
-Incorporation of auxiliary losses has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal. Auxiliary learning achieves this by augmenting a model’s primary task with a set of auxiliary tasks during training, in the hope that learning them concurrently will improve the model’s internal representations and, in turn, its performance on the primary task.
-
-Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information as input.
-
-In the field of autonomous driving,
-
-== Summary
+Teacher-student distillation @hinton2015distillingknowledgeneuralnetwork involves training a teacher model with access to privileged information, and then using the teacher's outputs to train a student model that does not have access to this information. The student model is trained to mimic the teacher's behaviour, effectively learning from the teacher's understanding of its privileged knowledge. Xu et al. @xu2026visionbasedpolicylearninghighspeedautonomousracing applied this method to LiDAR-based autonomous racing on the RoboRacer platform, and found that the student model was able to achieve better performance than a baseline model trained without a teacher.
 
 
+=== Auxiliary learning
 
-== END
+Auxiliary learning is a method that falls under the umbrella of multi-task learning, where a model is trained to perform multiple tasks simultaneously. Specifically, in auxiliary learning, the model's performance on the auxiliary task is not an objective in itself, but the model's performance on the auxiliary task is used to improve its performance on the primary task. This occurs because the auxiliary task provides additional information that can be used to improve the model's understanding of the primary task, which can lead to better generalisation and faster learning @ruder2017overviewmultitasklearningdeep.
 
+==== Auxiliary Rewards
 
+When privileged information is available, it can be used to construct auxiliary rewards that guide the agent toward desirable behaviors by evaluating performance against sub-goals. For example, in autonomous racing, privileged knowledge of track layout or opponent positions can generate bonuses for staying centered or avoiding near-misses.
 
+While auxiliary rewards act as a form of reward shaping - supplying denser feedback to accelerate learning - there is a crucial distinction between auxiliary rewards and reward shaping. Traditional potential-based shaping, where the agent is, for example, rewarded for moving towards a target and penalised for moving away from it, guarantees that the underlying task and optimal policy remain unchanged @ng1999policy. Auxiliary rewards, however, act as heuristic bonuses that are rarely potential-based. Consequently, they risk altering the task being solved, which can cause the agent to converge on suboptimal policies for the original objective @ng1999policy.
 
+==== Auxiliary losses
 
-To evaluate whether privileged-information auxiliary losses can improve an end-to-end racing agent, this chapter establishes the theoretical foundation for how the agent learns and how we measure its internal representations.
-We first formulate the control problem as a Partially Observable Markov Decision Process (POMDP) in @sec:pomdp, as the agent drives using only local LiDAR data. @sec:rl and @sec:policy_gradient then introduce Reinforcement Learning (RL) and Proximal Policy Optimisation (PPO), the policy gradient algorithm used to train the baseline driving behaviour.
-@sec:auxiliary_learning introduces the core intervention to improve the agent's performance: auxiliary learning. @sec:loss_weighting and @sec:huber_loss cover loss weighting and the Huber loss, which are necessary to keep this multi-objective training stable.
-To determine whether these auxiliary tasks actually change what the network encodes, @sec:linear_probing introduces linear probing as a method to analyse intermediate neural representations.
+Incorporation of auxiliary losses alongside the primary loss has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
+
+Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
+
+In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability and 
+
+=== Summary
+
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but unused at deployment. Existing ways of exploiting it each leave a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
 
+In order to formally describe the problem of autonomous racing, we first introduce the framework of partially observable Markov decision processes (POMDPs). POMDPs are a generalisation of Markov decision processes (MDPs) that account for the fact that an agent may not have access to the full state of the environment. In a POMDP, the agent receives observations that provide partial information about the underlying state, and must make decisions based on this incomplete information.
 
-=== Partially Observable Markov Decision Processes (POMDPs)
-
-Many control and robotics problems require an agent to make a sequence of
-decisions in an environment, where each decision influences what happens next
-and where the agent can sense only part of the environment. We model such
-problems as a _partially observable Markov decision process_ (POMDP) defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$, based on the work by Kaelbling et al.
+A POMDPs is defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$, based on the work by Kaelbling et al.
 @kaelbling1998:
 
 At each time step $t$, the environment is in state $s_t in cal(S)$, where
 $cal(S)$ is the state space. This state is a _complete_ description of the
 environment at that time. The first state $s_0$ is sampled from an initial state distribution $rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
-$o_t ~ cal(Z)(dot | s_t)$, where $cal(O)$ is the observation space. The information in $s_t$ that is missing from
+$o_t ~ cal(Z)(dot | s_t)$. The information in $s_t$ that is missing from
 $o_t$ is called _privileged information_. For example, a car may observe its lidar measurements, but not the road surface conditions directly.
 
 Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
 $cal(A)$ is the action space. The policy therefore maps an
 observation to a probability distribution over actions; we write
-$a_t ~ pi(dot | o_t)$ #footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach.]). The policy is what we want to find: it describes the
-agent's behaviour, whereas the POMDP describes the environment in which the agent
-acts. For simplicity, we let the policy depend only on the current observation;
+$a_t ~ pi(dot | o_t)$ #footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator in that case.]). The policy is what we want to find: it describes the
+agent's behaviour. For simplicity, we let the policy depend only on the current observation;
 should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
-to a new state, $s_(t+1) ~ P(dot | s_t, a_t)$, where $P$ is the transition
-function. By the _Markov property_, the next state depends only on the current
-state and action, not on earlier history @sutton2018. Then, the agent receives a scalar reward
-$r_t = R(s_t, a_t, s_(t+1))$, where $R$ is the reward function, together with
+to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
+function. By the _Markov property_, the next state $s_(t+1)$ depends only on the current
+state $s_t$ and action $a_t$, not on earlier history @sutton2018. Then, the agent receives a scalar reward
+$r_t = cal(R)(s_t, a_t, s_(t+1))$, where $cal(R)$ is the reward function, together with
 the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_iteration_diagram.
 
 
@@ -549,7 +536,7 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
 
 #figure(
   scale(80%, reflow: true, diagram(
-    spacing: (18em, 2.5em),
+    spacing: (26em, 2em),
     node-inset: 6pt,
 
     // Participants and lifelines
@@ -558,7 +545,7 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
     lifeline(0, 6),
     lifeline(1, 6),
 
-    edge((-0.3, 2), (-0.3, 3), layer: -1, "-|>", $t$),
+    edge((-0.15, 1), (-0.15, 5), layer: -1, "-|>", $t$),
 
     // Local computations
     step((1, 1), $s_0 ~ rho_0$),
@@ -581,16 +568,16 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
   ],
 ) <mdp_iteration_diagram>
 
-The agent's goal is to maximise the expected discounted return. The
+The agent's goal is to maximise the _expected discounted return_. The
 _discounted return_ (or simply _return_) from time step $t$ is the discounted sum of all rewards the agent
 receives from $t$ onward,
 $ G_t = sum_(k=0)^(T-t) gamma^k r_(t+k), $
-where $T$ is the final time step and $gamma in [0, 1)$ is the discount
+where $T$ is the final time step and $gamma in [0, 1]$ is the discount
 factor. A reward received $k$ steps ahead is scaled by $gamma^k$, so later
 rewards are worth less than immediate ones: when $gamma$ is close to 1 the
 agent is far-sighted, and when $gamma$ is close to 0 it is short-sighted.
 Since $G_t$ depends on random states, observations and actions, it is a
-random variable, and the agent maximises its expectation $EE[G_0]$ from the
+random variable, and the agent maximises its expectation, $EE[G_0]$, from the
 start of the episode. The policy that achieves this maximum is the _optimal policy_ $pi^*$.
 
 === Value functions
@@ -607,7 +594,7 @@ measures the expected discounted return starting in state $s$, taking action $a$
 $
   A^pi (s, a) = Q^pi (s, a) - V^pi (s),
 $ <advantage_function>
-which measures how much better action $a$ is than the policy's average action in state $s$. Both value functions satisfy the Bellman equations @bellman1957, which express the value of a state recursively in terms of the immediate reward and the value of successor states; these recursions underpin the value-learning methods discussed below.
+which measures how much better action $a$ is than the policy's average action in state $s$.
 
 == Reinforcement Learning (RL) <sec:rl>
 Reinforcement learning (RL) is a subfield of machine learning concerned with
@@ -619,22 +606,17 @@ agent is told how good its actions were, not which action was correct, and
 rewards may arrive long after the actions that caused them. Furthermore, the
 data distribution depends on the agent's own policy, so the agent must explore.
 
-RL algorithms fall into three broad classes. _Value-based_ methods learn the
+So-called model-free RL algorithms fall into three broad classes: _Value-based_ methods learn the
 optimal action-value function
-$Q^*(s, a) = max_pi Q^pi (s, a)$, which satisfies the Bellman optimality
-equation
-$
-  Q^*(s, a) = EE[r_t + gamma max_(a' in cal(A)) Q^*(s_(t+1), a') | s_t = s, a_t = a],
-$
-and act greedily with respect to it: $pi(s) = argmax_(a in cal(A)) Q^*(s, a)$.
+$Q^*(s, a) = max_pi Q^pi (s, a)$
+and act greedily with respect to it, choosing the action with the highest value in the current state: $pi(s) = argmax_(a in cal(A)) Q^pi (s, a)$.
 _Policy-based_ methods, on the other hand,
 learn a parameterised policy $pi_theta$ directly by ascending the gradient of
 $J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
 $arg max$ over actions. They can also represent stochastic policies, which may be
 necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
 combine both: a learned value function (the critic) is used to reduce the variance
-of the policy gradient, and since the critic is only used in training, it may
-condition on privileged information. We focus on policy-based and actor-critic
+of the policy gradient, and since the critic is only used in training, it may take privileged information as input as in . We focus on policy-based and actor-critic
 methods in this report.
 
 === Policy gradient methods <sec:policy_gradient>
@@ -646,56 +628,6 @@ $
   = integral p_theta (tau) G(tau) dif tau
 $
 
-Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done only under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable everywhere, and the integral is finite.]),
-the gradient of the expected return with respect to $theta$ is then
-$
-  nabla_theta J(theta)
-  = nabla_theta integral p_theta (tau) G(tau) dif tau
-  = integral nabla_theta p_theta (tau) G(tau) dif tau
-  = integral p_theta (tau) nabla_theta log p_theta (tau) G(tau) dif tau
-  #linebreak()
-  = EE_(tau tilde p_theta) [nabla_theta log p_theta (tau) G(tau)]
-$ <policy_gradient_theorem>
-
-Considering that the probability of a trajectory can be factorised as
-$
-  p_theta (tau) = p(s_0) product_(t=0)^(T-1)
-  underbrace(p(o_t | s_t), cal(Z)) dot pi_theta (a_t | o_t) dot
-  underbrace(p(r_t | s_t, a_t, s_(t+1), o_t), cal(R)) dot
-  underbrace(p(s_(t+1) | s_t, a_t), cal(P))
-$
-
-since $p(s_0)$, $cal(P)$, $cal(Z)$ and $cal(R)$ do not depend on $theta$, their gradients vanish, so
-
-$
-  nabla_theta log p_theta (tau) = sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t)
-$
-
-Then, the _policy gradient_ can be expressed as
-
-$
-  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(tau)]
-$
-
-Write $G(tau) = G_0$. Splitting the return at time $t$,
-$
-  G_0 = sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t,
-  quad G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k,
-$
-where $G_t$ is the discounted _reward-to-go_,
-
-$
-  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) (sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t)]
-$
-
-However, since the expectation of the fixed past-reward terms is zero, they can be removed from the policy gradient without introducing bias. This can be seen by conditioning on the history $h_t = (s_0, o_0, a_0, r_0, dots, s_(t-1), o_(t-1), a_(t-1), r_(t-1), s_t, o_t)$:
-
-$
-  EE_(a_t tilde pi_theta) [nabla_theta log pi_theta (a_t | o_t) | h_t]
-  = integral_a nabla_theta pi_theta (a | o_t)
-  = nabla_theta integral_a pi_theta (a | o_t)
-  = nabla_theta 1 = 0,
-$
 The past-reward terms therefore vanish in expectation, leaving
 $
   nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
@@ -723,7 +655,7 @@ Although REINFORCE is simple to implement, it has several drawbacks. First, it h
 === Proximal Policy Optimisation (PPO) <sec_ppo>
 PPO is a modern algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, it is an actor-critic method: alongside the policy, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
 
-Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
+Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t = hat(A)^pi (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
 In PPO, the clipped surrogate objective is given by
 $
   cal(L)_"PPO" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
@@ -742,7 +674,7 @@ However, it has limitations, especially in complex environments. Standard end-to
 Auxiliary learning is a complementary method to standard RL. By modifying the objective, models are able to achieve better performance and training speed, therefore requiring less compute and data. For example, @lample2017fps found improved performance in VizDoom after adding auxiliary tasks, and @mirowski2017learningnavigatecomplexenvironments observed improvements in training time after implementing depth prediction in maze solving tasks. In fact, @mirowski2017learningnavigatecomplexenvironments observed better performance using this privileged information for auxiliary training compared to as a direct input.
 
 In RL, the _primary task_ is to update a policy $pi_theta$ to maximise the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$ in the policy-based approach). _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unlike general multi-task learning, performance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
-formulations: auxiliary *losses*, which leave the RL objective unchanged and
+formulations: auxiliary losses, which leave the RL objective unchanged and
 shape only the shared representation, and auxiliary rewards (or shaped rewards), which modify the
 objective itself and can therefore change the optimal policy.
 
@@ -979,37 +911,6 @@ categorical, so we use a linear _regression_ probe instead of a classifier, as
 done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
 concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
 models for spatial and temporal encodings.
-
-
-// === Auxiliary prediction tasks
-
-// Early implementations demonstrated the value of auxiliary prediction in visual, partially observable environments. Lample and Chaplot @lample2017fps introduced auxiliary heads to predict binary game-state indicators (e.g., enemy presence) in first-person environments, demonstrating that multi-task signals significantly enhanced performance when paired with recurrent architectures (DRQN). Extending this concept to rich feature prediction, Dosovitskiy and Koltun @dosovitskiy2016learning proposed Direct Future Prediction (DFP), using supervised regression to forecast future internal measurements across multiple time horizons. Their approach established that predicting multiple auxiliary targets provides strong supervisory signals even when targets are excluded from action selection, outperforming pure RL methods in visual combat tasks. However, DFP relies on an action-space argmax, making it intractable for continuous control tasks.
-
-// Navigational auxiliary tasks were explored by Mirowski et al. @mirowski2017learningnavigatecomplexenvironments, who trained a recurrent actor-critic agent on 3D maze exploration using depth prediction and loop-closure classification #footnote([Loop closure occurs when the agent returns to a previously visited location.]). Their findings included a 5x improvement in sample efficiency, and found that forcing the model to predict depth geometry provided superior performance compared to feeding depth directly as an input feature.
-
-// === Self-Supervised Auxiliary Objectives in RL
-
-// Shelhamer et al. @shelhamer2017lossrewardselfsupervisionreinforcement investigated self-supervised auxiliary losses derived directly from environmental transitions. By combining policy Optimisation with objectives such as inverse dynamics, reward binning, and latent generative modelling (Variational Autoencoders and Bidirectional Generative Adversarial Networks), they achieved a 2.7-fold increase in learning efficiency (AUC) during early training iterations. This highlighted that self-supervised signals stabilize latent feature representations prior to reward convergence.
-
-// === Imitation learning
-
-// Another approach to making use of privileged information is imitation learning; first, an agent is trained with access to privileged state information as input, and then the learned policy is distilled into a second agent that only has access to the partial observations. This approach has successfully been applied to by Chen et al. in @chen2017gradnorm, who used a teacher-student architecture to distill a policy in the CARLA autonomous driving simulator.
-
-// === Previous work on the RoboRacer platform
-
-// Evans et al. in @evans2024unifyingf1tenthautonomousracing provide a survey of recent work on the RoboRacer platform, finding that performance of end-to-end RL agents is limited compared to classical control methods. Further, Evans et al. in @evans2023comparing find that privileged state information (i.e. upcoming center-/racing-line points) improved performance in end-to-end RL agents in simulation, although the advantage only held in simulation. This data is not generally available on unseen tracks in real-world scenarios, making it challenging to generalize the learned policies. Trajectory-aided rewards, which use privileged expert information only during training, improve end-to-end learning without adding deployment-time inputs. We extend this idea by using privileged information as an auxiliary learning signal.
-
-
-// === Synthesis and Identified Research Gap
-
-// While existing literature validates the impact of auxiliary learning on sample efficiency, these foundational studies exhibit distinct constraints when applied to physical control domains:
-
-// - *Visual vs. Low-Dimensional Physical Sensors:* The majority of auxiliary task architectures focus on dense visual inputs (RGB frames) in 3D grid environments. End-to-end autonomous racing relies on low-dimensional, high-frequency 2D LiDAR ranges and motion histories.
-
-// - *Discrete vs. Continuous Control:* Methods such as DFP rely on discrete action selection mechanisms, making them inapplicable to continuous control where smooth steering and throttle inputs are required near dynamic handling limits.
-
-// - *Recurrence vs. Stacked Temporal Representations:* Prior findings indicate that auxiliary losses provide the greatest benefit to recurrent architectures (e.g., LSTMs or DRQNs) @lample2017fps. We apply auxiliary losses to a feedforward architecture and show that it outperforms recurrent implementations.
-
 
 = System overview
 
