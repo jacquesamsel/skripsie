@@ -177,13 +177,13 @@ class ValueModel(torch.nn.Module):
 
 
 class ActorValueAuxOperator(SafeSequential):
-
     def __init__(
         self,
         common_operator: TensorDictModule,
         policy_operator: TensorDictModule,
         value_operator: TensorDictModule,
-        aux_operator: TensorDictModule
+        aux_operator: TensorDictModule,
+        
     ):
         super().__init__(
             common_operator,

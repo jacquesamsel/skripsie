@@ -1,7 +1,7 @@
 import tensordict
 
 from environment import RoboRacerParallelEnvs
-from model import load_model
+from model import load_model, is_recurrent
 import torch
 from infer import do_rollout
 import os
@@ -72,6 +72,10 @@ def score_checkpoint(job: tuple[str, str]) -> pd.DataFrame | None:
         return None
 
     model, model_config, _, _ = load_model(model_path)
+    if is_recurrent(model):
+        # The rollout data has no rnn_h, so recurrent trunks can't be scored here
+        print(f"Skipping {model_name}: recurrent model.")
+        return None
 
     # Do forward pass to get the aux head outputs
     train_x, train_y = get_xy(model, _train_data)
@@ -140,8 +144,8 @@ if __name__ == "__main__":
 
 
     ITERATIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
-    #MODEL_NAMES = os.listdir("checkpoints")
-    MODEL_NAMES = ["baseline_w0_s3", "baseline_w0_s4", "baseline_w0_s5", "baseline_w0_s6"]
+    MODEL_NAMES = [f for f in os.listdir("checkpoints") if not f.startswith("rnn_")]
+    #MODEL_NAMES = ["baseline_w0_s3", "baseline_w0_s4", "baseline_w0_s5", "baseline_w0_s6"]
 
     all_scores = []
 
