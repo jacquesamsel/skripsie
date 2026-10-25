@@ -186,6 +186,40 @@ who2018roadsafety:
   note: 'Licence: CC BY-NC-SA 3.0 IGO'
 
 
+stewart2020calculus:
+  type: book
+  title: 'Calculus: Early Transcendentals'
+  author:
+  - Stewart, J.
+  - Clegg, D.K.
+  - Watson, S.
+  date: 2020
+  publisher: Cengage Learning
+  url: https://books.google.co.za/books?id=BCzLDwAAQBAJ
+  serial-number:
+    isbn: '9780357631478'
+
+
+leibniz1686:
+  type: Article
+  title: "Meditatio nova de natura anguli contactus et osculi, horumque usu in practica Mathesi, ad figuras faciliore ac exactiore delineandas"
+  author: "Leibniz, Gottfried Wilhelm"
+  date: 1686-06
+  page-range: 289-292
+  note: "Reprinted in Mathematische Schriften, ed. C. I. Gerhardt, Abt. 2, vol. III, pp. 326-329"
+  parent:
+    type: Periodical
+    title: "Acta Eruditorum"
+
+struik1969:
+  type: Book
+  title: "A Source Book in Mathematics, 1200-1800"
+  editor: "Struik, Dirk J."
+  date: 1969
+  publisher:
+    name: "Harvard University Press"
+    location: "Cambridge, MA"
+
 bosello2022traininaustria:
   type: article
   title: 'Train in Austria, Race in Montecarlo: Generalized RL for Cross-Track F1tenth LIDAR-Based Races'
@@ -342,6 +376,26 @@ belinkov2021probingclassifierspromisesshortcomings:
   url: https://arxiv.org/abs/2102.12452
   serial-number:
     arxiv: '2102.12452'
+
+nvidia_physx:
+  type: misc
+  title: NVIDIA PhysX SDK
+  author: NVIDIA Corporation
+  url: https://developer.nvidia.com/physx-sdk
+  serial-number:
+    version: 5.x
+
+
+unity2023:
+  type: misc
+  title: Unity
+  author: Unity Technologies
+  date: 2023
+  url: https://unity.com/
+  serial-number:
+    version: '2023.2'
+  note: Game development platform
+
 
 santana2026introductiondeepreinforcementimitation:
   type: misc
@@ -1325,6 +1379,18 @@ singh1994learningwithoutstateestimation:
     publisher:
       name: Morgan Kaufmann
       location: San Francisco (CA)
+
+samak2024autonomyorienteddigitaltwins:
+  type: misc
+  title: Autonomy Oriented Digital Twins for Real2Sim2Real Autoware Deployment
+  author:
+  - Samak, Chinmay Vilas
+  - Samak, Tanmay Vilas
+  date: 2024
+  url: https://arxiv.org/abs/2402.14739
+  serial-number:
+    arxiv: '2402.14739'
+
 
 ml-agents:
   type: Repository
