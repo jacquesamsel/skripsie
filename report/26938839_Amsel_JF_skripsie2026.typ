@@ -613,18 +613,6 @@ must work out through its own exploration which auxiliary rewards actually
 contribute to the primary task. This credit-assignment problem is harder
 still when the auxiliary rewards are themselves sparse or delayed.
 
-== Loss weighting <sec:loss_weighting>
-
-When composing the $cal(L)_"total"$, the question naturally arises: what should be the values of the weights ${w^((1)), ..., w^((K))}$? Since the values cannot simply be learnt by gradient descent (they would simply shrink to 0 or go negative to lower $cal(L)_"total"$), we must use another technique, such as hyperparameter tuning.
-
-=== Hyperparameter tuning
-
-One may empirically estimate the optimal weights using hyperparameter tuning tools such as Optuna @akiba2019optuna, or a simple grid search. However, when it is expensive to train a model, this method of search quickly becomes impractical, since every candidate set of weights requires its own training run.
-
-Hyperparameter tuners differ in how they choose which weights to try next. Grid search evaluates every combination on a fixed $N$-dimensional grid, so its cost grows exponentially with the number of weights $N$. Random search samples configurations at random and is often more efficient than grid search, because usually only a few hyperparameters matter much @bergstra2012random. Bayesian optimisation methods go further by building a model of how the score depends on the hyperparameters and using it to choose promising candidates. Examples include Gaussian-process-based optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, which is the default sampler in Optuna. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha give each trial a small budget and only continue the best-performing ones. However, this method may kill RL trials that perform more exploration early on, so is not ideal for such scenarios.
-
-Despite perfect loss weighting, the agent may still fail to learn the primary task if the auxiliary task losses are not well-chosen; for data that has extreme outliers, the choice of loss function is also important.
-
 //Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
 
@@ -661,85 +649,6 @@ Despite perfect loss weighting, the agent may still fail to learn the primary ta
 // Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
 
 // Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this project, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
-
-== Linear Probing of Representations <sec:linear_probing>
-
-Consider the arbitrary network in @example_network_diagram. Once trained, each layer $l$
-maps an input $bold(x)$ to an intermediate representation
-$bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
-information these representations encode, and in particular whether they encode
-privileged state variables (e.g. velocity, slip, upcoming curvature).
-
-
-#figure(
-  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 layers are fully connected layers with ReLU activations.",
-  scale(80%, reflow: true, draw-network(
-    (
-      (
-        type: "input",
-        image: rotate(90deg)[#image("figures/lidar_input.png", width: 4cm, height: 4cm)],
-        label: "LIDAR history",
-        channels: ("", 50),
-      ),
-      (
-        type: "conv",
-        label: "Conv1D",
-        channels: (1, 50),
-        connection-label: $bold(h)^((0))$,
-      ),
-      (
-        type: "conv",
-        label: "Conv1D",
-        channels: (1, 50),
-        connection-label: $bold(h)^((1))$,
-      ),
-      (
-        type: "fc",
-        label: "fc1",
-        connection-label: $bold(h)^((2))$,
-      ),
-      (
-        type: "fc",
-        label: "fc2",
-        connection-label: $bold(h)^((3))$,
-      ),
-      (
-        type: "fc",
-        label: "fc3",
-        connection-label: $bold(h)^((4))$,
-      ),
-      (
-        type: "output",
-        label: "output",
-        connection-label: $bold(h)^((5))$,
-      ),
-    ),
-    show-relu: true,
-  )),
-) <example_network_diagram>
-
-Alain and Bengio @alain2018understandingintermediatelayersusing introduced
-_linear probes_ for this purpose. The main network's weights are frozen, and a
-separate linear classifier (the probe) is trained in a supervised manner on the representations
-$bold(h)^((l))$ of each layer to predict the desired target. Since the
-probe cannot change the representation, its test accuracy measures how much
-class information is _linearly_ available at that layer. Anand et al.
-@anand2020unsupervisedstaterepresentationlearning extended this idea to
-reinforcement learning, probing an encoder's representations for ground-truth
-state variables of Atari games (read from the console's RAM).
-
-The choice of a _linear_ probe is deliberate. A sufficiently expressive probe
-(e.g. a deep MLP) may compute the target from almost any input, including the
-raw network input, so high probe accuracy would say more about the probe than
-about the representation @belinkov2021probingclassifierspromisesshortcomings.
-Restricting the probe to a linear map means that it can only succeed if the
-network has already done the work of encoding the target along some direction in the representation space.
-
-Many of the privileged variables of interest are continuous rather than
-categorical, so we use a linear _regression_ probe instead of a classifier, as
-done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
-concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
-models for spatial and temporal encodings.
 
 = System overview
 
@@ -1606,7 +1515,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
   let other_networks = (
     (name: "Policy head", size: 4, output: "Action distribution parameters"),
     (name: "Value head", size: 1, output: "State-value estimate"),
-    (name: "Auxiliary head", size: none, output: "Predictions of privileged targets"),
+    (name: "Auxiliary head", size: none, output: "Estimates of privileged targets"),
   )
 
   figure(
@@ -1691,9 +1600,13 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
 
             node(
               (x, 6),
-              place(center + horizon, box(width: 4cm, align(center, text(size: 1em)[#net.output]))),
+              place(center + horizon, box(width: 6cm, align(center, par(
+                text(size: 1em)[#net.output],
+                justify: false,
+              )))),
               name: out_n,
               stroke: none,
+              inset: 8pt,
               width: 1pt,
               height: 0.9cm,
             ),
@@ -1773,7 +1686,7 @@ $
   ),
   caption: [The auxiliary targets to be predicted by the agent #footnote([In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy (i.e. without auxiliary losses/heads) as data to estimate $sigma$ and $mu$.])],
 ) <auxiliary_targets>
-==== Choice of auxiliary loss function
+=== Choice of Auxiliary Loss Function
 
 The choice of auxiliary loss functions $cal(L)_"aux"^((k))$ has the potential to significantly impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss @huber1964robust, defined respectively as
 
@@ -1824,9 +1737,107 @@ The Huber loss's bounded gradient is particularly useful when the target values 
   caption: [Boxplot of the normalised true auxiliary target values collected during a rollout of the baseline policy. It is clear that the targets have so-called "heavy tails".],
 ) <auxiliary_targets_boxplot>
 
-For this reason, we use the Huber loss for all auxiliary targets, with $beta = 1$. Since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation — where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place — and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme targets cannot dominate the gradient.
+For this reason, we use the Huber loss for all auxiliary targets, with $beta = 1$. Since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme targets cannot dominate the gradient.
+
+== Finding the Optimal Weights
+
+The question naturally arises: how should the weights $w^((k))$ of the auxiliary losses be set? If they are too small, the auxiliary losses will have little effect on the agent's learning. If they are too large, the agent may use all its capacity to optimise the auxiliary tasks and fail to learn a good policy, or the auxiliary task gradients may conflict with the main task gradients, slowing learning. This is an optimisation problem, where the weights are tuned to achieve the best overall performance. Two options exist: choosing the weights before training (hyperparameter tuning), or adapting the weights during training (adaptive weighting).
+
+=== Hyperparameter Tuning
+
+Hyperparameter tuning is a common approach to finding the optimal weights for auxiliary losses. It involves running multiple training experiments with different weight configurations and then evaluating the agent's performance, choosing the configuration that yields the best results. This approach is simple to implement, but it can be computationally expensive and time-consuming. It also lacks a guarantee of finding the optimal weights, as the search space can be large and complex.
+
+The simplest tuning method is a grid search, where a discrete set of weight values is defined for each auxiliary loss and all possible combinations are evaluated. However, this approach can be inefficient, especially when the number of auxiliary losses is large, as the number of combinations grows exponentially with the number of weights considered.
+
+Random search @bergstra2012random is another hyperparameter tuning method, where weight configurations are sampled randomly from a predefined distribution. This approach can be more efficient than grid search, as it allows for exploration of a larger search space without evaluating every possible combination. However, it still requires a significant number of training runs to find the optimal weights.
 
 
+#{
+  let opt = (3.14, 3.14)
+
+  // Shared plot builder: draws the sampled points plus the optimum
+  let search-plot(pts, title) = lq.diagram(
+    title: title,
+    xlabel: [Weight of auxiliary loss 1],
+    ylabel: [Weight of auxiliary loss 2],
+    xlim: (0.0, 6.0),
+    ylim: (0.0, 6.0),
+    width: 140pt,
+    height: 140pt,
+    lq.scatter(
+      pts.map(p => p.at(0)),
+      pts.map(p => p.at(1)),
+      color: blue,
+      size: 4pt,
+    ),
+    lq.scatter(
+      (opt.at(0),),
+      (opt.at(1),),
+      color: red,
+      mark: lq.marks.star,
+      size: 9pt,
+    ),
+  )
+
+  // Left: 4x4 grid search, no grid point lands exactly on the optimum
+  let grid-vals = (0.5, 2.0, 3.5, 5.0)
+  let grid-pts = ()
+  for x in grid-vals {
+    for y in grid-vals {
+      grid-pts.push((x, y))
+    }
+  }
+
+  // Middle: random search with one point close to the optimum
+  let random-near = (
+    (0.6, 4.8),
+    (1.4, 1.1),
+    (2.1, 5.2),
+    (4.7, 0.9),
+    (5.3, 3.9),
+    (0.9, 2.7),
+    (4.2, 5.5),
+    (5.6, 1.9),
+    (1.8, 3.6),
+    (3.4, 2.9),
+    (2.2, 2.0),
+    (3.9, 1.6),
+    (3.0, 5.0),
+    (5.0, 2.6),
+    (1.2, 0.4),
+    (4.6, 4.4),
+  )
+
+  // Right: same samples, but the nearby point is moved away
+  let random-far = random-near.map(p => if p == (3.4, 2.9) { (4.7, 3.6) } else { p })
+
+  figure(
+    grid(
+      columns: 3,
+      column-gutter: 12pt,
+      search-plot(grid-pts, [(a) Grid search]),
+      search-plot(random-near, [(b) Random search (hit)]),
+      search-plot(random-far, [(c) Random search (miss)]),
+    ),
+    caption: [Grid and random search over two auxiliary loss weights. The red star indicates the optimal weight configuration. (a) shows that a grid search may miss the optimum, but is guaranteed to find a point within $"grid resolution"/2$ of the optimum. (b) shows that random search can find a point very close to the optimum, but (c) shows that it can also miss it entirely.],
+  )
+}
+
+So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run, so they are not ideal for our scenario.
+
+=== Adaptive Weighting
+Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
+
+==== PCGrad
+
+PCGrad @yu2020gradientsurgerymultitasklearning is a method that modifies the gradients of auxiliary tasks to prevent them from conflicting with the main task's gradients. It does so by projecting the auxiliary task gradients onto the normal plane of the main task's gradient if they conflict. Let $bold(g)_"aux"^((k))$ be the gradient of the model parameters for the $k$-th auxiliary loss and $bold(g)_"PPO"$ be the gradient of the main task loss. If the dot product $bold(g)_"aux"^((k)) dot bold(g)_"main" < 0$, then the auxiliary gradient is projected onto the normal plane of the main task gradient:
+
+$
+  bold(g) = bold(g)_"PPO" + sum_(k=1)^K cases(
+    bold(g)_"aux"^((k)) - frac(bold(g)_"aux"^((k)) dot bold(g)_"PPO", ||bold(g)_"PPO"||^2) bold(g)_"PPO" "if" bold(g)_"aux"^((k)) dot bold(g)_"PPO" < 0,
+    bold(g)_"aux"^((k)) "otherwise"
+  )
+$
 
 == Metrics
 === Progress
@@ -1902,7 +1913,7 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
 
 The baseline model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a crash rate per meter of progress of #todo("Amount") and a reward AUC of #todo("Amount").
 
-To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer (fc3) to predict each auxiliary target. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). Figure 4.1 reports out-of-sample R² at initialisation and after 600 PPO iterations, with error bars showing the standard deviation between each different trained agent model.
+To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer (fc3) to predict each auxiliary target. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample R² at initialisation and after 600 PPO iterations, with error bars showing the standard deviation between each different trained agent model.
 
 Two distinct patterns emerge. Quantities describing the vehicle’s instantaneous dynamics (yaw rate, lateral velocity and lateral wheel slip) are already linearly decodable at initialisation (R² ≈ 0.8–0.9). Since the network is untrained, this reflects information that is close to linear in the observation and survives a series of random LeCun-initialised projections, rather than a learned representation. A similar effect was observed in @alain2018understandingintermediatelayersusing when investigating the same phenomenon in toy MNIST models. Training does not improve the $R^2$ for these quantities, and decodability declines modestly (e.g. rear lateral slip falls from $R^2 = \~0.67$ to \~0.50), suggesting that PPO discards some of this information.
 
@@ -1919,6 +1930,84 @@ Two distinct patterns emerge. Quantities describing the vehicle’s instantaneou
 ) <probe_baseline_heatmap>
 
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
+
+
+Consider the arbitrary network in @example_network_diagram. Once trained, each layer $l$
+maps an input $bold(x)$ to an intermediate representation
+$bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
+information these representations encode, and in particular whether they encode
+privileged state variables (e.g. velocity, slip, upcoming curvature).
+
+
+#figure(
+  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 layers are fully connected layers with ReLU activations.",
+  scale(80%, reflow: true, draw-network(
+    (
+      (
+        type: "input",
+        image: rotate(90deg)[#image("figures/lidar_input.png", width: 4cm, height: 4cm)],
+        label: "LIDAR history",
+        channels: ("", 50),
+      ),
+      (
+        type: "conv",
+        label: "Conv1D",
+        channels: (1, 50),
+        connection-label: $bold(h)^((0))$,
+      ),
+      (
+        type: "conv",
+        label: "Conv1D",
+        channels: (1, 50),
+        connection-label: $bold(h)^((1))$,
+      ),
+      (
+        type: "fc",
+        label: "fc1",
+        connection-label: $bold(h)^((2))$,
+      ),
+      (
+        type: "fc",
+        label: "fc2",
+        connection-label: $bold(h)^((3))$,
+      ),
+      (
+        type: "fc",
+        label: "fc3",
+        connection-label: $bold(h)^((4))$,
+      ),
+      (
+        type: "output",
+        label: "output",
+        connection-label: $bold(h)^((5))$,
+      ),
+    ),
+    show-relu: true,
+  )),
+) <example_network_diagram>
+
+Alain and Bengio @alain2018understandingintermediatelayersusing introduced
+_linear probes_ for this purpose. The main network's weights are frozen, and a
+separate linear classifier (the probe) is trained in a supervised manner on the representations
+$bold(h)^((l))$ of each layer to predict the desired target. Since the
+probe cannot change the representation, its test accuracy measures how much
+class information is _linearly_ available at that layer. Anand et al.
+@anand2020unsupervisedstaterepresentationlearning extended this idea to
+reinforcement learning, probing an encoder's representations for ground-truth
+state variables of Atari games (read from the console's RAM).
+
+The choice of a _linear_ probe is deliberate. A sufficiently expressive probe
+(e.g. a deep MLP) may compute the target from almost any input, including the
+raw network input, so high probe accuracy would say more about the probe than
+about the representation @belinkov2021probingclassifierspromisesshortcomings.
+Restricting the probe to a linear map means that it can only succeed if the
+network has already done the work of encoding the target along some direction in the representation space.
+
+Many of the privileged variables of interest are continuous rather than
+categorical, so we use a linear _regression_ probe instead of a classifier, as
+done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
+concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
+models for spatial and temporal encodings.
 
 The model is now trained with the same reward function (@sec:reward_function) as the baseline model, but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
 
@@ -2037,6 +2126,24 @@ AI was not used to generate the training code or the model definition code - tha
 
 #pagebreak()
 == Proportion of Data Within 1 Standard Deviation <sec:prop_data_within_1_sd>
+
+#{
+  let data = csv("../results/prop_data_within_1_sd.csv").slice(1)
+  figure(
+    stb-table(
+      columns: 2,
+      align: (left, center),
+      header: ("Auxiliary target", "Prop. of data within 1 SD of mean"),
+      ..data
+        .map(row => (
+          row.at(0),
+          [#calc.round(float(row.at(1)) * 100, digits: 2)%],
+        ))
+        .flatten(),
+    ),
+    caption: [Proportion of the normalised auxiliary target data that lies within 1 standard deviation of the mean in the baseline rollout.],
+  )
+}
 
 
 #pagebreak()

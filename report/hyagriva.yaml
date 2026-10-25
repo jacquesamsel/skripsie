@@ -855,6 +855,22 @@ chen2017gradnorm:
   url: https://arxiv.org/abs/1711.02257
   note: "Preprint"
 
+yu2020gradientsurgerymultitasklearning:
+  type: misc
+  title: Gradient Surgery for Multi-Task Learning
+  author:
+  - Yu, Tianhe
+  - Kumar, Saurabh
+  - Gupta, Abhishek
+  - Levine, Sergey
+  - Hausman, Karol
+  - Finn, Chelsea
+  date: 2020
+  url: https://arxiv.org/abs/2001.06782
+  serial-number:
+    arxiv: '2001.06782'
+
+
 kendall2018multitask-cvpr:
   type: Article
   title: Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics
