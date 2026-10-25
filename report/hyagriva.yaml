@@ -14,6 +14,32 @@ olofsson2021crashdatabases:
     issue: 6
     volume: 22
 
+lecun1998efficientbackprop:
+  type: chapter
+  title: Efficient BackProp
+  author:
+  - LeCun, Yann
+  - Bottou, Leon
+  - Orr, Genevieve B.
+  - Müller, Klaus -Robert
+  date: 1998
+  editor:
+  - Orr, Genevieve B.
+  - Müller, Klaus-Robert
+  page-range: 9-50
+  url: https://doi.org/10.1007/3-540-49430-8_2
+  serial-number:
+    doi: 10.1007/3-540-49430-8_2
+    isbn: 978-3-540-49430-0
+  abstract: The convergence of back-propagation learning is analyzed so as to explain common phenomenon observedb y practitioners. Many undesirable behaviors of backprop can be avoided with tricks that are rarely exposedin serious technical publications. This paper gives some of those tricks, ando.ers explanations of why they work. Many authors have suggested that second-order optimization methods are advantageous for neural net training. It is shown that most ``classical'' second-order methods are impractical for large neural networks. A few methods are proposed that do not have these limitations.
+  parent:
+    type: book
+    title: 'Neural Networks: Tricks of the Trade'
+    publisher:
+      name: Springer Berlin Heidelberg
+      location: Berlin, Heidelberg
+
+
 terven2025lossfunctionsmetricsdeep:
   type: misc
   title: Loss Functions and Metrics in Deep Learning

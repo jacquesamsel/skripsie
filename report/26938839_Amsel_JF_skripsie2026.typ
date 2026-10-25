@@ -13,7 +13,8 @@
 
 #set ref(supplement: it => {
   if it.func() == heading {
-    if it.level == 1 { "Chapter" } else { "Section" }
+    if it.supplement == none { none }
+    else if it.level == 1 { "Chapter" } else { "Section" }
   } else if it.func() == figure {
     if it.kind == image { "Figure" } else if it.kind == table { "Table" } else { "Figure" }
   } else if it.func() == table {
@@ -1637,7 +1638,7 @@ The Huber loss is a robust alternative to the SE loss that is far less sensitive
       lq.plot(xs, xs.map(huber-loss), mark: none, stroke: 2pt + blue),
       lq.vlines(beta_val, -beta_val, stroke: 1pt + green.transparentize(20%)),
     ),
-    caption: [Rescaled Huber loss (blue) with the transition point at $beta = 1$ (green) vs squared error loss (orange) vs absolute error loss (red) for prediction errors $delta$.],
+    caption: [Rescaled Huber loss (blue) vs squared error loss (orange) vs absolute error loss (red) for prediction errors $delta$. Between the green lines, the Huber loss acts like the squared error loss, and outside, its gradient is equal to the gradient of the absolute error loss, so it is less sensitive to outliers than the squared error loss. The Huber loss is smooth at zero, unlike the absolute error loss, so its gradient shrinks gradually as the error approaches zero.],
   )
 } <huber_vs_mse_diagram>
 
@@ -1648,7 +1649,7 @@ The Huber loss's bounded gradient is particularly useful when the target values 
   caption: [Boxplot of the normalised true auxiliary target values collected during a rollout of the baseline policy. It is clear that the targets have so-called "heavy tails".],
 ) <auxiliary_targets_boxplot>
 
-For this reason, we use the Huber loss for all auxiliary targets, with $beta = 1$. Since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme targets cannot dominate the gradient.
+For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme target values cannot dominate the gradient.
 
 == Finding the Optimal Weights
 
@@ -1758,12 +1759,12 @@ $ xi_t = d_t + N_t L $
 
 The _progress per step_ is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
 
-Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
+Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as (nearly) the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically being close to preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
 
 === Crash rates
 The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length.
 
-The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed. These metrics diverge because episodes terminate early upon a crash; surviving longer before a collision increases the timestep denominator, inherently lowering the per-timestep crash rate.
+The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed across all episodes. This can be interpreted as an estimate of the  probability of a collision occurring at any given timestep, and is useful for evaluating the agent's safety in a time-normalised manner.
 
 The _collisions per metre of progress along the centerline_ is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against spatial progression rather than time, isolating driving competence from the agent's velocity.
 
@@ -1820,85 +1821,24 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
 
 = Experiments & results
 
+Each configuration of (auxiliary targets, auxiliary loss weights), as well as the baseline model, was trained for 600 PPO iterations with 256 frames per iteration on each of 48 concurrent environments, for a total of 7.3 million timesteps ($approx 82 "hours"$ of sim-time). Each configuration was trained on 6 different seeds, and various statistics were recorded for each iteration of each run of each configuration.
+
 == Baseline Model Performance
 
-The baseline model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a crash rate per meter of progress of #todo("Amount") and a reward AUC of #todo("Amount").
+The baseline model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a mean crash rate per meter of progress of $0.003369 plus.minus 0.002793 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean progress along the centerline per second of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
-To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer (fc3) to predict each auxiliary target. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample R² at initialisation and after 600 PPO iterations, with error bars showing the standard deviation between each different trained agent model.
+Before we consider the effect of auxiliary losses, we first establish what the baseline model's internal representations encode.
 
-Two distinct patterns emerge. Quantities describing the vehicle’s instantaneous dynamics (yaw rate, lateral velocity and lateral wheel slip) are already linearly decodable at initialisation (R² ≈ 0.8–0.9). Since the network is untrained, this reflects information that is close to linear in the observation and survives a series of random LeCun-initialised projections, rather than a learned representation. A similar effect was observed in @alain2018understandingintermediatelayersusing when investigating the same phenomenon in toy MNIST models. Training does not improve the $R^2$ for these quantities, and decodability declines modestly (e.g. rear lateral slip falls from $R^2 = \~0.67$ to \~0.50), suggesting that PPO discards some of this information.
+=== Linear Probing of Baseline Model
 
-@probe_baseline_heatmap visualises the trend over time: as the model trains, the decodability of the instantaneous dynamics quantities declines, while the decodability of the close-ahead ($<= 3m$) track curvature improves almost monotonically (highlighted in white boxes). This suggests that these quantities may prove to be useful auxiliary targets, as the auxiliary losses will encourage the model to learn their representations earlier. The model does not significantly learn to represent the further-ahead curvature (4.0m - 8.0m), which presents itself as another candidate for an auxiliary target.
-
-#figure(
-  image("../results/figures/probe_dumbbell.pdf", height: 150pt),
-  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model.],
-) <baseline_lr_model_dumbell>
-
-#figure(
-  image("../results/figures/probe_heatmap.pdf", height: 200pt),
-  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model, showing how much each quantity is linearly decodable at each iteration of training. Note that the y-axis is not evenly spaced.],
-) <probe_baseline_heatmap>
-
-== Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
-
-
-Consider the arbitrary network in @example_network_diagram. Once trained, each layer $l$
+Consider the network in @network_architecture. Once trained, each layer $l$
 maps an input $bold(x)$ to an intermediate representation
 $bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
-information these representations encode, and in particular whether they encode
+information these intermediate representations encode, and in particular whether they encode
 privileged state variables (e.g. velocity, slip, upcoming curvature).
 
-
-#figure(
-  caption: "Example network architecture. The first two layers are convolutional layers, taking stacked LiDAR frames as input. The following 4 layers are fully connected layers with ReLU activations.",
-  scale(80%, reflow: true, draw-network(
-    (
-      (
-        type: "input",
-        image: rotate(90deg)[#image("figures/lidar_input.png", width: 4cm, height: 4cm)],
-        label: "LIDAR history",
-        channels: ("", 50),
-      ),
-      (
-        type: "conv",
-        label: "Conv1D",
-        channels: (1, 50),
-        connection-label: $bold(h)^((0))$,
-      ),
-      (
-        type: "conv",
-        label: "Conv1D",
-        channels: (1, 50),
-        connection-label: $bold(h)^((1))$,
-      ),
-      (
-        type: "fc",
-        label: "fc1",
-        connection-label: $bold(h)^((2))$,
-      ),
-      (
-        type: "fc",
-        label: "fc2",
-        connection-label: $bold(h)^((3))$,
-      ),
-      (
-        type: "fc",
-        label: "fc3",
-        connection-label: $bold(h)^((4))$,
-      ),
-      (
-        type: "output",
-        label: "output",
-        connection-label: $bold(h)^((5))$,
-      ),
-    ),
-    show-relu: true,
-  )),
-) <example_network_diagram>
-
 Alain and Bengio @alain2018understandingintermediatelayersusing introduced
-_linear probes_ for this purpose. The main network's weights are frozen, and a
+_linear probes_ for this purpose; the trunk network's weights are frozen, and a
 separate linear classifier (the probe) is trained in a supervised manner on the representations
 $bold(h)^((l))$ of each layer to predict the desired target. Since the
 probe cannot change the representation, its test accuracy measures how much
@@ -1907,9 +1847,8 @@ class information is _linearly_ available at that layer. Anand et al.
 reinforcement learning, probing an encoder's representations for ground-truth
 state variables of Atari games (read from the console's RAM).
 
-The choice of a _linear_ probe is deliberate. A sufficiently expressive probe
-(e.g. a deep MLP) may compute the target from almost any input, including the
-raw network input, so high probe accuracy would say more about the probe than
+The choice of a _linear_ probe is deliberate; a sufficiently expressive probe may compute the target from almost any input, including the
+raw network input (LiDAR in our case), so high probe accuracy would say more about the probe than
 about the representation @belinkov2021probingclassifierspromisesshortcomings.
 Restricting the probe to a linear map means that it can only succeed if the
 network has already done the work of encoding the target along some direction in the representation space.
@@ -1920,32 +1859,29 @@ done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
 concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
 models for spatial and temporal encodings.
 
-The model is now trained with the same reward function (@sec:reward_function) as the baseline model, but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
-
-=== Forward velocity, lateral velocity, and yaw rate
-
-=== Track curvature
-
-The close-ahead ($<= 3m$) track curvature auxiliary loss was extremely effective in improving the decodability of the trunk's final layer. It improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +35 to +49 percentage points, and even improved the decodability of unsupervised quantities such as the 3.5m-ahead curvature and 4.0m-ahead curvature by between +5 to +10 percentage points on average.
-
-To a lesser extent, the medium-ahead (between 3m- and 6m-ahead) curvature auxiliary loss improved the decodability of its supervised quantities, resulting in a +7 to +26 percentage point improvement in out-of-sample $R^2$ scores.
-
-However, far ahead curvature failed to improve the decodability significantly, with small gains of up to +4 percentage points, and all groups of auxiliary losses decreased performance on the forward slips of wheels. #todo("WHY?")
-
-
-=== Wheel slips
-
+To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer to predict each auxiliary target at various points during the model's training. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample R² at initialisation and after 600 PPO iterations.
 
 #figure(
-  image("../results/figures/probe_heatmap_aux_summary.pdf"),
-  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on models trained with different auxiliary heads enabled. Bold = C.I. excludes 0, corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
-)
+  image("../results/figures/probe_dumbbell.pdf", height: 150pt),
+  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model. Error bars show the standard deviation of the mean across 6 different seeds],
+) <baseline_lr_model_dumbell>
 
 
+Two distinct patterns emerge. Quantities describing the vehicle’s instantaneous dynamics (yaw rate, lateral velocity and lateral wheel slip) are already linearly decodable at initialisation ($R^2 ≈ 0.8–0.9$). Since the trunk network is untrained (with weights initialised using the LeCun method @lecun1998efficientbackprop), this reflects information that is close to linear in the observation and survives a series of random LeCun-initialised projections, rather than a learned representation. A similar effect was observed in @alain2018understandingintermediatelayersusing when investigating this phenomenon in toy MNIST models. Baseline PPO training does not improve the $R^2$ for these quantities, and decodability declines modestly (e.g. rear lateral slip falls from $R^2 = \~0.67$ to \~0.50), suggesting that PPO discards some of this information.
+
+@probe_baseline_heatmap visualises the trend over time: as the model trains, the decodability of the instantaneous dynamics quantities declines, while the decodability of the close-ahead ($<= 3m$) and medium-ahead ($3m < x <= 6m$) track curvature improves almost monotonically (highlighted in boxes). This suggests that these quantities may prove to be useful auxiliary targets, as the auxiliary losses will encourage the model to learn their representations earlier. The model does not significantly learn to represent the far-ahead curvature (6m - 8.0m), which presents itself as another candidate for an auxiliary target. If we are able to encourage the model to learn more about these quantities, it may be able to plan further ahead and improve its performance.
+
+#figure(
+  image("../results/figures/probe_heatmap.pdf", height: 200pt),
+  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model, showing how much each quantity is linearly decodable at each iteration of training. Note that the y-axis is not evenly spaced.],
+) <probe_baseline_heatmap>
 
 
 == Agent Performance After Auxiliary Learning
-In line with the findings from @sec:learned_features_after_auxiliary_learning, the auxiliary head that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the model restarts after a crash, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the curvature close model achieves both higher racing performance, as well as safety: it achieves a +12.5% higher mean progress per timestep along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronouncd results are achieved by the front wheel forward slip head, which is, in fact, safer (-)
+
+The model is now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
+
+The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean progress per timestep along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean progress per timestep). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but no significant change in racing speed.
 
 
 #figure(
@@ -1955,9 +1891,20 @@ In line with the findings from @sec:learned_features_after_auxiliary_learning, t
 
 #figure(
   image("../results/figures/last_50_means_heatmap.pdf"),
-  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$). No false discovery rate correction. @benjamini1995controlling],
+  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$), using the Benjamini-Hochberg procedure for false discovery rate correction @benjamini1995controlling],
 ) <fig:last_50_means_heatmap>
 
+== Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
+
+Applying the same probing technique after auxiliary training, we find that decodability of the privileged quantities improved significantly in many configurations, though not always with a corresponding performance gain. The full results are visualised in @aux_head_regression_results, since they are too numerous to include in the main text.
+
+The close-ahead ($<= 3m$) track curvature auxiliary loss was extremely effective in improving the decodability of the trunk's final layer. It improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +16 to +58 percentage points, and even improved the decodability of quantities that were not directly supervised, such as 3.5-m-ahead curvature (up to +27 percentage points). The medum-ahead ($3m < x <= 6m$) curvature auxiliary loss also improved the decodability of the trunk's final layer, but to a lesser extent.
+
+When losses were introduced for the for wheel slip quantities, the decodability of the corresponding quantities improved significantly for smaller loss weigths ($w_"aux" in {0.1, 0.3}$). Interestingly, when forward wheel slip was supervised for the front wheels, the decodability of the back wheel slip also increased. We hypothesis that this is because the car is driven with an all-wheel-drive configuration, so the front and back wheels are coupled.
+
+Lateral slip supervision had mixed effects, with the decodability of the corresponding quantities improving significantly only for a larger loss weight ($w_"aux" = 1$).
+
+When all auxiliary losses were enabled, the decodability of almost all quantities improved significantly, but the agent's performance only improved in terms of safety with a low auxiliary loss weight ($w_"aux" = 0.1$). This suggests that the auxiliary losses may be competing for the model's capacity when they are all enabled.
 
 = Conclusions and recommendations
 
