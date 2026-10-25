@@ -1833,7 +1833,7 @@ The baseline model trained with the PPO loss and no auxiliary targets performed 
 
 Before we consider the effect of auxiliary losses, we first establish what the baseline model's internal representations encode.
 
-=== Linear Probing of Baseline Model
+== Learned features of Baseline Model
 
 Consider the network in @network_architecture. Once trained, each layer $l$
 maps an input $bold(x)$ to an intermediate representation
