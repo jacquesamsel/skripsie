@@ -1773,10 +1773,9 @@ $
   ),
   caption: [The auxiliary targets to be predicted by the agent #footnote([In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy (i.e. without auxiliary losses/heads) as data to estimate $sigma$ and $mu$.])],
 ) <auxiliary_targets>
-
 ==== Choice of auxiliary loss function
 
-The choice of auxiliary loss functions $cal(L)_"aux"^((k))$ has the potential to significantly impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss, defined respectively as
+The choice of auxiliary loss functions $cal(L)_"aux"^((k))$ has the potential to significantly impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss @huber1964robust, defined respectively as
 
 $
   cal(L)_"SE" = (hat(y) - y)^2, quad
@@ -1787,20 +1786,18 @@ $
   )
 $
 
-The Huber loss @huber1964robust is a robust alternative to the SE loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero.
+Throughout, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta_"Huber" (y, hat(y))) / beta$. Dividing by $beta$ decouples the threshold from the gradient: the rescaled loss is quadratic with gradient $delta = y - hat(y)$ for $|delta| <= beta$, and linear with a constant gradient of magnitude $1$ for $|delta| > beta$, so that the parameter $beta$ sets only the transition point and not the slope of the linear region.
 
-In testing, 
-
-In actuality, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta (y, hat(y))) /beta$, to prevent the $beta$ parameter from affecting the gradient in the linear region.
+The Huber loss is a robust alternative to the SE loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero.
 
 #{
-  let xs = lq.linspace(-4, 4, num: 100)
-  let beta = 1
+  let xs = lq.linspace(-3, 3, num: 100)
+  let beta_val = 1
   let huber-loss = x => {
-    if calc.abs(x) <= beta {
+    if calc.abs(x) <= beta_val {
       return 0.5 * calc.pow(x, 2)
     } else {
-      return calc.abs(x) - 0.5 * beta
+      return calc.abs(x) - 0.5 * beta_val
     }
   }
   let squared-error = x => 0.5 * calc.pow(x, 2)
@@ -1809,13 +1806,25 @@ In actuality, we use PyTorch's rescaled implementation of the Huber loss (`smoot
     lq.diagram(
       xlabel: [Prediction error ($delta = y - hat(y)$)],
       ylabel: [Loss value ($cal(L)$)],
-      lq.plot(xs, xs.map(squared-error), mark: none, stroke: 2pt + green),
+      width: 300pt,
+      xlim: (-3, 3),
       lq.plot(xs, xs.map(absolute-error), mark: none, stroke: 2pt + red),
+      lq.plot(xs, xs.map(squared-error), mark: none, stroke: 2pt + orange),
       lq.plot(xs, xs.map(huber-loss), mark: none, stroke: 2pt + blue),
+      lq.vlines(beta_val, -beta_val, stroke: 1pt + green.transparentize(20%)),
     ),
-    caption: [Rescaled Huber loss with $beta = 1$ (blue) vs squared error loss (green) vs absolute error loss (red) for prediction errors $delta$.],
+    caption: [Rescaled Huber loss (blue) with the transition point at $beta = 1$ (green) vs squared error loss (orange) vs absolute error loss (red) for prediction errors $delta$.],
   )
 } <huber_vs_mse_diagram>
+
+The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss. This is the case for our auxiliary targets, as visualised in @auxiliary_targets_boxplot.
+
+#figure(
+  image("../results/figures/baseline_rollout_train_boxplot.pdf"),
+  caption: [Boxplot of the normalised true auxiliary target values collected during a rollout of the baseline policy. It is clear that the targets have so-called "heavy tails".],
+) <auxiliary_targets_boxplot>
+
+For this reason, we use the Huber loss for all auxiliary targets, with $beta = 1$. Since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation — where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place — and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme targets cannot dominate the gradient.
 
 
 
@@ -2025,6 +2034,10 @@ AI was not used to generate the training code or the model definition code - tha
   ),
   caption: "Relevant parameters of the WheelCollider model. * = forward & sideways",
 )
+
+#pagebreak()
+== Proportion of Data Within 1 Standard Deviation <sec:prop_data_within_1_sd>
+
 
 #pagebreak()
 == Auxiliary Head Regression Results <aux_head_regression_results>
