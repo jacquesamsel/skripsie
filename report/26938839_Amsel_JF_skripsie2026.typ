@@ -216,7 +216,7 @@
 
 
 
-  #block(title("Backseat driving: Using privileged-information auxiliary loss in autonomous racing"), width: 400pt)
+  #block(title("Backseat driving: Using privileged-information auxiliary losses in autonomous racing"), width: 400pt)
 
   by
 
@@ -422,7 +422,7 @@ An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has
 
 Privileged information is, however, available in simulation. This report investigates whether _auxiliary losses_ that predict this privileged information from the policy's shared representation can improve the learning of a LiDAR-only end-to-end racing agent.
 
-== Objectives
+== Objectives <sec:objectives>
 The objectives of this project are to:
 
 #set enum(numbering: "(a)")
@@ -1153,7 +1153,7 @@ $
 
 In this chapter, we describe the architecture of the agent and the auxiliary losses used to improve its performance. Because we are comparing the effect of auxiliary losses, we train multiple agents with the same architecture, but with different auxiliary losses enabled each time.
 
-We shall first formalise the problem of autonomous racing as a partially observable Markov decision process (POMDP) in @sec:pomdp, then describe the process of reinforcement learning in @sec:rl, describe the architecture of the agent in @sec:agent, #todo("FINISH")
+We shall first formalise the problem of autonomous racing as a partially observable Markov decision process (POMDP) in @sec:pomdp, then describe the process of reinforcement learning in @sec:rl, describe the architecture of the agent in @sec:agent, and discuss how the weights of the auxiliary losses are chosen in @sec:finding_optimal_weights. Finally, @sec:metrics describes the metrics used to evaluate the performance of the agent.
 
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
@@ -1651,7 +1651,7 @@ The Huber loss's bounded gradient is particularly useful when the target values 
 
 For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme target values cannot dominate the gradient.
 
-== Finding the Optimal Weights
+== Finding the Optimal Weights <sec:finding_optimal_weights>
 
 The question naturally arises: how should the weights $w^((k))$ of the auxiliary losses be set? If they are too small, the auxiliary losses will have little effect on the agent's learning. If they are too large, the agent may use all its capacity to optimise the auxiliary tasks and fail to learn a good policy, or the auxiliary task gradients may conflict with the main task gradients, slowing learning. This is an optimisation problem, where the weights are tuned to achieve the best overall performance. Two options exist: choosing the weights before training (hyperparameter tuning), or adapting the weights during training (adaptive weighting).
 
@@ -1737,6 +1737,8 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
 
 So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run, so they are not ideal for our scenario.
 
+We choose to use a simple grid search to find the optimal weights so that we can more rigidly study the effect of each auxiliary loss on the agent's performance. We modify the grid so that only one kind of auxiliary loss is active at a time so we can isolate the effect of each loss, and use weights $w_"aux" in {0.1, 0.3, 1.0}$ - an exponential scale.
+
 === Adaptive Weighting
 Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, which weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
 
@@ -1751,7 +1753,9 @@ $
   )
 $
 
-== Metrics
+The result is that the auxiliary gradients are modified to avoid conflicting with the main task, but this does not guarantee that the auxiliary gradients 
+
+== Metrics <sec:metrics>
 === Progress
 Let $L$ be the total length of the track centreline. At any time $t$, let $d_t in [0, L)$ be the agent's current arc length from the start of the centerline to the point closest to the agent, and let $N_t$ be the total number of completed laps. We define the agent's _absolute progress_ along the track as the total continuous distance travelled from the start:
 
@@ -1894,6 +1898,11 @@ The auxiliary head (and loss) that was most effective in improving the agent's p
   caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$), using the Benjamini-Hochberg procedure for false discovery rate correction @benjamini1995controlling],
 ) <fig:last_50_means_heatmap>
 
+#figure(
+  image("../results/figures/progress_vs_collision.pdf"),
+  caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline.]
+)
+
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
 Applying the same probing technique after auxiliary training, we find that decodability of the privileged quantities improved significantly in many configurations, though not always with a corresponding performance gain. The full results are visualised in @aux_head_regression_results, since they are too numerous to include in the main text.
@@ -1908,7 +1917,19 @@ When all auxiliary losses were enabled, the decodability of almost all quantitie
 
 = Conclusions and recommendations
 
-#todo("Show you have met the objectives")
+== Summary
+This project set out to determine whether auxiliary losses that predict privileged information improve the performance, training speed, and internal representations of a LiDAR-only end-to-end racing agent. All five objectives listed in @sec:objectives were met; a custom unity simulator was developed, a baseline PPO agent was trained (@sec:agent), linear regression probes established what the agent natively encodes (@baseline_lr_model_dumbell). Then, auxiliary heads were added to predict privileged state information during training (@sec:training), and the resulting agents were evaluated against the baseline model in terms of racing speed and safety, while also probing the internal representations of the trained agents (@sec:learned_features_after_auxiliary_learning). The results show that auxiliary losses can improve both the agent's performance and its internal representations, but that this is not "free lunch": only certain auxiliary losses improve performance, and only at certain loss weights.
+
+The baseline model already encoded its instantaneous dynamics well at initialisation. In contrast, the decodability of close-ahead and medium-ahead track curvature improved significantly during training with auxiliary heads, and the former had an impressive effect on the agent's driving capability, making it both safer and faster. Far-ahead curvature was not learned well by the model, and did not improve the agent's performance when supervised.
+
+== Future work
+
+The results of this project suggest that more work is needed to determine _a priori_ which auxiliary losses will improve the agent's performance, and at what loss weights, but that auxiliary losses can indeed improve both the agent's performance and its internal representations. Future work could explore the following avenues:
+- Investigate the effect of auxiliary losses on the agent's performance in more complex environments, such as those with dynamic obstacles or varying track conditions.
+- Explore the use of adaptive weighting methods for auxiliary losses, to dynamically adjust the weights during training based on the agent's performance and the difficulty of the auxiliary tasks.
+- Investigate the effect of auxiliary losses on the agent's performance in multi-agent scenarios, where multiple agents are racing against each other
+
+
 #pagebreak()
 #bibliography("./hyagriva.yaml", style: "ieee", title: [Bibliography])
 
