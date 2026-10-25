@@ -14,6 +14,44 @@ olofsson2021crashdatabases:
     issue: 6
     volume: 22
 
+terven2025lossfunctionsmetricsdeep:
+  type: misc
+  title: Loss Functions and Metrics in Deep Learning
+  author:
+  - Terven, Juan
+  - Cordova-Esparza, Diana M.
+  - Ramirez-Pedraza, Alfonso
+  - Chavez-Urbiola, Edgar A.
+  - Romero-Gonzalez, Julio A.
+  date: 2025
+  url: https://arxiv.org/abs/2307.02694
+  serial-number:
+    arxiv: '2307.02694'
+    doi: https://doi.org/10.1007/s10462-025-11198-7
+
+
+sutton1999policygradient:
+  type: article
+  title: Policy Gradient Methods for Reinforcement Learning with Function Approximation
+  author:
+  - Sutton, Richard S
+  - McAllester, David
+  - Singh, Satinder
+  - Mansour, Yishay
+  date: 1999
+  editor:
+  - Solla, S.
+  - Leen, T.
+  - Müller, K.
+  page-range: ''
+  url: https://proceedings.neurips.cc/paper_files/paper/1999/file/464d828b85b0bed98e80ade0a5c43b0f-Paper.pdf
+  parent:
+    type: proceedings
+    title: Advances in Neural Information Processing Systems
+    publisher: MIT Press
+    volume: 12
+
+
 medina2004relationshipinfrastructuredrivererror:
   type: article
   title: Relationship between Infrastructure, Driver Error, and Critical Incidents

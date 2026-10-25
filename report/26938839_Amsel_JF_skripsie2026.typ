@@ -419,11 +419,7 @@ Auxiliary learning presents a compelling method to address these shortcomings. B
 == Problem statement
 An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, the curvature of the track ahead, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can lead to slow convergence.
 
-Privileged information is, however, available in simulation. This report investigates whether _auxiliary losses_ that predict this privileged information from the policy's shared representation can improve the learning of a LiDAR-only end-to-end racing agent. The research question is:
-
-#align(center)[
-  _Does training with privileged-information auxiliary losses improve the performance or training speed of an end-to-end RL racing agent that drives from LiDAR alone, and does it change what the agent's representation encodes?_
-]
+Privileged information is, however, available in simulation. This report investigates whether _auxiliary losses_ that predict this privileged information from the policy's shared representation can improve the learning of a LiDAR-only end-to-end racing agent.
 
 == Objectives
 The objectives of this project are to:
@@ -457,13 +453,7 @@ This report is limited to simulation; no sim-to-real transfer to a physical Robo
 
 == Roadmap
 
-*Chapter 2* reviews the background and related literature: Partially Observable Markov Decision Processes (POMDPs), value functions, policy gradient methods, auxiliary losses and rewards, loss weighting, and linear probing of representations.
-
-*Chapter 3* describes the system: the Unity simulator and its comparison with the F1Tenth gym, the vehicle and tyre model, procedural track generation, performance tuning of the trainer, and the reward function and evaluation metrics, as well as the auxiliary targets and the network architecture.
-
-*Chapter 4* presents the experiments and results: linear probing of the baseline, the change in probed representations after auxiliary learning, and the effect on primary task performance.
-
-*Chapter 5* concludes by showing how the objectives were met and makes recommendations for future work.
+#todo("Fill in")
 
 = Background and Related Literature <sec:related_literature>
 
@@ -515,103 +505,6 @@ In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitation
 == Evaluation of existing approaches
 
 End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but unused at deployment. Existing ways of exploiting it each leave a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
-
-=== Value functions
-Value functions measure how good it is for the agent to be in a state, or to take an action in that state, and are the basis for the critic in PPO.
-The state-value function,
-$
-  V^pi (s) = EE_pi [G_t | S_t = s]
-$ <state_value_function>
-is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter. The action-value function,
-$
-  Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
-$ <action_value_function>
-measures the expected discounted return starting in state $s$, taking action $a$, and then following policy $pi$ thereafter. Their difference is the advantage function,
-$
-  A^pi (s, a) = Q^pi (s, a) - V^pi (s),
-$ <advantage_function>
-which measures how much better action $a$ is than the policy's average action in state $s$.
-
-== Auxiliary Learning in Policy-Based Methods <sec:auxiliary_learning>
-
-Auxiliary learning is a complementary method to standard RL. By modifying the objective, models are able to achieve better performance and training speed, therefore requiring less compute and data. For example, @lample2017fps found improved performance in VizDoom after adding auxiliary tasks, and @mirowski2017learningnavigatecomplexenvironments observed improvements in training time after implementing depth prediction in maze solving tasks. In fact, @mirowski2017learningnavigatecomplexenvironments observed better performance using this privileged information for auxiliary training compared to as a direct input.
-
-In RL, the _primary task_ is to update a policy $pi_theta$ to maximise the expected discounted return $EE_(tau ~ pi_theta) [G_0]$. This primary task is typically formulated as minimising a loss (e.g. $cal(L)_"PPO"$ in the policy-based approach). _Auxiliary learning_ augments this task with _auxiliary tasks_ whose learning signals are used to improve the agent's representations. Unlike general multi-task learning, performance on the auxiliary tasks is not itself the goal, and the auxiliary head outputs are typically discarded at inference time. Because auxiliary tasks can supply training signal when the reward is sparse or delayed @jaderberg2017unreal, they can improve sample efficiency, and, by acting as an inductive bias#footnote([Inductive bias is the set of assumptions a learning algorithm makes to predict outputs given inputs that it has not encountered before. @hullermeier2013inductive]), generalisation @caruana1997multitask. We consider two
-formulations: auxiliary losses, which leave the RL objective unchanged and
-shape only the shared representation, and auxiliary rewards (or shaped rewards), which modify the
-objective itself and can therefore change the optimal policy.
-
-=== Auxiliary Losses
-
-In this formulation, the agent is trained on a weighted sum of the primary
-loss and $K$ auxiliary losses. Each loss is computed by a separate _auxiliary head_ that
-reads from a representation shared with the policy. Writing the parameters as
-$theta = (theta_"s", theta_pi, theta_"a"^((1)), dots, theta_"a"^((K)))$, where
-$theta_"s"$ are the shared (encoder) parameters, $theta_pi$ the policy head
-and $theta_"a"^((k))$ the $k$-th auxiliary head, the total loss is
-
-$
-  cal(L)_"total" (theta) =
-  cal(L)_"primary" (theta_"s", theta_pi)
-  + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)) (theta_"s", theta_"a"^((k))),
-$
-
-where $w^((k)) >= 0$ weights each auxiliary task relative to the primary loss
-(only relative weights matter, so the primary weight is fixed to 1). The
-gradients with respect to each parameter group are
-
-$
-  nabla_(theta_pi) cal(L)_"total" = nabla_(theta_pi) cal(L)_"primary",
-  #linebreak()
-  nabla_(theta_"a"^((k))) cal(L)_"total" = w^((k)) nabla_(theta_"a"^((k))) cal(L)_"aux"^((k)),
-  quad
-  nabla_(theta_"s") cal(L)_"total" =
-  nabla_(theta_"s") cal(L)_"primary"
-  + sum_(k=1)^K w^((k)) nabla_(theta_"s") cal(L)_"aux"^((k)).
-$
-
-Only the shared parameters $theta_"s"$ receive gradients from both the primary
-and auxiliary losses, which is how the auxiliary tasks influence the policy:
-they shape the representation it is built on.
-
-The primary loss, such as $cal(L)_"PPO"$, is still a policy-gradient surrogate
-with a high-variance gradient estimate. Auxiliary losses, by contrast, are
-usually ordinary supervised or self-supervised objectives (for example
-predicting the next observation, or the immediate reward), so their gradients
-are lower-variance. This is what makes them useful when rewards are sparse or
-delayed. Their cost is that the auxiliary and primary gradients can conflict
-on the shared parameters, $theta_"s"$, so the weights $w^((k))$ must be chosen
-with care.
-
-=== Auxiliary Rewards/Shaped Rewards
-Alternatively, the auxiliary task can be incorporated into the reward. The
-agent is given the modified reward
-
-$
-  r_t^"total" = r_t^"primary" + sum_(k=1)^K w^((k)) r_(t)^("aux", (k)),
-$
-
-where each $r_t^("aux", (k))$ rewards behaviour that is expected to help with
-the primary task, such as an intrinsic curiosity bonus
-@pathak2017curiositydriven or progress towards a subgoal. The policy is then trained
-to maximise the expected return of $r_t^"total"$ with the same policy gradient
-machinery as before.
-
-Unlike auxiliary losses, this changes the objective being optimised: the agent
-now solves a different (PO)MDP, whose optimal policy need not be the same as
-$pi^*$ for the primary reward. Poorly chosen auxiliary rewards can therefore
-lead the agent to exploit them at the expense of the primary task (_reward
-hacking_). The exception is _potential-based shaping_, where the auxiliary
-reward has the form $gamma Phi(s_(t+1)) - Phi(s_t)$ for some potential function
-$Phi$, which is guaranteed to leave the optimal policy unchanged
-@ng1999policy.
-
-The auxiliary rewards do influence the policy, but only indirectly through the
-return $G_t$, and therefore through the same high-variance score-function
-estimator as the primary reward. No exact gradient is available, and the agent
-must work out through its own exploration which auxiliary rewards actually
-contribute to the primary task. This credit-assignment problem is harder
-still when the auxiliary rewards are themselves sparse or delayed.
 
 //Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
@@ -786,17 +679,17 @@ The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engin
   caption: "Feature comparison of the Unity (PhysX) and F1Tenth gym simulators",
 )
 
-However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator.
+However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator. The rest of this chapter describes the custom simulator, including its performance, vehicle model, track generation, and privileged information reporting.
 
 == Simulator performance comparison
 
-In simulation-based training, throughput is critical because agents typically require a very large number of timesteps to learn. Two timescales are distinguished: the control timestep, at which the agent receives an observation and outputs an action, and the simulation timestep, at which the physics engine advances the numerical physics integration. The simulation timestep is usually shorter than the control timestep, since the dynamics must be integrated at a finer resolution to remain accurate. Following the settings used by Evans et al. @evans2023comparing, we use a control frequency of 25 Hz and a simulation frequency of 100 Hz.
+In simulation-based training, throughput is critical because agents typically require a very large number of timesteps to learn. There are two kinds of timesteps: at each _control timestep_, the agent receives an observation and outputs an action, and at each _physics timestep_, the physics engine advances the numerical physics integration. The simulation timestep is usually shorter than the control timestep, since the dynamics must be integrated at a finer resolution to remain accurate. Following the settings used by Evans et al. @evans2024unifyingf1tenthautonomousracing, we use a control frequency of 25 Hz and a simulation frequency of 100 Hz.
 
-In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. A rollout of 10 000 control timesteps (7 minutes and 20 seconds in simulation time) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode to remove any potential overhead from the graphical user interface.
+In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. A rollout of 10 000 control timesteps (6 minutes and 40 seconds in simulation time) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode to remove any potential overhead from the graphical user interface.
 
 Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed, using a comparable amount of CPU resources in this environment, as shown in @sim_benchmarks, with the Unity simulator being only 19% slower compared to the F1Tenth Gym in terms of steps per second.
 
-Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent.
+Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent, despite the F1tenth gym being more widely used in the literature.
 
 #figure(
   image("../results/sim_benchmarks.pdf"),
@@ -804,18 +697,18 @@ Due to the relatively minor performance difference, and Unity's more realistic 3
 ) <sim_benchmarks>
 
 == Unity Vehicle Model
-The vehicle is modelled as a `Rigidbody` with four wheels, each simulated by a
+The vehicle is modelled as a `RigidBody` with four wheels, each simulated by a
 `WheelCollider`. The two components divide the work: the `Rigidbody` represents the
 car as a single moving mass, and the `WheelCollider`s generate the forces that move it. Near the front of the car, a `RayPerceptionSensor` from the ML-Agents toolkit simulates a 2D LiDAR sensor with 101 rays, which is used as the agent's observation.
 
 === The RigidBody
-A `Rigidbody` is the Unity component that gives an object physical behaviour. It
+A `RigidBody` is the Unity component that gives an object rigid physical behaviour. It
 stores the car's mass, centre of mass and moment of inertia. At each fixed timestep
 the physics engine (PhysX) integrates the forces and torques acting on it to update
 its linear and angular velocity and its pose. The car's body is covered by simple
 box colliders (@unity_colliders), which handle collisions with walls and other
 objects. They play no part in the tyre-road interaction, which is handled entirely
-by the wheels. `BoxColliders` were used to model the car's body and collisions between the wheels and walls.
+by the wheels. `BoxColliders` were used to model the car's body and collisions between the wheels and walls, since the `WheelCollider` component doesn't detect these kinds of collisions. The mass of the vehicle is set to 3.47 kg based on the values reported by Samak and Samak @samak2024autonomyorienteddigitaltwins.
 
 #figure(
   image("figures/unity_isometric_colliders.png", width: 300pt),
@@ -826,10 +719,10 @@ by the wheels. `BoxColliders` were used to model the car's body and collisions b
 === The WheelCollider <sec_wheelcollider>
 In our custom simulator, each wheel of the RoboRacer is
 modelled as a `WheelCollider`, which simulates the wheel's suspension,
-rotation and tyre friction @unitydocsWheelFrictionCurve. This kind of collider uses physics similar to that modelled by the semi-empirical "magic formula" wheel dynamics proposed by Pacejka et al. in @pacejka1992magicformula, and further described in @pacejka2002tyre.
+rotation and tyre friction @unitydocsWheelFrictionCurve. This kind of collider uses physics similar to that modelled by the semi-empirical "magic formula" wheel dynamics proposed by Pacejka et al. @pacejka1992magicformula @pacejka2002tyre.
 
 The tyre model is built on the idea of _slip_. _Longitudinal slip_, $kappa$, is the ratio between the longitudinal slip velocity and the wheel center velocity. _Lateral slip_, $tan(alpha)$, is the ratio between the lateral slip velocity and the wheel center velocity. A wheel slips when it spins faster than
-the wheel center moves (wheelspin), turns slower than the wheel center moves (braking), or is dragged sideways (cornering). A slip value of $0$ therefore indicates a freely rolling wheel, while a slip value of $> 1$ indicates that the point of contact has a higher velocity than the wheel center.
+the wheel center moves (wheelspin), turns slower than the wheel center moves (braking), or is dragged sideways (cornering or drifting). A slip value of $0$ therefore indicates a freely rolling wheel, while a slip value of $> 1$ indicates that the point of contact has a higher velocity than the wheel center.
 
 #figure(
   canvas(length: 1cm, {
@@ -1029,7 +922,7 @@ learn to avoid. The curve is defined separately for the forward direction
 ]
 
 === Steering
-On the real RoboRacer, steering actuation cannot occur instantaneously, but is limited by the steering servo's maximum angular velocity. The `WheelCollider` component does not model this limitation, so we use the `VehicleController` from AutoDrive to implement a cap on steering speed of $omega_max = 315 degree \/ sec$. This value was chosen based on the calibration of the RoboRacer platform by Samak and Samak @samak2024autonomyorienteddigitaltwins.
+On the real-life RoboRacer, steering actuation cannot occur instantaneously, but is limited by the steering servo's maximum angular velocity. The `WheelCollider` component does not model this limitation, so we use the `VehicleController` from AutoDrive to implement a cap on steering speed of $omega_max = 315 degree \/ sec$. This value was also chosen based on the calibration of the RoboRacer platform by Samak and Samak @samak2024autonomyorienteddigitaltwins.
 
 === LiDAR
 
@@ -1058,14 +951,14 @@ of segments. For $i = 0, 1, ..., N-1$, with progress $t_i = (i+1) \/ N$:
 
 + We calculate the reference heading, $phi_i = 2 pi t_i + pi \/ 2$, the tangent of the reference
   circle at $hat(p)_i = R dot (cos 2 pi t_i, sin 2 pi t_i)$.
-+ We take a random turn (@fig:walk-step a), drawing $epsilon_i ~ cal(U)(-Delta_max, Delta_max)$
++ We take a random turn (@fig:walk-step (a)), drawing $epsilon_i ~ cal(U)(-Delta_max, Delta_max)$
   and adding it to the offset.
-+ As depicted in @fig:walk-step b, we shrink the offset towards zero by a factor
++ As depicted in @fig:walk-step (b), we shrink the offset towards zero by a factor
   $1 - kappa_i$, where
   $ kappa_i = kappa_0 + (1 - kappa_0) t_i^s. $
   The restoring strength $kappa_i$ starts at $kappa_0$ and ramps up to exactly 1 on
   the final step. The exponent $s$ controls how late the ramp kicks in.
-+ In @fig:walk-step c, we limit the offset from the reference heading to prevent accumulation of large offsets, and advance by length $l$:
++ In @fig:walk-step (c), we limit the offset from the reference heading to prevent accumulation of large offsets, and advance by length $l$:
   $
     delta_(i+1) & = "clip"((1 - kappa_i)(delta_i + epsilon_i), -delta_max, delta_max), \
         p_(i+1) & = p_i + ell (cos(phi_i + delta_(i+1)), sin(phi_i + delta_(i+1))).
@@ -1221,22 +1114,23 @@ Early on, $kappa_i approx kappa_0$ is small, so the offset behaves like a weakly
 damped random walk (an AR(1) process) and the track
 meanders. Near the end, $kappa_i -> 1$ forces the heading back onto the reference
 tangent, so the walk heads towards the start point. Because the integrated heading still deviates
-slightly from the circle, $p_N$ generally misses $p_0$ by a small gap. We close it by
+slightly from the circle, $p_N$ generally misses $p_0$ as visualised in @fig:trackgen_walk (a). We close it by
 distributing the gap linearly along the track:
 $ p_i <- p_i + i / N (p_0 - p_N), quad i = 0, ..., N. $
 The gap is (usually) small, so this correction barely distorts the track.
+Finally, we fit a Catmull-Rom spline to the polyline to smooth out the corners, as visualised in @fig:trackgen_walk (c).
 
 #figure(
   image("../results/figures/trackgen_walk.pdf", width: 120%),
   caption: [*(a)* Open end of the track before distributing the gap between $p_0$ (green) and $p_N$ (red) *(b)* Closed track after distributing the gap *(c)* Catmull-Rom spline interpolation of the polyline *(d)* A degenerate track],
-)
+) <fig:trackgen_walk>
 
 
-This method is not immune to generating self-intersecting (degenerate) tracks, but the probability is low enough that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.037%, 0.065%)$ assuming a binomial distribution.
+This method is not immune to generating self-intersecting (degenerate) tracks, as shown in @fig:trackgen_walk (d), but the probability is low enough that we simply discard any degenerate tracks and generate a new one. Empirically we find 50 tracks of 100 000 to be degenerate with our chosen parameters, so a 95%-confidence interval (C.I.) for  $P("degenerate track" | N = 30, Delta_max = 80 degree, kappa_0 = 0.1, s = 3, delta_max = 90 degree)$ is $(0.037%, 0.065%)$ assuming a binomial distribution.
 
 === Track walls
 
-Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti in @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may produce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
+Adding track walls to the generated centerline spline is a non-trivial problem. A naive approach is to scale the centerline's vertices outwards by a fixed multiple, or provide a fixed offset from the center, but this can create undrivably narrow sections, as visualised in @trackgen_inset_outset (a) and (b) respectively. We therefore generate the walls using the Clipper2 library @clipper2, which implements a polygon offsetting algorithm inspired by Vatti @vatti1992. The Clipper2 algorithm is robust to self-intersections, but may produce inset "islands" for large inset distances, or for tracks which are close to self-intersecting, as visualised in @trackgen_inset_outset (c).
 
 Empirically, we find that 1350 of the 100 000 tracks produce these islands (C.I. $(1.28%, 1.42%)$), so we simply discard any tracks with islands and re-generate them.
 
@@ -1248,10 +1142,10 @@ Empirically, we find that 1350 of the 100 000 tracks produce these islands (C.I.
 ) <trackgen_inset_outset>
 
 === Track Curvature
-During trainin, we wish to observe the effect of using track curvature as an auxiliary loss. To this end, we compute the curvature of the track at 16 equally-spaced points along the track ($d in {0.5, ..., 8} "m"$) ahead of the car's current position. The curvature is computed using the formula $c_d = 1 / r$, where $r$ is the radius of the osculating circle at that point on the track. The osculating circle was introduced by Leibniz @leibniz1686 as cited by @struik1969[p. 419, n. 6]; it is the circle that best approximates a curve at a given point, and its radius can be computed from the first and second derivatives of the track’s parametric equations @stewart2020calculus[p. 910-911]:
+During training, we wish to observe the effect of using track curvature as an auxiliary loss. To this end, we compute the curvature of the track at 16 equally-spaced points along the track ($d in {0.5, ..., 8} "m"$) ahead of the car's current position. The curvature is computed using the formula $c_d = 1 / r_d$, where $r_d$ is the radius of the osculating circle at that point on the track. The osculating circle was introduced by Leibniz @leibniz1686 as cited by @struik1969[p. 419, n. 6]; it is the circle that best approximates a curve at a given point, and its radius is computed from the first and second derivatives of the track’s parametric equations @stewart2020calculus[p. 910-911]:
 
 $
-  1/kappa = r = (x'(t) + y'(t))^(3/2) / abs(x'(t) y''(t) - y'(t) x''(t)) = abs(bold(r)'(t))^3 / abs(bold(r)'(t) times bold(r)''(t))
+  1/kappa = r = (x'(t)^2 + y'(t)^2)^(3/2) / abs(x'(t) y''(t) - y'(t) x''(t)) = abs(bold(r)'(t))^3 / abs(bold(r)'(t) times bold(r)''(t))
 $
 
 = The Agent <sec:training>
@@ -1263,7 +1157,7 @@ We shall first formalise the problem of autonomous racing as a partially observa
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
 
-In order to formally describe the problem of autonomous racing, we first introduce the framework of partially observable Markov decision processes (POMDPs). POMDPs are a generalisation of Markov decision processes (MDPs) that account for the fact that an agent may not have access to the full state of the environment. In a POMDP, the agent receives observations that provide partial information about the underlying state, and must make decisions based on this incomplete information.
+In order to formally describe the problem of autonomous racing, we first introduce the framework of partially observable Markov decision processes (POMDPs). POMDPs are a generalisation of Markov decision processes (MDPs) that account for the fact that an agent may not have access to the full state of the environment. In a POMDP, the agent receives observations that provide partial information about the underlying environment state, and must make decisions based on this incomplete information.
 
 A POMDPs is defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R), gamma, cal(Z))$, based on the work by Kaelbling et al.
 @kaelbling1998:
@@ -1271,13 +1165,13 @@ A POMDPs is defined by the tuple $(cal(S), cal(O), cal(A), cal(P), rho_0, cal(R)
 At each time step $t$, the environment is in state $s_t in cal(S)$, where
 $cal(S)$ is the state space. This state is a _complete_ description of the
 environment at that time. The first state $s_0$ is sampled from an initial state distribution $rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
-$o_t ~ cal(Z)(dot | s_t)$. The information in $s_t$ that is missing from
-$o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road surface conditions directly.
+$o_t ~ cal(Z)(dot | s_t)$: the observation function is a stochastic mapping from the true state to the observation, deciding what the agent observes given the true state. The information in $s_t$ that is missing from
+$o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road surface friction directly, which is privileged information.
 
 Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
 $cal(A)$ is the action space. The policy therefore maps an
-observation to a probability distribution over actions; we write
-$a_t ~ pi(dot | o_t)$ #footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator in that case.]). The policy is what we want to find: it describes the
+observation to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator $e: cal(O) -> cal(S)$ in that case: $hat(s)_t = e(o_t), a_t ~ pi(dot | hat(s)_t)$])
+$a_t ~ pi(dot | o_t)$. The policy is what we want to find: it describes the
 agent's behaviour. For simplicity, we let the policy depend only on the current observation;
 should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
 to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
@@ -1349,6 +1243,23 @@ Since $G_t$ depends on random states, observations and actions, it is a
 random variable, and the agent maximises its expectation, $EE[G_0]$, from the
 start of the episode. The policy that achieves this maximum is the _optimal policy_ $pi^*$.
 
+
+=== Value functions
+Value functions measure how good it is for the agent to be in a state, or to take an action in that state, and are the basis for the critic in PPO.
+The state-value function,
+$
+  V^pi (s) = EE_pi [G_t | S_t = s]
+$ <state_value_function>
+is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter. The action-value function,
+$
+  Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
+$ <action_value_function>
+measures the expected discounted return starting in state $s$, taking action $a$, and then following policy $pi$ thereafter. Their difference is the advantage function,
+$
+  A^pi (s, a) = Q^pi (s, a) - V^pi (s),
+$ <advantage_function>
+which measures how much better action $a$ is than the policy's average action in state $s$, following policy $pi$.
+
 == Reinforcement Learning (RL) <sec:rl>
 
 In order to find the optimal policy, $pi^*$ that maximises the expected discounted return, $J(theta) = EE_pi [G_0]$, we use reinforcement learning (RL) as introduced by Sutton and Barto @sutton2018. In RL, the agent learns to maximise its expected discounted return by interacting with the environment and receiving feedback in the form of rewards. The agent updates its policy based on the observed rewards and transitions, gradually improving its performance over time. We use RL instead of supervised learning due to lack of labelled data for the optimal policy.
@@ -1361,9 +1272,9 @@ _Policy-based_ methods, on the other hand,
 learn a parameterised policy $pi_theta$ directly by ascending the estimated gradient of
 $J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
 $arg max$ over actions. They can also represent stochastic policies, which may be
-necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ methods
+necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ @sutton2018 methods
 combine both: a learned value function (the critic) is used to reduce the variance
-of the policy gradient, and since the critic is only used in training, it may take privileged information as input as in . We focus on policy-based and actor-critic
+of the policy gradient, and since the critic is only used in training, it may take privileged information. We focus on policy-based and actor-critic
 methods in this report.
 
 === Policy gradient theorem <sec:policy_gradient>
@@ -1388,7 +1299,7 @@ $ <eq:policy_gradient_theorem>
 The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
-  hat(nabla_theta J)(theta) = 1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) log(pi_theta (a^((i))_t | o^((i))_t)) dot G^((i))_t
+  hat(nabla_theta J)(theta) = 1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) nabla_theta log pi_theta (a^((i))_t | o^((i))_t) dot G^((i))_t
 $
 Although REINFORCE is simple to implement, it has several drawbacks, including having high variance in its gradient estimates, which can lead to slow convergence and instability during training @santana2026introductiondeepreinforcementimitation, and, being an on-policy algorithm, it can only learn from trajectories generated by the current policy, which can limit exploration and learning efficiency (since it cannot train multiple epochs on the same rollout).
 
@@ -1398,7 +1309,7 @@ PPO is a modern actor-critic algorithm for policy learning introduced in 2017 by
 Recall that the advantage function in @advantage_function is the difference between the action-value and state-value functions. It therefore measures how much better (positive) or worse (negative) an action is than the policy's average action in that state. In training, $hat(A)_t = hat(A)^pi (s_t, a_t)$ is estimated from observed rewards and the learned value function, $hat(V)^pi (s)$, for example with Generalised Advantage Estimation @schulman2018highdimensionalcontinuouscontrolusing.
 In PPO, the clipped surrogate objective is given by
 $
-  cal(L)_"actor" = -1/(sum_(i=0)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
+  cal(L)_"actor" = -1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
 $
 
 where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function on the other hand ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely. These two mechanisms together ensure that the policy is updated in a way that improves performance while avoiding large, destabilising changes that are common in other policy gradient methods @schulman2017ppo.
@@ -1615,7 +1526,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
         .flatten(),
     )),
     caption: [
-      The agent's neural network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector. This shared feature vector is then passed to three independent heads: the policy head outputs the parameters of the action distribution, the value head outputs the state-value estimate, and the auxiliary head outputs predictions of privileged targets. The network is drawn at 70% scale to fit on the page.
+      The agent's neural network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector. This shared feature vector is then passed to three independent heads: the policy head outputs the parameters of the action distribution, the value head outputs the state-value estimate, and the auxiliary head outputs predictions of privileged targets.
     ],
   )
 } <network_architecture>
@@ -1626,7 +1537,7 @@ The policy head outputs a location $mu$ and a raw scale value $x$ for each of
 throttle and steering. Each action is sampled independently from a
 tanh-squashed Gaussian,
 $ a = tanh(u), quad u tilde cal(N)(5 * tanh(mu / 5), sigma^2), $
-so that $a in (-1, 1)$.
+so that $a in (-1, 1)$, where 1 corresponds to full throttle or full right steering, and -1 corresponds to full reverse or full left steering.
 
 The mean is transformed with a tanh to soft-clamp it to the range $(-5, 5)$ using `tanh_loc=True` in the TorchRL `TanhNormal` distribution. This prevents the mean from growing too large, which would push samples into the saturated region of the squashing function and make it difficult for the policy to recover since gradients vanish there. The constant factor of 5 is the heuristically chosen default factor configured in TorchRL @bou2023torchrldatadrivendecisionmakinglibrary.
 
@@ -1699,7 +1610,7 @@ $
   )
 $
 
-Throughout, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta_"Huber" (y, hat(y))) / beta$. Dividing by $beta$ decouples the threshold from the gradient: the rescaled loss is quadratic with gradient $delta = y - hat(y)$ for $|delta| <= beta$, and linear with a constant gradient of magnitude $1$ for $|delta| > beta$, so that the parameter $beta$ sets only the transition point and not the slope of the linear region.
+Throughout, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta_"Huber" (y, hat(y))) / beta$. Dividing by $beta$ decouples the threshold from the gradient: the rescaled loss is quadratic with gradient
 
 The Huber loss is a robust alternative to the SE loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero.
 
@@ -1730,7 +1641,7 @@ The Huber loss is a robust alternative to the SE loss that is far less sensitive
   )
 } <huber_vs_mse_diagram>
 
-The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss. This is the case for our auxiliary targets, as visualised in @auxiliary_targets_boxplot.
+The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep. This is the case for our auxiliary targets, as visualised in @auxiliary_targets_boxplot.
 
 #figure(
   image("../results/figures/baseline_rollout_train_boxplot.pdf"),
@@ -1758,8 +1669,8 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
   // Shared plot builder: draws the sampled points plus the optimum
   let search-plot(pts, title) = lq.diagram(
     title: title,
-    xlabel: [Weight of auxiliary loss 1],
-    ylabel: [Weight of auxiliary loss 2],
+    xlabel: [$w_"aux"^((1))$],
+    ylabel: [$w_"aux"^((2))$],
     xlim: (0.0, 6.0),
     ylim: (0.0, 6.0),
     width: 140pt,
@@ -1812,13 +1723,13 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
   let random-far = random-near.map(p => if p == (3.4, 2.9) { (4.7, 3.6) } else { p })
 
   figure(
-    grid(
+    scale(80%, reflow: true, grid(
       columns: 3,
       column-gutter: 12pt,
       search-plot(grid-pts, [(a) Grid search]),
       search-plot(random-near, [(b) Random search (hit)]),
       search-plot(random-far, [(c) Random search (miss)]),
-    ),
+    )),
     caption: [Grid and random search over two auxiliary loss weights. The red star indicates the optimal weight configuration. (a) shows that a grid search may miss the optimum, but is guaranteed to find a point within $"grid resolution"/2$ of the optimum. (b) shows that random search can find a point very close to the optimum, but (c) shows that it can also miss it entirely.],
   )
 }
@@ -1826,7 +1737,7 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
 So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run, so they are not ideal for our scenario.
 
 === Adaptive Weighting
-Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
+Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, which weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
 
 ==== PCGrad
 
@@ -1847,7 +1758,7 @@ $ xi_t = d_t + N_t L $
 
 The _progress per step_ is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
 
-Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as the difference in potential, $Phi(s_t) - Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
+Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
 
 === Crash rates
 The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length.
@@ -2088,9 +1999,6 @@ AI was not used to generate the training code or the model definition code - tha
     align: (left, left, left),
     header: ("Property", "Description", "Value for RoboRacer"),
     [`radius`],
-    [Radius of the wheel],
-    [5.8 cm],
-    [`width`],
     [Radius of the wheel],
     [5.8 cm],
     [`mass`],
