@@ -7,14 +7,14 @@
 #import "@preview/simple-plot:1.1.0": hline, note, plot, vline
 #import "@preview/lilaq:0.5.0" as lq
 #import "@preview/neural-viz:0.1.0": *
+#import "@preview/gantty:0.5.1"
 
 #show: style-algorithm
 #show: latex-lookalike.style-outline
 
 #set ref(supplement: it => {
   if it.func() == heading {
-    if it.supplement == none { none }
-    else if it.level == 1 { "Chapter" } else { "Section" }
+    if it.supplement == none { none } else if it.level == 1 { "Chapter" } else { "Section" }
   } else if it.func() == figure {
     if it.kind == image { "Figure" } else if it.kind == table { "Table" } else { "Figure" }
   } else if it.func() == table {
@@ -74,7 +74,7 @@
 // --- Paragraphs: justified, \onehalfspacing, \parindent, \parskip=0
 // The title page itself stays centred and unindented, so justification
 // and the paragraph indent are switched on where the front matter starts.
-#set par(leading: 1.0em, spacing: 1.05em)
+#set par(leading: 0.7em, spacing: 1.05em)
 
 // --- Page: \usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
 // with the fancyhdr header (centred running mark + rule) and the
@@ -246,7 +246,7 @@
 
 = Acknowledgements
 
-I would like to thank my supervisor Dr. JC Schoeman for his guidance and support throughout this project. #todo("Finish")
+This work would not have been possible without the support of my supervisor, Dr. JC Schoeman, who provided valuable guidance and feedback throughout the project. I would also like to thank my friends and peers for their encouragement and support, as well as my family for their support throughout my studies. Finally, I would like to thank the developers of the open-source software and libraries that were used in this project, including, but not limited to, PyTorch, NumPy, Matplotlib, Seaborn, Pandas, Python, and Ubuntu. Without their contributions, this work would have been immensely more difficult.
 
 #pagebreak()
 #v(1fr)
@@ -280,7 +280,11 @@ I would like to thank my supervisor Dr. JC Schoeman for his guidance and support
 
 = Abstract
 
-End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them: the progress-based reward is dense, but it is an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them; even when the reward is dense, it is still an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information can be applied to improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+
+We find that close-ahead track curvature prediction has a positive effect on the training speed, racing performance, crash rate, and representation quality of the agent, while other losses such as velocity and slip prediction have little-to-no effect.
+
+
 
 
 #pagebreak()
@@ -409,52 +413,45 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
 
 == Background and motivation
 
-Road traffic crashes remain a leading cause of death and serious injury worldwide @who2018roadsafety, and the overwhelming majority are attributed to human error @hankey1999identification, as cited by Medina et al. @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents (e.g. severe lane-departure accidents @olofsson2021crashdatabases), improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly.
+Road traffic crashes remain a leading cause of death and serious injury worldwide @who2018roadsafety, and the overwhelming majority are attributed to human error @hankey1999identification, as cited by Medina et al. @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents @olofsson2021crashdatabases, improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly. Autonomous racing is a demanding proxy for these situations because high speeds, tight control margins, and short recovery times stress the driving policy
 
-Autonomous racing is a demanding testbed for exactly these situations. The high speeds, tight control margins, and short time available to recover from bad decisions make it a proxy for developing and evaluating autonomous driving algorithms.
+Broadly, autonomous driving control architectures fall into two paradigms: modular pipelines and end-to-end learning. Modular pipelines decompose the driving task into distinct sub-problems, such as perception, planning, and control; this provides interpretability and simplifies debugging, but often demands extensive domain expertise and manual tuning. End-to-end learning instead maps raw sensor inputs (e.g., LiDAR or camera frames) directly to control outputs (e.g., speed and steering angle). It avoids hand-engineered intermediate representations, but typically requires vast amounts of data and suffers from poor interpretability, making failures difficult to diagnose @chen2020interpretableendtoendurbanautonomous.
 
-Broadly, autonomous driving control architectures fall into two paradigms: modular pipelines and end-to-end learning. Modular pipelines decompose the driving task into distinct sub-problems, such as perception, planning, and control. While this separation provides interpretability and simplifies debugging, it often demands extensive domain expertise and manual tuning. Conversely, end-to-end learning directly maps raw sensor inputs (e.g., LiDAR or camera frames) to control outputs (e.g., speed and steering angle). Although this approach bypasses the need for hand-engineered intermediate representations, it typically requires vast amounts of data and suffers from poor interpretability, making failures difficult to diagnose @chen2020interpretableendtoendurbanautonomous.
+Auxiliary learning, as popularised by Jaderberg et al. @jaderberg2017unreal, presents a compelling method to address these shortcomings. By training a model to perform secondary tasks alongside its primary control objective, the network is encouraged to learn richer, more structured intermediate representations @rafiee2022makesusefulauxiliarytasks while improving interpretability @chen2020interpretableendtoendurbanautonomous. In simulation, privileged ground-truth state is available during training even when it is unavailable to the deployed policy. This motivates the question of whether such auxiliary signals can improve an end-to-end racing agent that must drive from limited onboard sensing.
 
-Auxiliary learning presents a compelling method to address these shortcomings. By training a model to perform secondary tasks alongside its primary control objective, the network is encouraged to learn richer, more structured intermediate representations @rafiee2022makesusefulauxiliarytasks while improving interpretability @chen2020interpretableendtoendurbanautonomous. This paradigm is particularly useful for end-to-end racing in simulation. Because the simulator has access to privileged, ground-truth state information - such as the vehicle's true velocity, tire slip, and upcoming track geometry - these metrics can be used as auxiliary supervisory signals during training, even though they remain inaccessible to the deployed policy during inference.
+== Problem Statement and Objectives <sec:problem_statement_and_objectives>
+An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, upcoming track curvature, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can lead to slow convergence. This can slow convergence and lead to sub-optimal policies. Privileged information is, however, available in simulation.
 
-== Problem statement
-An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, the curvature of the track ahead, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can lead to slow convergence.
-
-Privileged information is, however, available in simulation. This report investigates whether _auxiliary losses_ that predict this privileged information from the policy's shared representation can improve the learning of a LiDAR-only end-to-end racing agent.
-
-== Objectives <sec:objectives>
-The objectives of this project are to:
+This report investigates whether _auxiliary heads_ that predict privileged information from the policy's shared representation can improve a LiDAR-only end-to-end racing agent. The objectives are to:
 
 #set enum(numbering: "(a)")
 + select an appropriate simulation environment for autonomous racing;
 + implement a baseline end-to-end RL agent that drives from LiDAR alone;
-+ gain an understanding of what representations the baseline agent natively encodes;
++ quantify what representations the baseline agent natively encodes;
 + implement auxiliary learning to provide additional supervisory signals to the agent during training; and
-+ evaluate the performance of the auxiliary learning agent against the baseline agent.
++ compare the auxiliary-learning agent against the baseline on driving performance and representation quality.
 #set enum(numbering: "1.")
 
-Meeting these objectives answers the research question: (a) and (b) provide the experimental platform and the baseline, (c) establishes what auxiliary learning must improve on, and (d) and (e) test the proposed method directly.
+== Solution Overview and Scope
 
-== Summary of work
+The project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation. First, a custom 3D racing simulator was built in Unity using PhysX-based vehicle dynamic and a procedural track generator. This custom simulator was benchmarked against the standard F1Tenth Gym @okelly2020f1tenthgym. Second, a baseline end-to-end reinforcement learning (RL) agent was trainged with Proximal Policy Optimisation (PPO) and a dense progress-based reward. Third, auxiliary heads were added to the network to predict privileged state information during training. The motivation for this approach is developed in the following chapters.
 
-To answer the research question, the project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation.
-
-First, a custom 3D racing simulator was built in Unity. It uses PhysX-based vehicle dynamics from the RoboRacer platform and features a procedural track generator. It was benchmarked against the 2D F1Tenth gym and, despite offering high-fidelity physics (including weight transfer and non-linear tyre slip), it ran only 19% slower, justifying its use for training.
-
-Second, a baseline end-to-end RL agent was trained using Proximal Policy Optimisation (PPO) and a dense progress-based reward. The agent's memoryless feedforward policy drove using only a stack of 50 LiDAR scans (the previous 2s) and the current throttle and steering angle. To understand what representations this baseline naturally encoded, linear regression probes were fitted to the activations of its final shared layer. Even at random initialisation, the network natively captured certain targets: lateral and angular velocities were linearly decodable with mean out-of-sample $R^2$ scores of 92% and 85% respectively.
-
-Finally, auxiliary heads were added to the network to predict privileged state information (forward, lateral, and angular velocity; per-wheel slip; and upcoming track curvature) during training. The models were trained with a weighted auxiliary loss, yielding these primary findings:
-- Predicting close track curvature ($<= 3m$ ahead) forced the network to encode measurably more spatial information (an absolute increase of between +51 to +58 percentage points in $R^2$ scores for the close track curvature probes, and +28 and +10 for the 3.5m- and 4.0m-ahead probes which are outside of the auxiliary supervision range). The agent also drove measurably faster (+12.5%) and had fewer collisions per metre of progress (-37.67%) than the baseline.
-- Predicting far-ahead track curvature (6m to 8m ahead) was not learned well by the model, and resulted in degraded performance (-24.6% average velocity) and an elevated crash rate per metre progress (up to +265%).
-- Predicting the forward slip of either the front or rear wheels decreased the agent's crash rate per metre of progress for both back and front wheels (-42.6% and - 48.5% respectively), but only forward wheel slip prediction improved the agent's velocity (+7.0%), though both only when the auxiliary loss had a low weight (0.1)
+The scope is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, using a memoryless feedforward policy, and a recurrent policy was also evaluated. Learning is done using PPO, and auxiliary losses are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Only single-agent racing is studied, so opponent information is not considered.
 
 
-== Scope
-This report is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, and uses a memoryless feedforward policy with a stacked observation history rather than a recurrent architecture. Learning is done with PPO alone, and other RL algorithms were not compared. Only auxiliary _losses_ are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Representations are analysed with linear probes only, so non-linearly encoded information is not measured. Only single-agent racing is studied, so opponent information is not considered.
+== Report Outline
 
-== Roadmap
+@sec:related_literature reviews the background and related literature. It contrasts classical module pipelines with end-to-end learning approaches to autonomous racing, and surveys how rivileged information has previously been exploited through other methods. The chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshae the policy's representation.
 
-#todo("Fill in")
+@sec:system_overview provides a brief system overview, describing how the simulator and python training script communicate, and how observations, actions, and rewards flow between them.
+
+@sec:simulator presents the custom Unity simulator. It justifies the choice of simulator, benchmarking it against the F1Tenth gym, and describe the vehicle dynamics implemented, as well as the procedural track generation and privileged information available during training.
+
+@sec:training decsribes the agent and auxiliary learning method. It formalises racing as a POMDP, introduces PPO and the network architecture, and defined the auxiliary targets, loss functions, and weighting strategy, together with the metrics used for evaluation.
+
+@sec:results reports the expirements performed and their results. It first characterises the baseline agent's performance, and, using linear probes, what its internal representation natively encodes; it then evaluates each auxiliary configuration against the baseline on diving performance and representation quality. This chapter tests the central claim that auxiliary losses improve both representation learning and racing behaviour.
+
+@sec:conclusion concludes the report. It summarises the findings against the objectives, discusses limitations, and outlines future work, thereby placing our contributions in the context of the broader autonomous racing literature.
 
 = Background and Related Literature <sec:related_literature>
 
@@ -477,8 +474,9 @@ During training in simulation, information that is not available to the agent at
 
 Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as inputs to a teacher for distillation, and as auxiliary rewards or losses. We provide these examples to illustrate how other methods use privileged information, and to motivate the use of auxiliary losses as an alternative method in this project.
 
+
 === Asymetric Actor-critic Methods
-Asymetric actor-critic methods @pinto2017asymmetricactorcriticimagebased are a variant of actor-critic methods that train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance of a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
+Asymetric actor-critic methods @pinto2017asymmetricactorcriticimagebased are a variant of actor-critic methods that train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance using a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
 
 === Teacher-student distillation
 
@@ -497,15 +495,15 @@ While auxiliary rewards act as a form of reward shaping - supplying denser feedb
 
 ==== Auxiliary losses
 
-Incorporation of auxiliary losses alongside the primary loss has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
+Incorporation of _auxiliary heads_ that predict privileged into a model, and using supervised _auxiliary losses_ to train them, has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
 
 Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
 
-In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability and
+In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability, and performance.
 
 == Evaluation of existing approaches
 
-End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but unused at deployment. Existing ways of exploiting it each leave a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
 //Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
@@ -544,7 +542,7 @@ End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks 
 
 // Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this project, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
 
-= System overview
+= System overview <sec:system_overview>
 
 The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from as input LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
 
@@ -680,7 +678,7 @@ The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engin
   caption: "Feature comparison of the Unity (PhysX) and F1Tenth gym simulators",
 )
 
-However, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator. The rest of this chapter describes the custom simulator, including its performance, vehicle model, track generation, and privileged information reporting.
+Despite its higher-accuracy physics, the AutoDrive simulator by default does not provide various features that are important for end-to-end training in our auxiliary learning setup. For example, it is missing track generation & privileged information reporting. Therefore, a custom simulator was implemented in Unity using components from the AutoDrive simulator. Specifically, the `VehicleController` and `IMU` components were not re-implemented, but instead used directly from the AutoDrive simulator. The rest of this chapter describes the custom simulator, including its performance, vehicle model, track generation, and privileged information reporting.
 
 == Simulator performance comparison
 
@@ -688,7 +686,7 @@ In simulation-based training, throughput is critical because agents typically re
 
 In order to ensure the custom Unity simulator is suitable for training and not just evaluation, its performance was compared to the F1Tenth gym. A rollout of 10 000 control timesteps (6 minutes and 40 seconds in simulation time) was performed in each environment on an M4 MacBook Air, and the average time per control step was measured. Both environments were run in headless mode to remove any potential overhead from the graphical user interface.
 
-Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed, using a comparable amount of CPU resources in this environment, as shown in @sim_benchmarks, with the Unity simulator being only 19% slower compared to the F1Tenth Gym in terms of steps per second.
+Despite the Unity simulator being significantly more complex than the F1Tenth gym, it runs at a comparable speed, using a comparable amount of CPU resources in this environment, as shown in @sim_benchmarks, with the Unity simulator being only 19% slower compared to the F1Tenth Gym in terms of mean steps per second (sps).
 
 Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent, despite the F1tenth gym being more widely used in the literature.
 
@@ -714,7 +712,7 @@ by the wheels. `BoxColliders` were used to model the car's body and collisions b
 #figure(
   image("figures/unity_isometric_colliders.png", width: 300pt),
   caption: [Custom Unity car's colliders: the body colliders handle collisions, and
-    the four `WheelCollider`s handle suspension and tyre forces. The red lines show the raycasts by the `RayPerceptionSensor` that simulates the LiDAR.],
+    the four `WheelCollider`s handle suspension and tyre forces. The red lines show the raycasts by the `RayPerceptionSensor` that simulates the LiDAR. Despite the car looking simpler than the one in the AutoDrive simulator, it has similar physical properties, since we removed the visual meshes and textures.],
 ) <unity_colliders>
 
 === The WheelCollider <sec_wheelcollider>
@@ -1167,14 +1165,12 @@ At each time step $t$, the environment is in state $s_t in cal(S)$, where
 $cal(S)$ is the state space. This state is a _complete_ description of the
 environment at that time. The first state $s_0$ is sampled from an initial state distribution $rho_0$. The agent does not see $s_t$ directly. Instead, it receives an observation $o_t in cal(O)$, typically its sensor inputs (e.g. LiDAR, camera frames), drawn from the observation function,
 $o_t ~ cal(Z)(dot | s_t)$: the observation function is a stochastic mapping from the true state to the observation, deciding what the agent observes given the true state. The information in $s_t$ that is missing from
-$o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road surface friction directly, which is privileged information.
+$o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road curvature ahead directly, which is privileged information.
 
 Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
-$cal(A)$ is the action space. The policy therefore maps an
-observation to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must exist a state estimator $e: cal(O) -> cal(S)$ in that case: $hat(s)_t = e(o_t), a_t ~ pi(dot | hat(s)_t)$])
-$a_t ~ pi(dot | o_t)$. The policy is what we want to find: it describes the
-agent's behaviour. For simplicity, we let the policy depend only on the current observation;
-should the policy depend on a history of observations, we would write $pi(dot | o_t, o_(t-1), dots.h)$. After the agent has taken action $a_t$, the environment moves
+$cal(A)$ is the action space. The policy therefore maps the history of observations#footnote([Should the policy be defined using a single observation as input, it may perform arbitrarily worse than when using a full history of observations @kaelbling1998, since the observations are not markov, only the states are.]) to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must then exist a state estimator, $e: cal(O)^m -> cal(S)$. In that case: $hat(s)_t = e(o_0, ..., o_t), a_t ~ pi(dot | hat(s)_t)$])
+$a_t ~ pi(dot | o_0, ..., o_t)$. The policy is what we want to find: it describes the
+agent's behaviour. After the agent has taken action $a_t$, the environment moves
 to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
 function. By the _Markov property_, the next state $s_(t+1)$ depends only on the current
 state $s_t$ and action $a_t$, not on earlier history @sutton2018. Then, the agent receives a scalar reward
@@ -1215,7 +1211,7 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
     step((1, 1), $s_0 ~ rho_0$),
     step((0, 2), $a_0 ~ pi(dot | o_0)$),
     step((1, 3), $s_1 ~ P(dot | s_0, a_0)$),
-    step((0, 4), $a_1 ~ pi(dot | o_1)$),
+    step((0, 4), $a_1 ~ pi(dot | o_0, o_1)$),
     step((1, 5), $s_2 ~ P(dot | s_1, a_1)$),
     node((0, 6), $dots.v$, fill: white),
     node((1, 6), $dots.v$, fill: white),
@@ -1234,7 +1230,7 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
 
 The agent's goal is to maximise the _expected discounted return_. The
 _discounted return_ (or simply _return_) from time step $t$ is the discounted sum of all rewards the agent
-receives from $t$ onward,
+receives from time $t$ onward,
 $ G_t = sum_(k=0)^(T-t) gamma^k r_(t+k), $
 where $T$ is the final time step and $gamma in [0, 1]$ is the discount
 factor. A reward received $k$ steps ahead is scaled by $gamma^k$, so later
@@ -1737,12 +1733,10 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
 
 So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run, so they are not ideal for our scenario.
 
-We choose to use a simple grid search to find the optimal weights so that we can more rigidly study the effect of each auxiliary loss on the agent's performance. We modify the grid so that only one kind of auxiliary loss is active at a time so we can isolate the effect of each loss, and use weights $w_"aux" in {0.1, 0.3, 1.0}$ - an exponential scale.
-
 === Adaptive Weighting
 Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, which weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
 
-==== PCGrad
+==== PCGrad <sec:pcgrad>
 
 PCGrad @yu2020gradientsurgerymultitasklearning is a method that modifies the gradients of auxiliary tasks to prevent them from conflicting with the main task's gradients. It does so by projecting the auxiliary task gradients onto the normal plane of the main task's gradient if they conflict. Let $bold(g)_"aux"^((k))$ be the gradient of the model parameters for the $k$-th auxiliary loss and $bold(g)_"PPO"$ be the gradient of the main task loss. If the dot product $bold(g)_"aux"^((k)) dot bold(g)_"main" < 0$, then the auxiliary gradient is projected onto the normal plane of the main task gradient:
 
@@ -1753,7 +1747,56 @@ $
   )
 $
 
-The result is that the auxiliary gradients are modified to avoid conflicting with the main task, but this does not guarantee that the auxiliary gradients 
+The result is that the auxiliary gradients are modified to avoid conflicting with the main task, but this does not guarantee that the auxiliary gradients
+
+==== Weighting Scheme Used in This Project <sec:weighting_scheme>
+
+Our aim is to understand the effect of each kind of privileged information on the agent, not to find the best possible weights. Searching over a separate weight for each of the 16 curvature, 3 velocity and 8 slip targets would be intractable (@sec:finding_optimal_weights), and adaptive methods are designed to balance tasks rather than to help a single primary task. We therefore use fixed weights and a _leave-one-in_ design.
+
+The targets are partitioned into $C = 10$ categories (@aux_categories), each with one scalar weight $w_c$. The auxiliary loss of a category is the sum of the Huber losses of its targets,
+$
+  cal(L)_c = sum_(k in c) cal(L)_"Huber"^((k)),
+  quad
+  cal(L)_"total" = cal(L)_"PPO" + sum_(c=1)^C w_c cal(L)_c .
+$
+In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) = w$ and every other weight is zero. Each category is trained with $w in {0.1, 0.3, 1.0}$, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
+
+We also consider the performance of the PCGrad method @sec:pcgrad in order to evaluate whether we can achieve better performance without having to tune weights. In this case, all losses are enabled, and the weight for the auxiliary loss is set to $w in {0.1, 0.3, 1.0}$.
+
+#figure(
+  stb-table(
+    columns: 2,
+    align: (left, left),
+    header: ([*Category*], [*Auxiliary targets*]),
+    [None],
+    [No targets (i.e. baseline PPO)],
+    [Forward velocity $v_f$],
+    [Forward velocity $v_f$],
+    [Lateral velocity $v_l$],
+    [Lateral velocity $v_l$],
+    [Yaw rate $omega_y$],
+    [Yaw rate $omega_y$],
+    [Close-ahead track curvature],
+    [${c_x| x in {0.5, 1.0, 1.5, 2.0, 2.5, 3.0} "m"}$],
+    [Medium-ahead track curvature],
+    [${c_x| x in {3.5, 4.0, 4.5, 5.0, 5.5, 6.0} "m"}$],
+    [Far-ahead track curvature],
+    [${c_x| x in {6.5, 7.0, 7.5, 8.0} "m"}$],
+    [Front wheel forward slip],
+    [${kappa_x| x in {"FR", "FL"}}$],
+    [Rear wheel forward slip],
+    [${kappa_x| x in {"BR", "BL"}}$],
+    [Front wheel lateral slip],
+    [${tan(alpha_x)| x in {"FR", "FL"}}$],
+    [Rear wheel lateral slip],
+    [${tan(alpha_x)| x in {"BR", "BL"}}$],
+    [All],
+    [All auxiliary targets],
+  ),
+
+  caption: [The auxiliary targets are grouped into categories, each of which is weighted by a single hyperparameter. The performance of the agent is evaluated for configurations with
+  ],
+) <aux_categories>
 
 == Metrics <sec:metrics>
 === Progress
@@ -1823,7 +1866,7 @@ By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 wi
   caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
 
-= Experiments & results
+= Experiments & results <sec:results>
 
 Each configuration of (auxiliary targets, auxiliary loss weights), as well as the baseline model, was trained for 600 PPO iterations with 256 frames per iteration on each of 48 concurrent environments, for a total of 7.3 million timesteps ($approx 82 "hours"$ of sim-time). Each configuration was trained on 6 different seeds, and various statistics were recorded for each iteration of each run of each configuration.
 
@@ -1843,8 +1886,8 @@ privileged state variables (e.g. velocity, slip, upcoming curvature).
 
 Alain and Bengio @alain2018understandingintermediatelayersusing introduced
 _linear probes_ for this purpose; the trunk network's weights are frozen, and a
-separate linear classifier (the probe) is trained in a supervised manner on the representations
-$bold(h)^((l))$ of each layer to predict the desired target. Since the
+separate linear classifier (the probe) is trained in a supervised manner on the representations,
+$bold(h)^((l))$, of each layer to predict the desired target. Since the
 probe cannot change the representation, its test accuracy measures how much
 class information is _linearly_ available at that layer. Anand et al.
 @anand2020unsupervisedstaterepresentationlearning extended this idea to
@@ -1873,11 +1916,11 @@ To establish what the baseline represents without auxiliary supervision, linear 
 
 Two distinct patterns emerge. Quantities describing the vehicle’s instantaneous dynamics (yaw rate, lateral velocity and lateral wheel slip) are already linearly decodable at initialisation ($R^2 ≈ 0.8–0.9$). Since the trunk network is untrained (with weights initialised using the LeCun method @lecun1998efficientbackprop), this reflects information that is close to linear in the observation and survives a series of random LeCun-initialised projections, rather than a learned representation. A similar effect was observed in @alain2018understandingintermediatelayersusing when investigating this phenomenon in toy MNIST models. Baseline PPO training does not improve the $R^2$ for these quantities, and decodability declines modestly (e.g. rear lateral slip falls from $R^2 = \~0.67$ to \~0.50), suggesting that PPO discards some of this information.
 
-@probe_baseline_heatmap visualises the trend over time: as the model trains, the decodability of the instantaneous dynamics quantities declines, while the decodability of the close-ahead ($<= 3m$) and medium-ahead ($3m < x <= 6m$) track curvature improves almost monotonically (highlighted in boxes). This suggests that these quantities may prove to be useful auxiliary targets, as the auxiliary losses will encourage the model to learn their representations earlier. The model does not significantly learn to represent the far-ahead curvature (6m - 8.0m), which presents itself as another candidate for an auxiliary target. If we are able to encourage the model to learn more about these quantities, it may be able to plan further ahead and improve its performance.
+@probe_baseline_heatmap visualises the trend over time: as the model trains, the decodability of the instantaneous dynamics quantities declines, while the decodability of the close-ahead ($<= 3m$) and medium-ahead (3m - 6m) track curvature improves almost monotonically (highlighted in boxes). This suggests that these quantities may prove to be useful auxiliary targets, as the auxiliary losses will encourage the model to learn their representations earlier. The model does not significantly learn to represent the far-ahead curvature (6m - 8m), which presents itself as another candidate for an auxiliary target. If we are able to encourage the model to learn more about these quantities, it may be able to plan further ahead and improve its performance.
 
 #figure(
   image("../results/figures/probe_heatmap.pdf", height: 200pt),
-  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model, showing how much each quantity is linearly decodable at each iteration of training. Note that the y-axis is not evenly spaced.],
+  caption: [Mean out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model, showing how much each quantity is linearly decodable at each iteration of training. Note that the y-axis is not evenly spaced, to highlight what is learnt earlier in training.],
 ) <probe_baseline_heatmap>
 
 
@@ -1885,7 +1928,7 @@ Two distinct patterns emerge. Quantities describing the vehicle’s instantaneou
 
 The model is now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
 
-The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean progress per timestep along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean progress per timestep). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but no significant change in racing speed.
+The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean metres of progress per timestep (MPPT) along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean MPPT). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but showed no significant change in racing speed.
 
 
 #figure(
@@ -1895,30 +1938,34 @@ The auxiliary head (and loss) that was most effective in improving the agent's p
 
 #figure(
   image("../results/figures/last_50_means_heatmap.pdf"),
-  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$), using the Benjamini-Hochberg procedure for false discovery rate correction @benjamini1995controlling],
+  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$), using the Benjamini-Hochberg procedure @benjamini1995controlling for false discovery rate correction and a two-sided t-test for the null hypothesis that the means are equal.],
 ) <fig:last_50_means_heatmap>
+
+@fig:progress_vs_collision places each model in a 2D space of the mean progress per second vs the mean number of collisions per metre of progress. It is clear that the close-ahead curvature auxiliary loss is the most effective in improving both speed and safety, while the rear-wheel slip improves safety but has mixed results in terms of speed. Importantly, @fig:last_50_means_heatmap and @fig:progress_vs_collision both indicate that the majority of auxiliary losses _do not_ improve the agent's performance, and in most cases, degrade it.
 
 #figure(
   image("../results/figures/progress_vs_collision.pdf"),
-  caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline.]
-)
+  caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline.],
+) <fig:progress_vs_collision>
 
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
 Applying the same probing technique after auxiliary training, we find that decodability of the privileged quantities improved significantly in many configurations, though not always with a corresponding performance gain. The full results are visualised in @aux_head_regression_results, since they are too numerous to include in the main text.
 
-The close-ahead ($<= 3m$) track curvature auxiliary loss was extremely effective in improving the decodability of the trunk's final layer. It improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +16 to +58 percentage points, and even improved the decodability of quantities that were not directly supervised, such as 3.5-m-ahead curvature (up to +27 percentage points). The medum-ahead ($3m < x <= 6m$) curvature auxiliary loss also improved the decodability of the trunk's final layer, but to a lesser extent.
+The close-ahead ($<= 3m$) track curvature auxiliary loss was extremely effective in improving the decodability of the trunk's final layer. It improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +16 to +58 percentage points, depending on the weight, and even improved the decodability of quantities that were not directly supervised, such as 3.5-m-ahead curvature (up to +27 percentage points). The medum-ahead ($3m < x <= 6m$) curvature auxiliary loss also improved the decodability of the trunk's final layer, but to a lesser extent.
 
-When losses were introduced for the for wheel slip quantities, the decodability of the corresponding quantities improved significantly for smaller loss weigths ($w_"aux" in {0.1, 0.3}$). Interestingly, when forward wheel slip was supervised for the front wheels, the decodability of the back wheel slip also increased. We hypothesis that this is because the car is driven with an all-wheel-drive configuration, so the front and back wheels are coupled.
+When losses were introduced for the for wheel slip quantities, the decodability of the corresponding quantities improved significantly for smaller loss weigths ($w_"aux" in {0.1, 0.3}$). Interestingly, when forward wheel slip was supervised for the front wheels, the decodability of the back wheel slip also increased. We hypothesis that this is because the car is driven with an all-wheel-drive configuration, so the front and back wheels are coupled, but this was not tested.
 
-Lateral slip supervision had mixed effects, with the decodability of the corresponding quantities improving significantly only for a larger loss weight ($w_"aux" = 1$).
+Lateral slip supervision had mixed effects, with the decodability of the corresponding quantities improving significantly only for a larger loss weight ($w_"aux" = 1$), and also resulted in no improvement in the agent's performance.
 
 When all auxiliary losses were enabled, the decodability of almost all quantities improved significantly, but the agent's performance only improved in terms of safety with a low auxiliary loss weight ($w_"aux" = 0.1$). This suggests that the auxiliary losses may be competing for the model's capacity when they are all enabled.
 
-= Conclusions and recommendations
+== Qualitative Analysis of Driving Styles
+
+= Conclusions and recommendations <sec:conclusion>
 
 == Summary
-This project set out to determine whether auxiliary losses that predict privileged information improve the performance, training speed, and internal representations of a LiDAR-only end-to-end racing agent. All five objectives listed in @sec:objectives were met; a custom unity simulator was developed, a baseline PPO agent was trained (@sec:agent), linear regression probes established what the agent natively encodes (@baseline_lr_model_dumbell). Then, auxiliary heads were added to predict privileged state information during training (@sec:training), and the resulting agents were evaluated against the baseline model in terms of racing speed and safety, while also probing the internal representations of the trained agents (@sec:learned_features_after_auxiliary_learning). The results show that auxiliary losses can improve both the agent's performance and its internal representations, but that this is not "free lunch": only certain auxiliary losses improve performance, and only at certain loss weights.
+This project set out to determine whether auxiliary losses that predict privileged information improve the performance, training speed, and internal representations of a LiDAR-only end-to-end racing agent. All five objectives listed in @sec:problem_statement_and_objectives were met; a custom unity simulator was developed, a baseline PPO agent was trained (@sec:agent), linear regression probes established what the agent natively encodes (@baseline_lr_model_dumbell). Then, auxiliary heads were added to predict privileged state information during training (@sec:training), and the resulting agents were evaluated against the baseline model in terms of racing speed and safety, while also probing the internal representations of the trained agents (@sec:learned_features_after_auxiliary_learning). The results show that auxiliary losses can improve both the agent's performance and its internal representations, but that this is not "free lunch": only certain auxiliary losses improve performance, and only at certain loss weights.
 
 The baseline model already encoded its instantaneous dynamics well at initialisation. In contrast, the decodability of close-ahead and medium-ahead track curvature improved significantly during training with auxiliary heads, and the former had an impressive effect on the agent's driving capability, making it both safer and faster. Far-ahead curvature was not learned well by the model, and did not improve the agent's performance when supervised.
 
@@ -1937,6 +1984,8 @@ The results of this project suggest that more work is needed to determine _a pri
 #set heading(supplement: none, numbering: none)
 
 = Appendix
+
+#counter(heading).update(1)
 #set heading(numbering: (..n) => {
   let nums = n.pos()
   if nums.len() == 1 {
@@ -1948,11 +1997,141 @@ The results of this project suggest that more work is needed to determine _a pri
   }
 })
 
+//#counter(heading).update(ar => (ar.at(1), 0))
+
+#set page(flipped: true)
+== Project Timeline
+#[
+  #set text(size: 0.9em)
+
+  #figure(
+    gantty.gantt(
+      (
+        tasks: (
+          (
+            name: [Background research],
+            intervals: ((start: "2026-06-05", end: "2026-10-15"),),
+            subtasks: (
+              (
+                name: [Reinforcement learning],
+                intervals: ((start: "2026-06-05", end: "2026-07-17"),),
+              ),
+              (
+                name: [Auxiliary learning and privileged information],
+                intervals: ((start: "2026-06-22", end: "2026-07-31"),),
+              ),
+              (
+                name: [Autonomous racing and RoboRacer],
+                intervals: ((start: "2026-07-06", end: "2026-08-14"),),
+              ),
+            ),
+          ),
+          (
+            name: [Simulator development],
+            intervals: ((start: "2026-08-10", end: "2026-10-24"),),
+            subtasks: (
+              (
+                name: [Setting up AutoDrive],
+                intervals: ((start: "2026-08-10", end: "2026-09-28"),),
+              ),
+              (
+                name: [Custom simulator],
+                intervals: ((start: "2026-10-21", end: "2026-10-24"),),
+              ),
+              (
+                name: [Benchmark environment performance],
+                intervals: ((start: "2026-10-10", end: "2026-10-21"),),
+              ),
+            ),
+          ),
+          (
+            name: [Baseline agent],
+            intervals: ((start: "2026-09-20", end: "2026-10-23"),),
+            subtasks: (
+              (
+                name: [PPO training pipeline (TorchRL, ML-Agents)],
+                intervals: ((start: "2026-09-20", end: "2026-09-28"),),
+              ),
+              (
+                name: [Trainer performance tuning],
+                intervals: ((start: "2026-09-20", end: "2026-10-10"),),
+              ),
+              (
+                name: [Baseline training and evaluation],
+                intervals: ((start: "2026-09-28", end: "2026-10-23"),),
+              ),
+            ),
+          ),
+          (
+            name: [Auxiliary learning experiments],
+            intervals: ((start: "2026-09-26", end: "2026-10-25"),),
+            subtasks: (
+              (
+                name: [Auxiliary heads and losses],
+                intervals: ((start: "2026-09-26", end: "2026-10-09"),),
+              ),
+              (
+                name: [Loss-weight grid search (6 seeds)],
+                intervals: ((start: "2026-10-06", end: "2026-10-23"),),
+              ),
+              (
+                name: [Linear probing and statistical analysis],
+                intervals: ((start: "2026-10-09", end: "2026-10-25"),),
+              ),
+            ),
+          ),
+          (
+            name: [Report writing],
+            intervals: ((start: "2026-09-29", end: "2026-10-31"),),
+            subtasks: (
+              (
+                name: [Literature review chapter],
+                intervals: ((start: "2026-10-23", end: "2026-10-24"),),
+              ),
+              (
+                name: [Agent and method chapters],
+                intervals: ((start: "2026-09-29", end: "2026-10-17"),),
+              ),
+              (
+                name: [Results and conclusion],
+                intervals: ((start: "2026-10-13", end: "2026-10-26"),),
+              ),
+              (
+                name: [Revision and submission],
+                intervals: ((start: "2026-10-25", end: "2026-10-31"),),
+              ),
+            ),
+          ),
+        ),
+      ),
+      drawer: gantty.drawers.default-drawer
+        + (
+          headers: gantty.header.default-headers-drawer.with(headers: (
+            gantty.header.default-month-header(),
+          )),
+          milestones: gantty.milestones.default-milestones-drawer.with(today-content: none),
+        ),
+    ),
+    caption: [Timeline of the project, showing the main tasks and their durations.],
+  )
+]
+#set page(flipped: false)
+
+== Graduate Attributes
+
+=== Complex Engineering Problem
+
+The project addresses a complex engineering problem because it requires a fundementals-based formulation of autonomous racing as a POMDP and first-principles-based design of vehicle dynamic models. It draws on specialist knowledge of RL and autonomous racing, and engages with current research literature on privileged information, auxiliary learning, and representation probing. The problem has no obvious solution: a LiDAR-only agent must learn quantities it cannot observe, and it is not clear which privileged targets or loss weights would help. It involves conflicting requriements (speed vs. safety), balancing the loss weights of the primary task vs. auxiliary tasks, and considering the trade-offs between simulation fidelity and training speed. It also involves many coupled systems
+
+
+
+#pagebreak()
+
 == AI Declaration
 
-- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain why certain training setups may perform badly on the hardware available. Claude was used to provide code to perform the FDR analysis on @aux_head_regression_results
+- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me.
 
-- #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver Videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way.
+- #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way. Gemini was used to do spelling & grammar checking.
 
 - #link("https://scholar.google.co.za/scholar_labs/search")[Google Scholar Labs] was used extensively in searching for literature.
 - #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality.
