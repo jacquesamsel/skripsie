@@ -271,8 +271,10 @@ This work would not have been possible without the support of my supervisor, Dr.
   columns: (1fr, 1fr),
   align: bottom + left,
   rows: (2.5cm, 2.5cm),
-  [Student number #place(horizon + center)[#text("26938839", size: 24pt)]], [Signature],
-  [Initials and surname #place(horizon + center)[#text("J.F. Amsel", size: 24pt)]],
+  [Student number #place(horizon + center)[#text("26938839", size: 24pt)]], [#place(horizon+center)[#image("./signature.png")]
+    Signature
+    ],
+  [Initials and surname #place(horizon + center)[#text("JF Amsel", size: 24pt)]],
   [Date #place(horizon + center)[#text(datetime.today().display("[day] [month repr:long] [year]"), size: 24pt)]],
 )
 
@@ -320,7 +322,7 @@ We find that close-ahead track curvature prediction has a positive effect on the
 The symbols in this thesis follow a small set of conventions, so a new expression can usually be read without looking it up.
 
 - *Capital vs. lowercase.* A capital letter is a random variable ($S_t$, $A_t$, $O_t$), and the matching lowercase letter is a particular realized value of it ($s_t$, $a_t$, $o_t$).
-- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces. Lowercase elements live in the corresponding space, e.g. $s in cal(S)$.
+- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces, except for the reward function $cal(R): cal(S) times cal(A) times cal(S) -> RR$, the observation function, $cal(Z): cal(S) -> Delta_cal(O)$, and the transition function $cal(P): cal(S) times cal(A) -> Delta_cal(S)$. Lowercase elements live in the corresponding space, e.g. $s in cal(S)$,
 - *Subscript $t$* indexes time, so $x_t$ is the quantity $x$ at time step $t$.
 - *Subscript $theta$* marks dependence on learnable parameters, e.g. $pi_theta$.
 - *Superscript $pi$* means "under policy $pi$", e.g. $V^pi$, $Q^pi$, $A^pi$.
@@ -359,8 +361,12 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   [$A^pi (s, a) = Q^pi (s, a) - V^pi (s)$],
   [Advantage function for policy $pi$ at state $s$ and action $a$],
 
+  table.cell(colspan: 2)[*Calculus*],
+  [$nabla_theta f(theta)$], [Gradient of the function $f(theta)$ respect to parameters $theta$],
+
+
   table.cell(colspan: 2)[*Probability and statistics*],
-  [$Delta_cal(Y) (X)$], [Set of all probability distributions over variable $X$ with support $cal(Y)$],
+  [$Delta_cal(Y)$], [Set of all probability distributions with support $cal(Y)$],
   [$X ~ Y$], [$X$ is distributed according to $Y$],
   [$X dot(~) Y$], [$X$ is approximately distributed according to $Y$],
   [$EE[X]$], [Expected value of $X$],
@@ -389,6 +395,9 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   ("IMU", "Inertial measurement unit"),
   ("FOV", "Field of view"),
   ("C.I", "Confidence interval"),
+  ("SE", "Standard error"),
+  ("CNN", "Convolutional neural network"),
+  ("RNN", "Recurrent neural network")
 )
 
 #table(
@@ -441,7 +450,7 @@ The scope is limited to simulation; no sim-to-real transfer to a physical RoboRa
 
 == Report Outline
 
-@sec:related_literature reviews the background and related literature. It contrasts classical module pipelines with end-to-end learning approaches to autonomous racing, and surveys how rivileged information has previously been exploited through other methods. The chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshae the policy's representation.
+@sec:related_literature reviews the background and related literature. It contrasts classical modular pipelines with end-to-end learning approaches to autonomous racing, and surveys how rivileged information has previously been exploited through other methods. The chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshae the policy's representation.
 
 @sec:system_overview provides a brief system overview, describing how the simulator and python training script communicate, and how observations, actions, and rewards flow between them.
 
@@ -497,13 +506,15 @@ While auxiliary rewards act as a form of reward shaping - supplying denser feedb
 
 Incorporation of _auxiliary heads_ that predict privileged into a model, and using supervised _auxiliary losses_ to train them, has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
 
-Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV), and Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
+Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV). They further found that auxiliary losses performed badly on feedforward models, where classification accuracy was limited, but that they were effective on a recurrent model. Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
 
 In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and significantly decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability, and performance.
 
 == Evaluation of existing approaches
 
-End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. 
+
+Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
 //Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
 
@@ -1168,7 +1179,7 @@ $o_t ~ cal(Z)(dot | s_t)$: the observation function is a stochastic mapping from
 $o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road curvature ahead directly, which is privileged information.
 
 Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
-$cal(A)$ is the action space. The policy therefore maps the history of observations#footnote([Should the policy be defined using a single observation as input, it may perform arbitrarily worse than when using a full history of observations @kaelbling1998, since the observations are not markov, only the states are.]) to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must then exist a state estimator, $e: cal(O)^m -> cal(S)$. In that case: $hat(s)_t = e(o_0, ..., o_t), a_t ~ pi(dot | hat(s)_t)$])
+$cal(A)$ is the action space. The policy therefore maps the history of observations#footnote([Should the policy be defined using a single observation as input, it may perform arbitrarily worse than when using a full history of observations @kaelbling1998. The observations are not markov, only the states are.]) to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must then exist a state estimator, $e: cal(O)^m -> cal(S)$. In that case: $hat(s)_t = e(o_0, ..., o_t), a_t ~ pi(dot | hat(s)_t)$])
 $a_t ~ pi(dot | o_0, ..., o_t)$. The policy is what we want to find: it describes the
 agent's behaviour. After the agent has taken action $a_t$, the environment moves
 to a new state, $s_(t+1) ~ cal(P)(dot | s_t, a_t)$, where $cal(P)$ is the transition
@@ -1242,12 +1253,12 @@ start of the episode. The policy that achieves this maximum is the _optimal poli
 
 
 === Value functions
-Value functions measure how good it is for the agent to be in a state, or to take an action in that state, and are the basis for the critic in PPO.
+Value functions measure how good it is for the agent to be in a state, or to take an action in that state.
 The state-value function,
 $
   V^pi (s) = EE_pi [G_t | S_t = s]
 $ <state_value_function>
-is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter. The action-value function,
+is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter, and is what the critic estimates in PPO (@sec:ppo). The action-value function,
 $
   Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
@@ -1271,7 +1282,7 @@ $J(theta)$ with respect to $theta$, and do not need the Markov property of the o
 $arg max$ over actions. They can also represent stochastic policies, which may be
 necessary for optimal behaviour in some POMDPs @singh1994learningwithoutstateestimation (although there always exists a deterministic optimal policy in fully-observed MDPs). _Actor-critic_ @sutton2018 methods
 combine both: a learned value function (the critic) is used to reduce the variance
-of the policy gradient, and since the critic is only used in training, it may take privileged information. We focus on policy-based and actor-critic
+of the policy gradient, and since the critic is only used in training, it may take privileged information as input. We focus on policy-based and actor-critic
 methods in this report.
 
 === Policy gradient theorem <sec:policy_gradient>
@@ -1317,11 +1328,13 @@ $
   cal(L)_"PPO" = cal(L)_"actor" + w_"value" dot cal(L)_"value" - w_"entropy" dot cal(H)[pi_theta]
 $
 
+where $cal(L)_"value" = (1/2) (hat(V)^pi (s_t) - R_t)^2$ is the value-head loss function.
+
 == Neural Network Architecture <sec:agent>
 
 The agent is a feedforward actor-critic network implemented in PyTorch @paszke2019pytorch, with the TorchRL library @bou2023torchrldatadrivendecisionmakinglibrary.
 
-It has no recurrent state, so the stack of past scans is its only source of temporal information, since during testing, a Recurrent Neural Network (RNN) performed poorly in comparison. It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
+It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
 
 - the _policy head_ outputs the parameters of the action distribution,
 - the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
@@ -1529,6 +1542,10 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
 } <network_architecture>
 
 
+As discussed in @sec:related_literature, Lample et al. @lample2017fps found that auxiliary losses were more effective in a recurrent neural network, compared to a feedforward CNN.
+We therefore also implement a recurrent version of the agent, which uses a gated recurrent unit (GRU) @cho2014learningphraserepresentationsusing on the 64-d feature vector output from the trunk, before passing it to the three heads. The RNN network takes a reduced frame stack of 4 frames as input. The GRU allows the model to maintain a hidden memory that it can choose to update at each timestep, which can help it learn temporal dependencies in the data.
+
+
 === Action Distributions
 The policy head outputs a location $mu$ and a raw scale value $x$ for each of
 throttle and steering. Each action is sampled independently from a
@@ -1556,7 +1573,7 @@ is exactly what happened: the car locked at full throttle and full steering in e
 
 Using privileged information during training has the potential to improve the agent's performance, as discussed in @sec:learning_methods_privileged_information. We opt to use privileged information in the form of auxiliary losses, which are additional loss terms that encourage the agent to learn useful representations of the environment. These auxiliary losses are computed using privileged information that is not available to the agent during testing, but can be used during training to improve the agent's performance.
 
-Each frame, the environment emits a set of privileged quantities to the trainer, which are used as _auxiliary targets_. The _auxiliary head(s)_ predict these targets during the training process. The auxiliary targets we consider are listed in @auxiliary_targets. During training, the auxiliary losses are added to the PPO loss so that their gradients are combined and backpropagated through the network graph:
+Each frame, the environment emits a set of privileged quantities to the trainer, which are used as _auxiliary targets_. The auxiliary head(s) predict these targets during the training process. The auxiliary targets we consider are listed in @auxiliary_targets. During training, the auxiliary losses are added to the PPO loss so that their gradients are combined and backpropagated through the network graph:
 
 $
   cal(L)_"total" = underbrace(cal(L)_"actor" + w_"value" cal(L)_V - w_"entropy" H[pi_theta], cal(L)_"PPO") + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)),
@@ -1596,7 +1613,7 @@ $
 ) <auxiliary_targets>
 === Choice of Auxiliary Loss Function
 
-The choice of auxiliary loss functions $cal(L)_"aux"^((k))$ has the potential to significantly impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss @huber1964robust, defined respectively as
+The choice of auxiliary loss functions, $cal(L)_"aux"^((k))$, has the potential to significantly impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss @huber1964robust, defined respectively as
 
 $
   cal(L)_"SE" = (hat(y) - y)^2, quad
@@ -1607,7 +1624,7 @@ $
   )
 $
 
-Throughout, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta_"Huber" (y, hat(y))) / beta$. Dividing by $beta$ decouples the threshold from the gradient: the rescaled loss is quadratic with gradient
+Throughout, we use PyTorch's rescaled implementation of the Huber loss (`smooth_l1_loss`), $(cal(L)^beta_"Huber" (y, hat(y))) / beta$. Dividing by $beta$ decouples the threshold from the gradient: the rescaled loss is quadratic with gradient for small errors, but linear with a constant gradient of magnitude 1 for large errors.
 
 The Huber loss is a robust alternative to the SE loss that is far less sensitive to outliers. It behaves quadratically for small errors and linearly for large ones, with the transition point set by a threshold parameter $beta$. As visualised in @huber_vs_mse_diagram, this means the gradient magnitude is bounded no matter how large the prediction error grows, whereas the L2 gradient grows without limit. Unlike the L1 loss, whose gradient changes sign abruptly at zero, the Huber loss is smooth there, so the gradient shrinks gradually as the error approaches zero.
 
@@ -1645,7 +1662,7 @@ The Huber loss's bounded gradient is particularly useful when the target values 
   caption: [Boxplot of the normalised true auxiliary target values collected during a rollout of the baseline policy. It is clear that the targets have so-called "heavy tails".],
 ) <auxiliary_targets_boxplot>
 
-For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the few extreme target values cannot dominate the gradient.
+For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
 
 == Finding the Optimal Weights <sec:finding_optimal_weights>
 
@@ -1736,7 +1753,7 @@ So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @
 === Adaptive Weighting
 Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, which weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
 
-==== PCGrad <sec:pcgrad>
+=== PCGrad <sec:pcgrad>
 
 PCGrad @yu2020gradientsurgerymultitasklearning is a method that modifies the gradients of auxiliary tasks to prevent them from conflicting with the main task's gradients. It does so by projecting the auxiliary task gradients onto the normal plane of the main task's gradient if they conflict. Let $bold(g)_"aux"^((k))$ be the gradient of the model parameters for the $k$-th auxiliary loss and $bold(g)_"PPO"$ be the gradient of the main task loss. If the dot product $bold(g)_"aux"^((k)) dot bold(g)_"main" < 0$, then the auxiliary gradient is projected onto the normal plane of the main task gradient:
 
@@ -1747,9 +1764,79 @@ $
   )
 $
 
-The result is that the auxiliary gradients are modified to avoid conflicting with the main task, but this does not guarantee that the auxiliary gradients
+The result is that the auxiliary gradients are modified to avoid conflicting with the main task, as visualised in @pcgrad_diagram.
 
-==== Weighting Scheme Used in This Project <sec:weighting_scheme>
+// --- small vector helpers ---
+#let vdot(a, b) = a.at(0) * b.at(0) + a.at(1) * b.at(1)
+#let vadd(a, b) = (a.at(0) + b.at(0), a.at(1) + b.at(1))
+#let vsub(a, b) = (a.at(0) - b.at(0), a.at(1) - b.at(1))
+#let vscale(a, s) = (a.at(0) * s, a.at(1) * s)
+#let vunit(a) = vscale(a, 1 / calc.sqrt(vdot(a, a)))
+
+#figure(
+  canvas(length: 1cm, {
+    import draw: *
+
+    // ===== PARAMETERS: arrow heads relative to each graph's centre =====
+    let g-ppo = (-4, 0)        // main task gradient (shared by both panels)
+    let g-aux-a = (-2.1, 1.8)  // panel (a): aux gradient, no conflict (dot > 0)
+    let g-aux-b = (2.3, 1.8)   // panel (b): aux gradient, conflict (dot < 0)
+    let centre-a = (4, 0)      // tail of the arrows in panel (a)
+    let centre-b = (11, 0)     // tail of the arrows in panel (b)
+    // ====================================================================
+
+    let red = rgb("#ee3322")
+    let blue = rgb("#0000ee")
+    let w = 1.6pt
+
+    // arrow from c to c + v, with a label just past its head
+    let arrow(c, v, body, col, dash: none) = {
+      let head = vadd(c, v)
+      line(c, head, stroke: (paint: col, thickness: w, dash: dash), mark: (end: ">"))
+      content(vadd(head, vscale(vunit(v), 0.5)), text(fill: col, body))
+    }
+
+    // one panel: PCGrad applied to g-aux at centre c
+    let panel(c, g-aux, tag) = {
+      let conflict = vdot(g-aux, g-ppo) < 0
+      let coef = vdot(g-aux, g-ppo) / vdot(g-ppo, g-ppo)
+      let g-par = vscale(g-ppo, coef)   // component along g-ppo
+      let g-proj = vsub(g-aux, g-par)   // normal to g-ppo
+
+      arrow(c, g-ppo, $bold(g)_"PPO"$, red)
+
+      if conflict {
+        // original aux gradient, faded
+        line(
+          c, vadd(c, g-aux),
+          stroke: (paint: blue.lighten(60%), thickness: w), mark: (end: ">"),
+        )
+        // removed component, dotted
+        let foot = vadd(c, g-par)
+        line(c, foot, stroke: (paint: gray, thickness: 1.2pt, dash: "dotted"), mark: (end: ">"))
+        // projected gradient, dashed
+        arrow(c, g-proj, $bold(g)_"aux"^((k)) '$, blue, dash: "dashed")
+        content(
+          (c.at(0) + g-ppo.at(0) / 2, -1.4),
+          [*(#tag)* Conflict: $bold(g)_"aux"^((k)) dot bold(g)_"PPO" < 0$, projected],
+        )
+      } else {
+        arrow(c, g-aux, $bold(g)_"aux"^((k))$, blue)
+        content(
+          (c.at(0) + g-ppo.at(0) / 2, -1.4),
+          [*(#tag)* No conflict: $bold(g)_"aux"^((k)) dot bold(g)_"PPO" >= 0$],
+        )
+      }
+    }
+
+    panel(centre-a, g-aux-a, "a")
+    panel(centre-b, g-aux-b, "b")
+  }),
+  caption: [PCGrad. *(a)* If $bold(g)_"aux"^((k))$ does not conflict with $bold(g)_"PPO"$ it is left unchanged. *(b)* If it conflicts, the component along $bold(g)_"PPO"$, is removed, leaving the gradient orthogonal to $bold(g)_"PPO"$, $bold(g)_"aux"^((k))$],
+) <pcgrad_diagram>
+
+
+=== Weighting Scheme Used in This Project <sec:weighting_scheme>
 
 Our aim is to understand the effect of each kind of privileged information on the agent, not to find the best possible weights. Searching over a separate weight for each of the 16 curvature, 3 velocity and 8 slip targets would be intractable (@sec:finding_optimal_weights), and adaptive methods are designed to balance tasks rather than to help a single primary task. We therefore use fixed weights and a _leave-one-in_ design.
 
@@ -1759,9 +1846,9 @@ $
   quad
   cal(L)_"total" = cal(L)_"PPO" + sum_(c=1)^C w_c cal(L)_c .
 $
-In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) = w$ and every other weight is zero. Each category is trained with $w in {0.1, 0.3, 1.0}$, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
+In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) in {0.1, 0.3, 1.0}$ and every other weight is zero, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
 
-We also consider the performance of the PCGrad method @sec:pcgrad in order to evaluate whether we can achieve better performance without having to tune weights. In this case, all losses are enabled, and the weight for the auxiliary loss is set to $w in {0.1, 0.3, 1.0}$.
+We also consider the performance of the PCGrad method (@sec:pcgrad) in order to evaluate whether we can achieve better performance without having to tune weights. In this case, all losses are enabled, and the weight for the auxiliary loss is set to $w in {0.03, 0.1, 0.3, 1.0}$.
 
 #figure(
   stb-table(
@@ -1799,7 +1886,7 @@ We also consider the performance of the PCGrad method @sec:pcgrad in order to ev
 ) <aux_categories>
 
 == Metrics <sec:metrics>
-=== Progress
+=== Progress <sec:progress>
 Let $L$ be the total length of the track centreline. At any time $t$, let $d_t in [0, L)$ be the agent's current arc length from the start of the centerline to the point closest to the agent, and let $N_t$ be the total number of completed laps. We define the agent's _absolute progress_ along the track as the total continuous distance travelled from the start:
 
 $ xi_t = d_t + N_t L $
@@ -1809,23 +1896,23 @@ The _progress per step_ is then simply the change in this absolute position betw
 Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as (nearly) the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically being close to preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
 
 === Crash rates
-The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length.
+The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length (45 simulated seconds).
 
 The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed across all episodes. This can be interpreted as an estimate of the  probability of a collision occurring at any given timestep, and is useful for evaluating the agent's safety in a time-normalised manner.
 
-The _collisions per metre of progress along the centerline_ is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against spatial progression rather than time, isolating driving competence from the agent's velocity.
+The _collisions per metre of progress along the centerline_ is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against progression rather than time, providing a balanced measure of the agent's driving competence.
 
 === Reward function <sec:reward_function>
-The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the track:
+The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the centerline:
 
 $ r_t = w_p dot (xi_t - xi_(t-1)) - w_c dot c_t $
 
-The first term rewards forward progress, using the progress per step defined above. The second term penalizes collisions: the indicator variable $c_t$ equals 1 if a collision occurs with an obstacle at time $t$, and 0 otherwise.
+The first term rewards forward progress, using the progress per step defined in @sec:progress. The second term penalizes collisions: the indicator variable $c_t$ equals 1 if a collision occurs with an obstacle at time $t$, and 0 otherwise.
 
 The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) balance speed against safety based on the risk tolerance of the application. We set $w_p = 1.0$ and $w_c = 1.0$. Because an episode terminates immediately upon collision, there is already a strong implicit penalty for crashing, allowing $w_c$ to remain relatively low.
 
 === Area Under the Curve (AUC)
-The _Area Under the Curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., return or progress per step) over the total training time or timesteps $T$:
+The _area under the curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., return or progress per step) over the total training time or timesteps $T$:
 
 $ "AUC" = integral_0^T y(t) dif t $
 
@@ -1845,8 +1932,6 @@ $ "throughput" = ("rollout length" times "parallel envs" times "areas per env") 
 We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
 
 As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `num_inst`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
-
-By default, Unity spawns `n_cpus` garbage-collector threads; we set this to 8 with the `-gc-helper-count` launch argument for all runs.
 
 #figure(
   stb-table(
@@ -1872,11 +1957,13 @@ Each configuration of (auxiliary targets, auxiliary loss weights), as well as th
 
 == Baseline Model Performance
 
-The baseline model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a mean crash rate per meter of progress of $0.003369 plus.minus 0.002793 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean progress along the centerline per second of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
+The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in its primary task. It achieved a mean crash rate per meter of progress of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean metres of progress per second along the centerline (MPPSC) of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
-Before we consider the effect of auxiliary losses, we first establish what the baseline model's internal representations encode.
+The recurrent model performed significantly worse, with a mean crash rate per meter of progress of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean MPPSC of $2.00 plus.minus 0.692739 "m/s"$, approximately half the speed of the feedforward model. 
 
-== Learned features of Baseline Model
+Before we consider the effect of auxiliary losses, we first establish what the baseline models' internal representations encode in @sec:baseline_model_features.
+
+== Learned features of Baseline Model <sec:baseline_model_features>
 
 Consider the network in @network_architecture. Once trained, each layer $l$
 maps an input $bold(x)$ to an intermediate representation
@@ -1906,11 +1993,11 @@ done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
 concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
 models for spatial and temporal encodings.
 
-To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer to predict each auxiliary target at various points during the model's training. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample R² at initialisation and after 600 PPO iterations.
+To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer to predict each auxiliary target at various points during the model's training. Each probe is an OLS regression model trained on activations from a \~35-minute rollout  (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample $R^2$ at initialisation and after 600 PPO iterations.
 
 #figure(
   image("../results/figures/probe_dumbbell.pdf", height: 150pt),
-  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model. Error bars show the standard deviation of the mean across 6 different seeds],
+  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model. Error bars show the standard error of the mean (SEM) across 6 different seeds],
 ) <baseline_lr_model_dumbell>
 
 
@@ -1926,14 +2013,14 @@ Two distinct patterns emerge. Quantities describing the vehicle’s instantaneou
 
 == Agent Performance After Auxiliary Learning
 
-The model is now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
+The models are now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
 
-The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty (an average of 2.71 reward is generated per second vs -1 per crash). It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean metres of progress per timestep (MPPT) along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean MPPT). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but showed no significant change in racing speed.
+The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty. It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean metres of progress per timestep (MPPT) along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean MPPT). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but showed no significant change in racing speed.
 
 
 #figure(
   image("../results/figures/auc_comparison.pdf"),
-  caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model],
+  caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model (red). The standard deviation bars indicate the standard deviation of the _mean_ AUC across 6 different seeds.],
 ) <fig:auc_comparison>
 
 #figure(
@@ -2036,11 +2123,11 @@ The results of this project suggest that more work is needed to determine _a pri
               ),
               (
                 name: [Custom simulator],
-                intervals: ((start: "2026-10-21", end: "2026-10-24"),),
+                intervals: ((start: "2026-09-30", end: "2026-10-24"),),
               ),
               (
                 name: [Benchmark environment performance],
-                intervals: ((start: "2026-10-10", end: "2026-10-21"),),
+                intervals: ((start: "2026-09-05", end: "2026-10-21"),),
               ),
             ),
           ),
@@ -2072,7 +2159,7 @@ The results of this project suggest that more work is needed to determine _a pri
               ),
               (
                 name: [Loss-weight grid search (6 seeds)],
-                intervals: ((start: "2026-10-06", end: "2026-10-23"),),
+                intervals: ((start: "2026-10-06", end: "2026-10-15"),),
               ),
               (
                 name: [Linear probing and statistical analysis],
@@ -2082,11 +2169,11 @@ The results of this project suggest that more work is needed to determine _a pri
           ),
           (
             name: [Report writing],
-            intervals: ((start: "2026-09-29", end: "2026-10-31"),),
+            intervals: ((start: "2026-09-23", end: "2026-10-31"),),
             subtasks: (
               (
                 name: [Literature review chapter],
-                intervals: ((start: "2026-10-23", end: "2026-10-24"),),
+                intervals: ((start: "2026-09-23", end: "2026-10-24"),),
               ),
               (
                 name: [Agent and method chapters],
@@ -2129,14 +2216,14 @@ The project addresses a complex engineering problem because it requires a fundem
 
 == AI Declaration
 
-- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me.
+- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain to me why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me, and I understand the process.
 
 - #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way. Gemini was used to do spelling & grammar checking.
 
 - #link("https://scholar.google.co.za/scholar_labs/search")[Google Scholar Labs] was used extensively in searching for literature.
 - #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality.
 
-AI was not used to generate the training code or the model definition code - that was completely hand-written.
+AI was not used to generate the training code or the model definition code - that was hand-written.
 
 == WheelCollider properties <wheel_collider_properties>
 

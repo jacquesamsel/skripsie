@@ -205,6 +205,11 @@ class RoboRacerEnv(TransformedEnv):
                             for wheel in ["front_left", "front_right", "back_left", "back_right"]
                             for direction in ["forward", "lateral"]
                         ],
+                        # Car position in the track's own local (centerLineSpline) frame,
+                        # x/z only -- GenerateWalk always emits local y = 0, so there is
+                        # no vertical component to read.
+                        (("agents", "x"), torch.Size([1])),
+                        (("agents", "z"), torch.Size([1])),
                         # Centerline metres covered since the last decision, drained per
                         # decision step by Car.cs. Must stay last here: SplitVector is
                         # positional, so this order has to match Car.CollectObservations'

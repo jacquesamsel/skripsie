@@ -14,6 +14,25 @@ olofsson2021crashdatabases:
     issue: 6
     volume: 22
 
+cho2014learningphraserepresentationsusing:
+  type: misc
+  title: Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation
+  author:
+  - Cho, Kyunghyun
+  - name: Merrienboer
+    given-name: Bart
+    prefix: van
+  - Gulcehre, Caglar
+  - Bahdanau, Dzmitry
+  - Bougares, Fethi
+  - Schwenk, Holger
+  - Bengio, Yoshua
+  date: 2014
+  url: https://arxiv.org/abs/1406.1078
+  serial-number:
+    arxiv: '1406.1078'
+
+
 lecun1998efficientbackprop:
   type: chapter
   title: Efficient BackProp
