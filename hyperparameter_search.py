@@ -27,8 +27,12 @@ HYPERPARAMETER_GROUPS = {
     "all": AUX_HEAD_KEYS
 }
 
-WEIGHT_VALUES = [0.1, 0.3, 1.0]
-SEEDS = [3, 4, 5]
+# HYPERPARAMETER_GROUPS = {
+#     "all": AUX_HEAD_KEYS
+# }
+
+WEIGHT_VALUES = [0.03, 0.1, 0.3, 1.0]
+SEEDS = [0, 1, 2, 3, 4, 5]
 
 RUNS_DIR = Path("run_done_flags")
 
@@ -49,12 +53,14 @@ class Trial:
     group: str           # "baseline" or a key of HYPERPARAMETER_GROUPS
     weight: float        # 0.0 for baseline
     seed: int
+    pc_grad: bool = False
 
     @property
     def name(self):
-        # rnn_ prefix keeps these apart from the stacked-trunk runs' checkpoints,
+        # pcgrad_ prefix keeps these apart from the plain runs' checkpoints,
         # tensorboard logs and done markers
-        return f"{self.group}_w{self.weight:g}_s{self.seed}"
+        prefix = "pcgrad_" if self.pc_grad else ""
+        return f"{prefix}{self.group}_w{self.weight:g}_s{self.seed}"
 
     @property
     def params(self):
@@ -70,11 +76,10 @@ def build_trials():
     for g, keys in HYPERPARAMETER_GROUPS.items():
         assert keys, f"Group '{g}' is empty - check your filters"
 
-    trials = [Trial("baseline", 0.0, s) for s in SEEDS]
-    trials += [Trial(g, w, s)
-               for g in HYPERPARAMETER_GROUPS
-               for w in WEIGHT_VALUES
-               for s in SEEDS]
+    # PCGrad sweep: every aux head at the same weight
+    trials = [Trial("all", w, s, pc_grad=True)
+              for w in WEIGHT_VALUES
+              for s in SEEDS]
     # seed-major order: complete seed sets finish first
     trials.sort(key=lambda t: t.seed)
     return trials
@@ -125,7 +130,8 @@ def worker(trial: Trial):
             seed=trial.seed,
             max_iters=600,
             rollout_length=256,
-            num_threads=NUM_PYTHON_THREADS
+            num_threads=NUM_PYTHON_THREADS,
+            pc_grad=trial.pc_grad
         )
     )
     trial.done_marker.touch()

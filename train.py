@@ -18,7 +18,7 @@ import random
 import torch
 import itertools
 import pandas as pd
-from utils import AUX_HEAD_KEYS, gen_aux_losses, gen_aux_weights_default_zero, get_aux_head_r2_scores, load_aux_head_scaling_factors, rollout_stats
+from utils import AUX_HEAD_KEYS, gen_aux_losses, gen_aux_weights, gen_aux_weights_default_zero, get_aux_head_r2_scores, load_aux_head_scaling_factors, rollout_stats
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -40,6 +40,8 @@ class TrainParams:
     max_iters: int | None = None
     show_rollout_progress: bool = False
     rollout_length: int = 512
+
+    pc_grad: bool = False
 
 def train(
         env: RoboRacerEnv | RoboRacerParallelEnvs,
@@ -246,7 +248,30 @@ def train(
                                 g_aux_total, g_value, dim=0).item(),
                         }
 
-                total_loss.backward()
+                if params.pc_grad and torch.is_tensor(aux_loss):
+                    # PCGrad on the shared hidden layer, per aux loss: drop the
+                    # part of each aux gradient that conflicts with the PPO gradient
+                    h = minibatch["hidden_layer"]
+                    g_main = torch.autograd.grad(
+                        ppo_loss.mean(), h, retain_graph=True)[0]
+                    g_main_sq = g_main.pow(2).sum() + 1e-12
+                    correction = torch.zeros_like(h)
+                    for k in params.aux_weights:
+                        if params.aux_weights[k] <= 0.0:
+                            continue
+                        g_k = torch.autograd.grad(
+                            (params.aux_weights[k] * aux_losses[k]).mean(), h, retain_graph=True)[0]
+                        dot = (g_main * g_k).sum()
+                        conflict = dot < 0
+                        if conflict:
+                            correction -= dot / g_main_sq * g_main
+                        grad_logs[f"grad/pc_grad_conflict_{k}"] = float(conflict)
+                    # Normal backward, plus a push through the trunk that swaps
+                    # each conflicting g_k for its projection
+                    torch.autograd.backward(
+                        [total_loss, h], [None, correction])
+                else:
+                    total_loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), 6.0).item()
                 optim.step()
@@ -330,13 +355,14 @@ def train(
 if __name__ == "__main__":
     SEED = 42
     params = TrainParams(
-        aux_weights=gen_aux_weights_default_zero({}),
-        name="test_recurrent",
+        aux_weights=gen_aux_weights(1.0),
+        name="test_pc_grad",
         seed=SEED,
-        rollout_length=512,
+        rollout_length=256,
         num_threads=16,
         show_rollout_progress=True,
-        num_stacked_lidar_frames=1
+        num_stacked_lidar_frames=50,
+        trunk="stacked"
     )
     is_mac = platform.system() == "Darwin"
     env = RoboRacerParallelEnvs(

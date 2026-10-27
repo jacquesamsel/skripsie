@@ -62,6 +62,12 @@ def gen_aux_weights_default_zero(aux_weights_override: dict[str, float]) -> dict
         for key in AUX_HEAD_KEYS
     }
 
+def gen_aux_weights(default_value: float):
+    return {
+        key: default_value
+        for key in AUX_HEAD_KEYS
+    }
+
 
 def load_aux_head_scaling_factors(path: str) -> dict[str, tuple[float, float]]:
     with open(path, "r") as f:
