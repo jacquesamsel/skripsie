@@ -2268,20 +2268,22 @@ AI was not used to generate the training code or the model definition code - tha
 == Distribution of Auxiliary Targets <sec:prop_data_within_sd>
 
 #{
-  let data = csv("../results/prop_data_within_1_sd.csv").slice(1)
+  let data = csv("../results/prop_data_within_sd.csv").slice(1)
   figure(
     stb-table(
-      columns: 2,
-      align: (left, center),
-      header: ("Auxiliary target", "Prop. of data within 1 SD of mean"),
+      columns: 4,
+      align: (left, center, center, center),
+      header: ("Auxiliary target", [$hat(P)(|X| < 1 sigma)$], [$hat(P)(|X| > 3 sigma)$], [$(P(|X| > 3 sigma)) / (Z_3)$]),
       ..data
         .map(row => (
           row.at(0),
           [#calc.round(float(row.at(1)) * 100, digits: 2)%],
+          [#calc.round(float(row.at(2)) * 100, digits: 2)%],
+          [#calc.round(float(row.at(3)), digits: 2)x],
         ))
         .flatten(),
     ),
-    caption: [Proportion of the normalised auxiliary target data that lies within 1 standard deviation of the mean in the baseline rollout.],
+    caption: [Proportion of the normalised auxiliary target data that lies within 1 standard deviation of the mean in a baseline feedforward model rollout of 52429 timesteps],
   )
 }
 
