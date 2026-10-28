@@ -696,7 +696,7 @@ In order to ensure the custom Unity simulator is suitable for training and not j
 
 Despite the Unity simulator being much more complex than the F1Tenth gym, it runs at a comparable speed, using a comparable amount of CPU resources in this environment, as shown in @sim_benchmarks, with the Unity simulator being only 19% slower compared to the F1Tenth Gym in terms of mean steps per second (sps).
 
-Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent, despite the F1tenth gym being more widely used in the literature.
+Due to the relatively minor performance difference, and Unity's more realistic 3D physics, the Unity simulator was chosen for training the RL agent, despite the F1Tenth gym being more widely used in the literature.
 
 #figure(
   image("../results/sim_benchmarks.pdf"),
@@ -2020,7 +2020,7 @@ The models are now trained with the same reward function as the baseline model (
   caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model (red). The standard deviation bars indicate the standard error of the mean across 6 different seeds each],
 ) <fig:auc_comparison>
 
-The effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a non-significant decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the wrost-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task. 
+The effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a non-significant decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the worst-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task. 
 
 The auxiliary losses also affect the two architectures very differently. Relative to its own baseline, 26 of the 33 recurrent configurations improve the reward per timestep, compared to only 4 of the 33 feedforward configurations. Of those 4, only the close-ahead curvature loss at a weight of 1.0 is a significant improvement. The same target often has an opposite effect on the two architectures; for example, the forward velocity loss reduces the reward for every weight for the feedforward model, but increases it at every weight for the recurrent model. This suggests that the auxiliary losses mainly compensate for difficulties in training the recurrent model, rather than improving agents in general.
 
@@ -2062,7 +2062,7 @@ Comparing the top-performing configurations of each architecture vs their respec
 
 #figure(
   image("../results/figures/training_perf.pdf"),
-  caption: [Training performance comparison of the baseline model and the best-performing auxiliary loss configurations for each architecture. The shaded area indicates the 95% confidence interval using bootstapping @diciccio1996bootstrapconfidenceintervals],
+  caption: [Training performance comparison of the baseline model and the best-performing auxiliary loss configurations for each architecture. The shaded area indicates the 95% confidence interval using bootstrapping @diciccio1996bootstrapconfidenceintervals],
 ) <fig:training_perf>
 
 
