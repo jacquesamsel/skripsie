@@ -254,9 +254,9 @@ This work would not have been possible without the support of my supervisor, Dr.
 
 #pagebreak()
 
-= Plagarism declaration
+= Plagiarism declaration
 
-1. Plagiaat is die oorneem en gebruik van die idees, materiaal en ander intellektueleeiendom van ander persone asof dit jou eie werk is. _Plagiarism is the use of ideas, material and other intellectual property of another’s work and to present is as my own._
+1. Plagiaat is die oorneem en gebruik van die idees, materiaal en ander intellektueleeiendom van ander persone asof dit jou eie werk is. _Plagiarism is the use of ideas, material and other intellectual property of another’s work and to present it as my own._
 2. Ek erken dat die pleeg van plagiaat 'n strafbare oortreding is aangesien dit ‘n vorm van diefstal is. _I agree that plagiarism is a punishable offence because it constitutes theft._
 3. Dienooreenkomstig is alle aanhalings en bydraes vanuit enige bron (ingesluit die internet) volledig verwys (erken). Ek erken dat die woordelikse aanhaal van teks sonder aanhalingstekens (selfs al word die bron volledig erken) plagiaat is. _Accordingly all quotations and contributions from any source whatsoever (including the internet) have been cited fully. I understand that the reproduction of text without quotation marks (even when the source is cited) is plagiarism._
 4. Ek verklaar dat die werk in hierdie skryfstuk vervat, behalwe waar anders aangedui, my eie oorspronklike werk is en dat ek dit nie vantevore in die geheel of gedeeltelik ingehandig het vir bepunting in hierdie module/werkstuk of ‘n ander module/werkstuk nie. _I declare that the work contained in this assignment, except where otherwise stated, is my original work and that I have not previously (in its entirety or in part) submitted it for grading in this module/assignment or another module/assignment._
@@ -279,7 +279,7 @@ This work would not have been possible without the support of my supervisor, Dr.
 
 = Abstract
 
-End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learning quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them; even when the reward is dense, it is still an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information can be applied to improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learn quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them; even when the reward is dense, it is still an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information can be applied to improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
 
 We find that close-ahead track curvature prediction has a positive effect on the training speed, racing performance, crash rate, and representation quality of the agent, while other losses such as velocity and slip prediction have little-to-no effect.
 
@@ -319,7 +319,7 @@ We find that close-ahead track curvature prediction has a positive effect on the
 The symbols in this thesis follow a small set of conventions, so a new expression can usually be read without looking it up.
 
 - *Capital vs. lowercase.* A capital letter is a random variable ($S_t$, $A_t$, $O_t$), and the matching lowercase letter is a particular realized value of it ($s_t$, $a_t$, $o_t$).
-- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces, except for the reward function $cal(R): cal(S) times cal(A) times cal(S) -> RR$, the observation function, $cal(Z): cal(S) -> Delta_cal(O)$, and the transition function $cal(P): cal(S) times cal(A) -> Delta_cal(S)$. Lowercase elements live in the corresponding space, e.g. $s in cal(S)$,
+- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces, except for the reward function $cal(R): cal(S) times cal(A) times cal(S) -> RR$, the observation function, $cal(Z): cal(S) -> Delta_cal(O)$, and the transition function $cal(P): cal(S) times cal(A) -> Delta_cal(S)$. Lowercase elements live in the corresponding space, e.g. $s in cal(S)$.
 - *Subscript $t$* indexes time, so $x_t$ is the quantity $x$ at time step $t$.
 - *Subscript $theta$* marks dependence on learnable parameters, e.g. $pi_theta$.
 - *Superscript $pi$* means "under policy $pi$", e.g. $V^pi$, $Q^pi$, $A^pi$.
@@ -360,7 +360,7 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   [Advantage function for policy $pi$ at state $s$ and action $a$],
 
   table.cell(colspan: 2)[*Calculus*],
-  [$nabla_theta f(theta)$], [Gradient of the function $f(theta)$ respect to parameters $theta$],
+  [$nabla_theta f(theta)$], [Gradient of the function $f(theta)$ with respect to parameters $theta$],
 
   table.cell(colspan: 2)[*Probability and statistics*],
   [$Delta_cal(Y)$], [Set of all probability distributions with support $cal(Y)$],
@@ -419,14 +419,14 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
 
 == Background and motivation
 
-Road traffic crashes remain a leading cause of death and serious injury worldwide @who2018roadsafety, and the overwhelming majority are attributed to human error @hankey1999identification, as cited by Medina et al. @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents @olofsson2021crashdatabases, improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly. Autonomous racing is a demanding proxy for these situations because high speeds, tight control margins, and short recovery times stress the driving policy
+Road traffic crashes remain a leading cause of death and serious injury worldwide @who2018roadsafety, and the overwhelming majority are attributed to human error @hankey1999identification, as cited by Medina et al. @medina2004relationshipinfrastructuredrivererror. Autonomous driving promises to reduce severe and fatal accidents @olofsson2021crashdatabases, improve traffic flow @VanDriel2010congestion, and reduce emissions @ignlinski2017autonomous-vehicles-ghg. Before such systems can be trusted on public roads, however, they must handle difficult situations, where small mistakes compound quickly. Autonomous racing is a demanding proxy for these situations because high speeds, tight control margins, and short recovery times stress the driving policy.
 
 Broadly, autonomous driving control architectures fall into two paradigms: modular pipelines and end-to-end learning. Modular pipelines decompose the driving task into distinct sub-problems, such as perception, planning, and control; this provides interpretability and simplifies debugging, but often demands extensive domain expertise and manual tuning. End-to-end learning instead maps raw sensor inputs (e.g., LiDAR or camera frames) directly to control outputs (e.g., speed and steering angle). It avoids hand-engineered intermediate representations, but typically requires vast amounts of data and suffers from poor interpretability, making failures difficult to diagnose @chen2020interpretableendtoendurbanautonomous.
 
 Auxiliary learning, as popularised by Jaderberg et al. @jaderberg2017unreal, presents a compelling method to address these shortcomings. By training a model to perform secondary tasks alongside its primary control objective, the network is encouraged to learn richer, more structured intermediate representations @rafiee2022makesusefulauxiliarytasks while improving interpretability @chen2020interpretableendtoendurbanautonomous. In simulation, privileged ground-truth state is available during training even when it is unavailable to the deployed policy. This motivates the question of whether such auxiliary signals can improve an end-to-end racing agent that must drive from limited onboard sensing.
 
 == Problem Statement and Objectives <sec:problem_statement_and_objectives>
-An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, upcoming track curvature, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can lead to slow convergence. This can slow convergence and lead to sub-optimal policies. Privileged information is, however, available in simulation.
+An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, upcoming track curvature, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can slow convergence and lead to sub-optimal policies. Privileged information is, however, available in simulation.
 
 This report investigates whether _auxiliary heads_ that predict privileged information from the policy's shared representation can improve a LiDAR-only end-to-end racing agent. The objectives are to:
 
@@ -440,22 +440,22 @@ This report investigates whether _auxiliary heads_ that predict privileged infor
 
 == Solution Overview and Scope
 
-The project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation. First, a custom 3D racing simulator was built in Unity using PhysX-based vehicle dynamic and a procedural track generator. This custom simulator was benchmarked against the standard F1Tenth Gym @okelly2020f1tenthgym. Second, a baseline end-to-end reinforcement learning (RL) agent was trainged with Proximal Policy Optimisation (PPO) and a dense progress-based reward. Third, auxiliary heads were added to the network to predict privileged state information during training. The motivation for this approach is developed in the following chapters.
+The project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation. First, a custom 3D racing simulator was built in Unity using PhysX-based vehicle dynamics and a procedural track generator. This custom simulator was benchmarked against the standard F1Tenth Gym @okelly2020f1tenthgym. Second, a baseline end-to-end reinforcement learning (RL) agent was trained with Proximal Policy Optimisation (PPO) and a dense progress-based reward. Third, auxiliary heads were added to the network to predict privileged state information during training. The motivation for this approach is developed in the following chapters.
 
 The scope is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, using a memoryless feedforward policy, and a recurrent policy was also evaluated. Learning is done using PPO, and auxiliary losses are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Only single-agent racing is studied, so opponent information is not considered.
 
 
 == Report Outline
 
-@sec:related_literature reviews the background and related literature. It contrasts classical modular pipelines with end-to-end learning approaches to autonomous racing, and surveys how rivileged information has previously been exploited through other methods. The chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshae the policy's representation.
+@sec:related_literature reviews the background and related literature. It contrasts classical modular pipelines with end-to-end learning approaches to autonomous racing, and surveys how privileged information has previously been exploited through other methods. The chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshape the policy's representation.
 
-@sec:system_overview provides a brief system overview, describing how the simulator and python training script communicate, and how observations, actions, and rewards flow between them.
+@sec:system_overview provides a brief system overview, describing how the simulator and Python training script communicate, and how observations, actions, and rewards flow between them.
 
-@sec:simulator presents the custom Unity simulator. It justifies the choice of simulator, benchmarking it against the F1Tenth gym, and describe the vehicle dynamics implemented, as well as the procedural track generation and privileged information available during training.
+@sec:simulator presents the custom Unity simulator. It justifies the choice of simulator, benchmarking it against the F1Tenth gym, and describes the vehicle dynamics implemented, as well as the procedural track generation and privileged information available during training.
 
-@sec:training decsribes the agent and auxiliary learning method. It formalises racing as a POMDP, introduces PPO and the network architecture, and defined the auxiliary targets, loss functions, and weighting strategy, together with the metrics used for evaluation.
+@sec:training describes the agent and auxiliary learning method. It formalises racing as a POMDP, introduces PPO and the network architecture, and defines the auxiliary targets, loss functions, and weighting strategy, together with the metrics used for evaluation.
 
-@sec:results reports the expirements performed and their results. It first characterises the baseline agent's performance, and, using linear probes, what its internal representation natively encodes; it then evaluates each auxiliary configuration against the baseline on diving performance and representation quality. This chapter tests the central claim that auxiliary losses improve both representation learning and racing behaviour.
+@sec:results reports the experiments performed and their results. It first characterises the baseline agent's performance, and, using linear probes, what its internal representation natively encodes; it then evaluates each auxiliary configuration against the baseline on driving performance and representation quality. This chapter tests the central claim that auxiliary losses improve both representation learning and racing behaviour.
 
 @sec:conclusion concludes the report. It summarises the findings against the objectives, discusses limitations, and outlines future work, thereby placing our contributions in the context of the broader autonomous racing literature.
 
@@ -476,13 +476,13 @@ Learning approaches have the potential to learn complex behaviours that are diff
 
 == Learning Methods Using Privileged Information <sec:learning_methods_privileged_information>
 
-During training in simulation, information that is not available to the agent at inference time, is available. This information is referred to as _privileged information_, and is usually unused. There are, however, several methods that use privileged information to improve the performance of an agent.
+During training in simulation, information that is not available to the agent at inference time is available. This information is referred to as _privileged information_, and is usually unused. There are, however, several methods that use privileged information to improve the performance of an agent.
 
 Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as inputs to a teacher for distillation, and as auxiliary rewards or losses. We provide these examples to illustrate how other methods use privileged information, and to motivate the use of auxiliary losses as an alternative method in this project.
 
 
-=== Asymetric Actor-critic Methods
-Asymetric actor-critic methods @pinto2017asymmetricactorcriticimagebased are a variant of actor-critic methods that train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance using a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
+=== Asymmetric Actor-critic Methods
+Asymmetric actor-critic methods @pinto2017asymmetricactorcriticimagebased are a variant of actor-critic methods that train two distinct models: one for the policy, which chooses the agent's actions and only receives the agent's observations as input, and one for the critic, which receives additional privileged informaton as input. The critic is used to estimate the value of each state, which is then used to update the agent to choose actions that lead it into more valuable states. Vasco et al. @vasco2024superhumanvisionbasedreinforcementlearning show that an asymmetric critic can achieve better-than-human performance using a vision-based RL agent in a simulated autonomous racing environment, and perform better than a baseline symmetric actor-critic agent.
 
 === Teacher-student distillation
 
@@ -501,7 +501,7 @@ While auxiliary rewards act as a form of reward shaping - supplying denser feedb
 
 ==== Auxiliary losses
 
-Incorporation of _auxiliary heads_ that predict privileged into a model, and using supervised _auxiliary losses_ to train them, has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
+Incorporation of _auxiliary heads_ that predict privileged information into a model, and using supervised _auxiliary losses_ to train them, has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
 
 Examples of auxiliary learning with privliged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV). They further found that auxiliary losses performed badly on feedforward models, where classification accuracy was limited, but that they were effective on a recurrent model. Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
 
@@ -509,7 +509,7 @@ In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitation
 
 == Evaluation of existing approaches
 
-End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient.
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting privileged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient.
 
 Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
