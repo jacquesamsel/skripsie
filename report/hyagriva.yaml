@@ -402,6 +402,25 @@ he2015delvingdeeprectifierssurpassing:
   serial-number:
     arxiv: '1502.01852'
 
+diciccio1996bootstrapconfidenceintervals:
+  type: article
+  title: 'Bootstrap confidence intervals'
+  author:
+  - DiCiccio, Thomas J.
+  - Efron, Bradley
+  date: 1996
+  page-range: 189-228
+  url: https://doi.org/10.1214/ss/1032280214
+  serial-number:
+    doi: 10.1214/ss/1032280214
+  parent:
+    type: periodical
+    title: Statistical Science
+    publisher: Institute of Mathematical Statistics
+    issue: 3
+    volume: 11
+
+
 
 alain2018understandingintermediatelayersusing:
   type: misc
