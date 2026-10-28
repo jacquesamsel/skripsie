@@ -1,7 +1,7 @@
 import tensordict
 
 from environment import RoboRacerParallelEnvs
-from model import load_model, is_recurrent
+from model import is_recurrent, load_model
 import torch
 from infer import do_rollout
 import os
@@ -24,6 +24,9 @@ torch.set_num_threads(32)
 TRAIN_PATH = "results/baseline_rollout_train.pt"
 TEST_PATH = "results/baseline_rollout_test.pt"
 TRAIN_PROP = 0.8
+# Steps per agent in the saved rollouts. They are saved flat in time-major
+# order, (T * n_agents), so this is needed to recover each agent's trajectory
+ROLLOUT_STEPS = 2048
 # The forward passes are bound by cache/memory bandwidth rather than cores, so
 # more workers past this point slows things down (measured: 32x2 ~0.56s/job,
 # 64x1 ~0.81s/job on the 64-core Threadripper)
@@ -48,13 +51,73 @@ def init_worker():
     _test_data = torch.load(TEST_PATH, mmap=True)
 
 
+def episode_starts(split_data) -> torch.Tensor:
+    """(n_agents, T, 1) bool, True on the first step of each episode.
+
+    The saved rollouts don't store done flags, but CatFramesResetOnDone flushes
+    the lidar stack on the first step of a new episode. Otherwise every step
+    shifts the stack along by exactly one frame, so a step whose stack isn't the
+    previous one shifted along is an episode start. The first step is one too,
+    as do_rollout starts from an env.reset()."""
+    lidar = split_data["agents", "stacked_lidar"]
+    lidar = lidar.reshape(ROLLOUT_STEPS, -1, *lidar.shape[1:])
+    shifted = (lidar[1:, :, :-1] == lidar[:-1, :, 1:]).flatten(2).all(-1)
+    is_init = torch.cat(
+        [torch.ones_like(shifted[:1]), ~shifted], dim=0)  # (T, n_agents)
+    return is_init.T.unsqueeze(-1)
+
+
+def get_trunk_input(model, split_data):
+    """The observations the trunk reads, cut down to its lidar stack length.
+
+    The rollouts were collected with a longer lidar stack than some models use
+    (e.g. the recurrent ones), so keep only the newest frames, which are last."""
+    n_frames = model.get_trunk_operator().module.encoder.num_stacked_lidar_frames \
+        if is_recurrent(model) else model.get_trunk_operator().module.num_stacked_lidar_frames
+    obs = split_data.select(("agents", "stacked_lidar"),
+                            ("agents", "steering_angle"), ("agents", "throttle"))
+    obs["agents", "stacked_lidar"] = obs["agents", "stacked_lidar"][..., -n_frames:, :]
+    return obs
+
+
+def get_hidden_layer_recurrent(model, split_data):
+    """Unrolls the GRU over each agent's whole rollout, resetting it between
+    episodes, and returns hidden_layer in split_data's (time-major) order."""
+    trunk = model.get_trunk_operator()
+    hidden_size = trunk.module.hidden_size
+    # split_data is (T * n_agents) in time-major order; the trunk wants time as
+    # the last batch dim, so make it (n_agents, T)
+    obs = get_trunk_input(model, split_data)
+    obs = obs.reshape(ROLLOUT_STEPS, -1).permute(1, 0)
+    obs["is_init"] = episode_starts(split_data)
+    n_agents = obs.shape[0]
+
+    # Unroll in chunks of time, carrying the GRU state across them
+    h = torch.zeros(n_agents, hidden_size)
+    chunk_len = max(1, FORWARD_CHUNK_SIZE // n_agents)
+    outs = []
+    for t in range(0, ROLLOUT_STEPS, chunk_len):
+        chunk = obs[:, t:t + chunk_len].clone()
+        # only rnn_h[:, 0] is read, as the state before the chunk's first step
+        chunk["rnn_h"] = h.unsqueeze(1).expand(-1, chunk.shape[1], -1)
+        chunk = trunk(chunk)
+        h = chunk["rnn_h_out"][:, -1]
+        outs.append(chunk["hidden_layer"])
+    # back to (T, n_agents) -> (T * n_agents) to line up with the targets
+    return torch.cat(outs, dim=1).transpose(0, 1).reshape(-1, hidden_size)
+
+
 def get_xy(model, split_data):
     trunk = model.get_trunk_operator()
     with torch.inference_mode():
-        x = torch.cat([
-            trunk(split_data[i:i + FORWARD_CHUNK_SIZE].select(*trunk.in_keys))["hidden_layer"]
-            for i in range(0, len(split_data), FORWARD_CHUNK_SIZE)
-        ]).numpy()
+        if is_recurrent(model):
+            x = get_hidden_layer_recurrent(model, split_data).numpy()
+        else:
+            obs = get_trunk_input(model, split_data)
+            x = torch.cat([
+                trunk(obs[i:i + FORWARD_CHUNK_SIZE])["hidden_layer"]
+                for i in range(0, len(obs), FORWARD_CHUNK_SIZE)
+            ]).numpy()
     y = pd.DataFrame({
         key: split_data[("agents", key)].numpy().flatten() for key in AUX_HEAD_KEYS
     })
@@ -72,10 +135,6 @@ def score_checkpoint(job: tuple[str, str]) -> pd.DataFrame | None:
         return None
 
     model, model_config, _, _ = load_model(model_path)
-    if is_recurrent(model):
-        # The rollout data has no rnn_h, so recurrent trunks can't be scored here
-        print(f"Skipping {model_name}: recurrent model.")
-        return None
 
     # Do forward pass to get the aux head outputs
     train_x, train_y = get_xy(model, _train_data)
@@ -115,7 +174,7 @@ if __name__ == "__main__":
             data = do_rollout(
                 env,
                 model,
-                num_steps=2048,
+                num_steps=ROLLOUT_STEPS,
                 select_keys=[*[("agents", key) for key in ["stacked_lidar", "steering_angle", "throttle", *AUX_HEAD_KEYS]]])
             # (n_steps, num_envs, num_areas) -> (n_steps, n_agents), so each car is
             # wholly in either train or test and the split doesn't leak trajectories
@@ -137,23 +196,28 @@ if __name__ == "__main__":
         finally:
             env.close()
 
-
     def get_iter_name(i: int):
         return f"{i:05d}"
 
-
-
-    ITERATIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
-    MODEL_NAMES = [f for f in os.listdir("checkpoints") if not f.startswith("rnn_")]
+    ITERATIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+                  150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
+    COMPLETED_MODELS = []
+    existing_scores = pd.DataFrame()
+    if os.path.exists("results/aux_head_regression_scores.csv"):
+        existing_scores = pd.read_csv("results/aux_head_regression_scores.csv")
+        COMPLETED_MODELS = existing_scores["model_name"].unique().tolist()
+        print(
+            f"Found {len(COMPLETED_MODELS)} completed models: {COMPLETED_MODELS}")
+    MODEL_NAMES = set(f for f in os.listdir("checkpoints")
+                      if f not in COMPLETED_MODELS)
 
     all_scores = []
 
     trainings_to_do = [
         (get_iter_name(iteration), model_name) for iteration in ITERATIONS for model_name in MODEL_NAMES
     ]
+    print(trainings_to_do)
 
-    # spawn, not fork: forking after the parent has run torch ops (e.g. the
-    # rollout above) deadlocks the workers on the inherited OpenMP state
     with ProcessPoolExecutor(
             max_workers=NUM_WORKERS,
             mp_context=mp.get_context("spawn"),
@@ -162,5 +226,6 @@ if __name__ == "__main__":
             if scores is not None:
                 all_scores.append(scores)
 
-    scores = pd.concat(all_scores, ignore_index=True)
+    scores = pd.concat([existing_scores] + all_scores,
+                       ignore_index=True)   # <-- include old rows
     scores.to_csv("results/aux_head_regression_scores.csv", index=False)
