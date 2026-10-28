@@ -87,7 +87,7 @@ class RoboRacerEnv(TransformedEnv):
 
     LIDAR_NUM_TAGS = 2
     LIDAR_BLOCK_SIZE = LIDAR_NUM_TAGS + 2
-    VECTOR_SENSOR_SIZE = 32
+    VECTOR_SENSOR_SIZE = 34
 
     def __init__(
         self,
