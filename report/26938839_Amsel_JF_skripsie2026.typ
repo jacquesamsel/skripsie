@@ -271,9 +271,11 @@ This work would not have been possible without the support of my supervisor, Dr.
   columns: (1fr, 1fr),
   align: bottom + left,
   rows: (2.5cm, 2.5cm),
-  [Student number #place(horizon + center)[#text("26938839", size: 24pt)]], [#place(horizon+center)[#image("./signature.png")]
+  [Student number #place(horizon + center)[#text("26938839", size: 24pt)]],
+  [#place(horizon + center)[#image("./signature.png")]
     Signature
-    ],
+  ],
+
   [Initials and surname #place(horizon + center)[#text("JF Amsel", size: 24pt)]],
   [Date #place(horizon + center)[#text(datetime.today().display("[day] [month repr:long] [year]"), size: 24pt)]],
 )
@@ -364,7 +366,6 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   table.cell(colspan: 2)[*Calculus*],
   [$nabla_theta f(theta)$], [Gradient of the function $f(theta)$ respect to parameters $theta$],
 
-
   table.cell(colspan: 2)[*Probability and statistics*],
   [$Delta_cal(Y)$], [Set of all probability distributions with support $cal(Y)$],
   [$X ~ Y$], [$X$ is distributed according to $Y$],
@@ -397,7 +398,7 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   ("C.I", "Confidence interval"),
   ("SE", "Standard error"),
   ("CNN", "Convolutional neural network"),
-  ("RNN", "Recurrent neural network")
+  ("RNN", "Recurrent neural network"),
 )
 
 #table(
@@ -512,7 +513,7 @@ In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitation
 
 == Evaluation of existing approaches
 
-End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient. 
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting priviledged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient.
 
 Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
@@ -533,7 +534,7 @@ Auxiliary losses avoid all three: they leave the RL objective unchanged, supply 
 
 // Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
 // $
-//   hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); sigma_i^2)
+//   hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); f_i^2)
 // $
 
 // The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
@@ -1655,14 +1656,11 @@ The Huber loss is a robust alternative to the SE loss that is far less sensitive
   )
 } <huber_vs_mse_diagram>
 
-The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep. This is the case for our auxiliary targets, as visualised in @auxiliary_targets_boxplot.
+The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep.
 
-#figure(
-  image("../results/figures/baseline_rollout_train_boxplot.pdf"),
-  caption: [Boxplot of the normalised true auxiliary target values collected during a rollout of the baseline policy. It is clear that the targets have so-called "heavy tails".],
-) <auxiliary_targets_boxplot>
 
-For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_1_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
+
+For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
 
 == Finding the Optimal Weights <sec:finding_optimal_weights>
 
@@ -1778,11 +1776,11 @@ The result is that the auxiliary gradients are modified to avoid conflicting wit
     import draw: *
 
     // ===== PARAMETERS: arrow heads relative to each graph's centre =====
-    let g-ppo = (-4, 0)        // main task gradient (shared by both panels)
-    let g-aux-a = (-2.1, 1.8)  // panel (a): aux gradient, no conflict (dot > 0)
-    let g-aux-b = (2.3, 1.8)   // panel (b): aux gradient, conflict (dot < 0)
-    let centre-a = (4, 0)      // tail of the arrows in panel (a)
-    let centre-b = (11, 0)     // tail of the arrows in panel (b)
+    let g-ppo = (-4, 0) // main task gradient (shared by both panels)
+    let g-aux-a = (-2.1, 1.8) // panel (a): aux gradient, no conflict (dot > 0)
+    let g-aux-b = (2.3, 1.8) // panel (b): aux gradient, conflict (dot < 0)
+    let centre-a = (4, 0) // tail of the arrows in panel (a)
+    let centre-b = (11, 0) // tail of the arrows in panel (b)
     // ====================================================================
 
     let red = rgb("#ee3322")
@@ -1800,16 +1798,18 @@ The result is that the auxiliary gradients are modified to avoid conflicting wit
     let panel(c, g-aux, tag) = {
       let conflict = vdot(g-aux, g-ppo) < 0
       let coef = vdot(g-aux, g-ppo) / vdot(g-ppo, g-ppo)
-      let g-par = vscale(g-ppo, coef)   // component along g-ppo
-      let g-proj = vsub(g-aux, g-par)   // normal to g-ppo
+      let g-par = vscale(g-ppo, coef) // component along g-ppo
+      let g-proj = vsub(g-aux, g-par) // normal to g-ppo
 
       arrow(c, g-ppo, $bold(g)_"PPO"$, red)
 
       if conflict {
         // original aux gradient, faded
         line(
-          c, vadd(c, g-aux),
-          stroke: (paint: blue.lighten(60%), thickness: w), mark: (end: ">"),
+          c,
+          vadd(c, g-aux),
+          stroke: (paint: blue.lighten(60%), thickness: w),
+          mark: (end: ">"),
         )
         // removed component, dotted
         let foot = vadd(c, g-par)
@@ -1959,7 +1959,7 @@ Each configuration of (auxiliary targets, auxiliary loss weights), as well as th
 
 The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean crash rate per meter of progress (CRPMP) of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean metres of progress per second along the centerline (MPPSC) of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
-The recurrent model performed significantly worse, with a mean crashes per meter of progress of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean MPPSC of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the speed of the feedforward model. 
+The recurrent model performed significantly worse, with a mean crashes per meter of progress of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean MPPSC of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the speed of the feedforward model.
 
 Before we consider the effect of auxiliary losses, we first establish what the baseline models' internal representations encode in @sec:baseline_model_features.
 
@@ -2265,7 +2265,7 @@ AI was not used to generate the training code or the model definition code - tha
 )
 
 #pagebreak()
-== Proportion of Data Within 1 Standard Deviation <sec:prop_data_within_1_sd>
+== Distribution of Auxiliary Targets <sec:prop_data_within_sd>
 
 #{
   let data = csv("../results/prop_data_within_1_sd.csv").slice(1)
