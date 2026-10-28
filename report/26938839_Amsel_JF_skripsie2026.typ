@@ -1656,11 +1656,9 @@ The Huber loss is a robust alternative to the SE loss that is far less sensitive
   )
 } <huber_vs_mse_diagram>
 
-The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep.
+The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep. The majority of the auxiliary targets are heavy-tailed, with some having more than 27x the number of extreme extreme values ($|X| > 3 sigma$) compared to a normal distribution, as shown in @sec:prop_data_within_sd. 
 
-
-
-For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance (@auxiliary_targets), this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
+For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance, this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
 
 == Finding the Optimal Weights <sec:finding_optimal_weights>
 
@@ -1886,21 +1884,22 @@ We also consider the performance of the PCGrad method (@sec:pcgrad) in order to 
 ) <aux_categories>
 
 == Metrics <sec:metrics>
+In order to evaluate the agent's performance, we define a set of metrics that capture different aspects of its driving behaviour. These metrics are designed to provide insight into the agent's ability to navigate the track both (a) quickly and (b) safely.
 === Progress <sec:progress>
 Let $L$ be the total length of the track centreline. At any time $t$, let $d_t in [0, L)$ be the agent's current arc length from the start of the centerline to the point closest to the agent, and let $N_t$ be the total number of completed laps. We define the agent's _absolute progress_ along the track as the total continuous distance travelled from the start:
 
 $ xi_t = d_t + N_t L $
 
-The _progress per step_ is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
+The _progress per timestep_ (PPT) is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
 
-Using this step-wise progress as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as (nearly) the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically being close to preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
+We also define the _progress per second_ (PPS) as the progress per step divided by the control timestep duration (40 ms), which is a more intuitive measure of speed.
 
 === Crash rates
 The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length (45 simulated seconds).
 
 The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed across all episodes. This can be interpreted as an estimate of the  probability of a collision occurring at any given timestep, and is useful for evaluating the agent's safety in a time-normalised manner.
 
-The _collisions per metre of progress along the centerline_ is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against progression rather than time, providing a balanced measure of the agent's driving competence.
+The _collisions per metre of progress_ (CPMP) is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against progression rather than time, providing a balanced measure of the agent's driving competence.
 
 === Reward function <sec:reward_function>
 The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the centerline:
@@ -1910,6 +1909,8 @@ $ r_t = w_p dot (xi_t - xi_(t-1)) - w_c dot c_t $
 The first term rewards forward progress, using the progress per step defined in @sec:progress. The second term penalizes collisions: the indicator variable $c_t$ equals 1 if a collision occurs with an obstacle at time $t$, and 0 otherwise.
 
 The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) balance speed against safety based on the risk tolerance of the application. We set $w_p = 1.0$ and $w_c = 1.0$. Because an episode terminates immediately upon collision, there is already a strong implicit penalty for crashing, allowing $w_c$ to remain relatively low.
+
+Using the progress per step as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as (nearly) the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically being close to preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
 
 === Area Under the Curve (AUC)
 The _area under the curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., return or progress per step) over the total training time or timesteps $T$:
@@ -1957,9 +1958,9 @@ Each configuration of (auxiliary targets, auxiliary loss weights), as well as th
 
 == Baseline Model Performance
 
-The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean crash rate per meter of progress (CRPMP) of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean metres of progress per second along the centerline (MPPSC) of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
+The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean CPMP of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 meters. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
-The recurrent model performed significantly worse, with a mean crashes per meter of progress of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean MPPSC of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the speed of the feedforward model.
+The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the performance of the feedforward model.
 
 Before we consider the effect of auxiliary losses, we first establish what the baseline models' internal representations encode in @sec:baseline_model_features.
 
@@ -1997,23 +1998,23 @@ To establish what the baseline represents without auxiliary supervision, linear 
 
 #figure(
   image("../results/figures/probe_dumbbell.pdf", height: 150pt),
-  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the baseline model. Error bars show the standard error of the mean (SEM) across $N = 6$ different seeds],
+  caption: [Out-of-sample $R^2$ scores of linear regression probing of the final layer of the trunk on the (a) recurrent baseline model and (b) feedforward baseline model. Error bars show the standard error of the mean (SEM) across $N = 6$ different seeds],
 ) <baseline_lr_model_dumbell>
 
-Three distinct patterns emerge. First, quantities describing the vehicle's instantaneous dynamics are already linearly decodable at initialisation: forward velocity has $overline(R)^2 = 0.509$, lateral velocity $0.885$, and angular velocity $0.913$. Since the trunk network is untrained and LeCun-initialised @lecun1998efficientbackprop, this reflects information that is close to linear in the observation and survives a series of random projections, rather than a learned representation; a similar effect was observed by @alain2018understandingintermediatelayersusing when investigating intermediate layers in MNIST models. After training, the decodability of forward velocity remained essentially unchanged ($0.503$), while the decodability of lateral and angular velocity decreased to $0.783$ and $0.783$, respectively. Thus the trunk network does not learn to represent these instantaneous-dynamics quantities in a more linearly decodable way. This is likely because the agent can achieve high performance without explicitly representing them, so trunk capacity is better used for other information.
+Three distinct patterns emerge. First, quantities describing the vehicle's _instantaneous dynamics_ are already linearly decodable at initialisation: forward velocity has $overline(R)^2 = 0.509$, lateral velocity $0.885$, and angular velocity $0.913$. Since the trunk network is untrained and He-initialised @he2015delvingdeeprectifierssurpassing, this reflects information that is close to linear in the observation and survives a series of random projections, rather than a learned representation; a similar effect was observed by Alain and Bengio~@alain2018understandingintermediatelayersusing when investigating intermediate layers in MNIST models #footnote([Alain and Bengio do not specify which initialisation scheme they use]). After training, the decodability of forward velocity remained essentially unchanged ($0.503$), while the decodability of lateral and angular velocity decreased to $0.783$ and $0.783$, respectively. Thus, the trunk network does not learn to represent these instantaneous-dynamics quantities in a more linearly decodable way. We hypothesise that this is because the agent can achieve high performance without explicitly representing them, so trunk capacity is better used for other information.
 
-Second, track curvature is initially decodable only for near horizons: $R^2 = 0.264$ at 0.5 m, $0.181$ at 1.0 m, $0.014$ at 1.5 m, and negative at 2.0 m and beyond. After training, decodability improved at every listed horizon ($Delta R^2 > 0$ from 0.5 m through 8.0 m), although absolute decodability remains moderate only near the vehicle and low for medium- and far-ahead distances.
+Second, only close-ahead track curvature is initially decodable: $overline(R)^2 = 0.264$ at 0.5 m, $0.181$ at 1.0 m, $0.014$ at 1.5 m, and negative at 2.0 m and beyond. After training, decodability improved at every listed horizon ($Delta overline(R)^2 > 0$ from 0.5 m through 8.0 m), although absolute decodability remains moderate only near the vehicle and low for medium- and far-ahead distances.
 
 Third, wheel slip shows distinct patterns for forward and lateral components. Forward wheel slip is initially only weakly decodable for all wheels: back-left $0.081$, back-right $0.148$, front-left $0.082$, and front-right $0.132$. After training these increase to $0.272$, $0.241$, $0.276$, and $0.239$, respectively. Lateral wheel slip is already highly decodable at initialisation: back-left $0.666$, back-right $0.676$, front-left $0.813$, and front-right $0.832$. After training, rear lateral wheel slip decreases to $0.488$ and $0.510$, while front lateral wheel slip remains high at $0.781$ and $0.809$.
 
-This expirement shows that, although the baseline model represents some privileged quantities well initially, it does learn to represent others, such as track curvature through training. We hypothesise that forcing earlier learning of these quantities through auxiliary losses may improve the agent's performance, and we investiage this in @sec:agent_performance_after_auxiliary_learning and @sec:learned_features_after_auxiliary_learning.
+This expirement shows that, although the baseline feedforward model represents some privileged quantities well initially, it does learn to represent others, such as track curvature through training. We hypothesise that forcing earlier learning of these quantities through auxiliary losses may improve the agent's performance, and we investigate this in @sec:agent_performance_after_auxiliary_learning and @sec:learned_features_after_auxiliary_learning.
 
 
 == Agent Performance After Auxiliary Learning <sec:agent_performance_after_auxiliary_learning>
 
 The models are now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads (and their associated auxiliary losses).
 
-The auxiliary head (and loss) that was most effective in improving the agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty. It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean metres of progress per timestep (MPPT) along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean MPPT). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but showed no significant change in racing speed.
+The auxiliary head (and loss) that was most effective in improving the feedforward agent's performance was the close-ahead curvature head. It resulted in a measurably higher reward AUC compared to the baseline model with weight $w_c = 1.0$, as visualised in @fig:auc_comparison. Note that because the agent restarts after a collision, the reward AUC is only slightly influenced by the crash penalty. It is therefore important to monitor the performance of the agent in terms of each metric individually, as visualised in @fig:last_50_means_heatmap, where the metrics (y-axis) are averaged over the last 50 training iterations and compared to the baseline model's mean. We find that the model trained with a loss for close-ahead curvature achieves both higher racing performance, as well as safety: it achieves a +13% mean metres of progress per timestep (MPPT) along with a -38% collision rate per metre of progress at an auxiliary loss weight of $omega_"aux" = 1.0$. Similar, though less pronounced results are achieved by the front wheel forward slip head, which is, in fact, safer (-59% collisions per metre of progress) than the baseline, and drives faster (+7% mean MPPT). Training the model with all auxiliary heads enabled, and with a small auxiliary loss weight of $omega_"aux" = 0.1$, results in improved safety (-51% collisions per metre of progress) but showed no significant change in racing speed.
 
 
 #figure(
@@ -2273,7 +2274,12 @@ AI was not used to generate the training code or the model definition code - tha
     stb-table(
       columns: 4,
       align: (left, center, center, center),
-      header: ("Auxiliary target", [$hat(P)(|X| < 1 sigma)$], [$hat(P)(|X| > 3 sigma)$], [$(P(|X| > 3 sigma)) / (Z_3)$]),
+      header: (
+        "Auxiliary target",
+        [$hat(P)(|X| < 1 sigma)$],
+        [$hat(P)(|X| > 3 sigma)$],
+        [$hat(P)(|X| > 3 sigma) div P_"normal" (|X| > 3 sigma)$],
+      ),
       ..data
         .map(row => (
           row.at(0),

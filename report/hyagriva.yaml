@@ -389,6 +389,20 @@ rafiee2022makesusefulauxiliarytasks:
   serial-number:
     arxiv: "2204.00565"
 
+he2015delvingdeeprectifierssurpassing:
+  type: misc
+  title: 'Delving Deep into Rectifiers: Surpassing Human-Level Performance on ImageNet Classification'
+  author:
+  - He, Kaiming
+  - Zhang, Xiangyu
+  - Ren, Shaoqing
+  - Sun, Jian
+  date: 2015
+  url: https://arxiv.org/abs/1502.01852
+  serial-number:
+    arxiv: '1502.01852'
+
+
 alain2018understandingintermediatelayersusing:
   type: misc
   title: Understanding intermediate layers using linear classifier probes
