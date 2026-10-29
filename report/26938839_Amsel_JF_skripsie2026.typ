@@ -299,10 +299,11 @@ This work would not have been possible without the mentorship of my supervisor, 
 
 = Abstract
 
-End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor inputs, but a LiDAR-only agent must implicitly learn quantities it cannot observe, such as its own velocity, tyre slip, and the curvature of the track ahead to perform well. In simulation, these quantities are available as privileged information, yet standard RL provides no direct signal to learn them; even when the reward is dense, it is still an indirect and high-variance teaching signal for these quantities, so the agent learns them slowly. This project investigates whether auxiliary losses that predict privileged information can be applied to improve the performance and training speed of a LiDAR-only end-to-end racing agent, and whether they change what the agent's internal representations encode.
+End-to-end reinforcement learning (RL) agents can drive a car directly from raw sensor data. However, an agent that drives from LiDAR alone must infer learn quantities it cannot observe, such as its own velocity, its tyre slip, and the curvature of the track ahead. In simulation, these quantities are available as privileged information, but the reward gives only an indirect, high-variance signal for learning them. This project investigates whether auxiliary losses for predicting privileged information from the policy's shared representation can improve the training speed, racing performance, and internal representations of a LiDAR-only racing agent.
 
-We find that close-ahead track curvature prediction has a positive effect on the training speed, racing performance, crash rate, and representation quality of the agent, while other losses such as velocity and slip prediction have little-to-no effect.
+A custom racing simulator was built in Unity, with dynamics calibrated to the RoboRacer platform, and a procedural track generator. Both feedforward and recurrent agents were trained with Proximal Policy Optimisation (PPO), and linear probes were used to measure which privileged quantities their learned representations encode. Ten categories of auxiliary targets were each evaluated at three loss weights across 6 seeds: velocities, yaw rate, track curvature at three lookahead distances, and per-wheel slip.
 
+Probing shows that the baseline agents already encode the vehicle's instantaneous dynamics at initialisation, and that training trades this information away in favour of upcoming track curvature. Close-ahead track curvature (up to 3m ahead) is the only auxiliary target that meaningfully benefits both architectures. Most other targets degrade the feedforward agent, while the recurrent agent benefits from many of them, which suggests that auxiliary losses chiefly ease the training of the harder-to-train architecture. Finally, making a quantity more decodable does not always improve driving, and the effect of each target depends strongly on its loss weight.
 
 
 
@@ -339,7 +340,7 @@ We find that close-ahead track curvature prediction has a positive effect on the
 The symbols in this thesis follow a small set of conventions, so a new expression can usually be read without looking it up.
 
 - *Capital vs. lowercase.* A capital letter is a random variable ($S_t$, $A_t$, $O_t$), and the matching lowercase letter is a particular realized value of it ($s_t$, $a_t$, $o_t$).
-- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces, except for the reward function $cal(R): cal(S) times cal(A) times cal(S) -> RR$, the observation function, $cal(Z): cal(S) -> Delta_cal(O)$, and the transition function $cal(P): cal(S) times cal(A) -> Delta_cal(S)$. Lowercase elements live in the corresponding space, e.g. $s in cal(S)$.
+- *Calligraphic letters* denote sets or spaces: $cal(S)$, $cal(O)$, $cal(A)$ are the state, observation, and action spaces. Exceptions are the reward function $cal(R): cal(S) times cal(A) times cal(S) -> RR$, the observation function, $cal(Z): cal(S) -> Delta_cal(O)$, and the transition function $cal(P): cal(S) times cal(A) -> Delta_cal(S)$, which are not sets or spaces. Lowercase symbols denote quantities that live in the corresponding space, e.g. $s in cal(S)$.
 - *Subscript $t$* indexes time, so $x_t$ is the quantity $x$ at time step $t$.
 - *Subscript $theta$* marks dependence on learnable parameters, e.g. $pi_theta$.
 - *Superscript $pi$* means "under policy $pi$", e.g. $V^pi$, $Q^pi$, $A^pi$.
@@ -447,7 +448,7 @@ Auxiliary learning, as popularised by Jaderberg et al. @jaderberg2017unreal, pre
 == Problem Statement and Objectives <sec:problem_statement_and_objectives>
 An end-to-end reinforcement learning (RL) agent that drives from LiDAR alone has to learn representations of privileged information that it cannot directly observe in the real world: its own velocity and slip, upcoming track curvature, and, in Head-to-Head (H2H) racing, the opponent's location. Early in training, the agent has not yet learned to drive well enough to explore the track effectively, so the reward signal that would teach it these representations is sparse and noisy. This can slow convergence and lead to sub-optimal policies. Privileged information is, however, available in simulation.
 
-This report investigates whether _auxiliary heads_ that predict privileged information from the policy's shared representation can improve a LiDAR-only end-to-end racing agent. The objectives are to:
+The objective of this report is to investigate whether _auxiliary heads_ that predict privileged information from the policy's shared representation can improve a LiDAR-only end-to-end racing agent. The objectives are to:
 
 #set enum(numbering: "(a)")
 + select an appropriate simulation environment for autonomous racing;
@@ -461,7 +462,7 @@ This report investigates whether _auxiliary heads_ that predict privileged infor
 
 The project was executed in three phases: simulation development, baseline evaluation, and auxiliary learning experimentation. First, a custom 3D racing simulator was built in Unity using PhysX-based vehicle dynamics and a procedural track generator. This custom simulator was benchmarked against the standard F1Tenth Gym @okelly2020f1tenthgym. Second, a baseline end-to-end reinforcement learning (RL) agent was trained with Proximal Policy Optimisation (PPO) and a dense progress-based reward. Third, auxiliary heads were added to the network to predict privileged state information during training. The motivation for this approach is developed in the following chapters.
 
-The scope is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, using a memoryless feedforward policy, and a recurrent policy was also evaluated. Learning is done using PPO, and auxiliary losses are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Only single-agent racing is studied, so opponent information is not considered.
+The scope is limited to simulation; no sim-to-real transfer to a physical RoboRacer was attempted. The agent drives from LiDAR and its current steering and throttle only, using either a memoryless feedforward policy, or a recurrent policy. Learning is done using PPO, and auxiliary losses are studied; auxiliary rewards and reward shaping are discussed as background but not evaluated. Only single-agent racing is studied, so opponent information is not considered.
 
 
 == Report Outline
@@ -480,6 +481,8 @@ The scope is limited to simulation; no sim-to-real transfer to a physical RoboRa
 
 = Background and Related Literature <sec:related_literature>
 
+Before we can motivate the use of auxiliary losses to exploit privileged information to improve a LiDAR-only end-to-end racing agent, we first review the literature on autonomous racing. We contrast classical modular pipelines with end-to-end learning approaches, and survey how privileged information has previously been exploited through other methods. This chapter closes by identifying the gap in the literature that this report addresses: auxiliary losses have not been studied for LiDAR-only end-to-end racing agents, and it is unknown which privileged targets help or how they reshape the policy's representation.
+
 == Previous Approaches
 Evans et al. @evans2024unifyingf1tenthautonomousracing present a survey breaking down the autonomous racing literature in RoboRacer into two categories: _classical approaches_ and _learning approaches_. We shall provide a brief overview of classical approaches, and then focus on learning approaches, which are more relevant to this project.
 
@@ -491,13 +494,13 @@ Classical approaches generally decompose the driving task into three stages: per
 
 Learning approaches, which have recently shown promise in the field of autonomous driving in simulation @wurman2022outracing @lee2025outracing as well as in deployment on a physical vehicle @czechmanowski2025learningracingpoliciesreinforcement, are often end-to-end, mapping raw sensor inputs directly to control outputs @yurtsever2020surveyofautonomousdriving. This can be done using supervised learning (such as behaviour cloning @pomerleau1988alvinn), where the model is trained on a dataset of expert demonstrations, or using reinforcement learning @sutton2018, where the model learns by interacting with the environment and receiving feedback in the form of rewards.
 
-Learning approaches have the potential to learn complex behaviours that are difficult to hand-engineer, and can adapt to changing environments @bosello2022traininaustria. However, they often require large amounts of data and computational resources @srinivasan2023reinforcementlearningadvancementslimitations, and can be less interpretable than classical approaches: deep end-to-end learning approaches are often regarded as "black boxes" @samek2017explainableartificialintelligenceunderstanding, which may be undesirable in safety-critical applications @chi2017deepsteeringlearningendtoend. In RoboRacer, learning approaches have shown promise, but were unable to outperform classical approaches in benchmarks @evans2024unifyingf1tenthautonomousracing, and recently the majority of 27th RoboRacer Autonomous Racing Competition entries were classical approaches @mallon2026roboracer, despite learning approaches generalising better to unseen tracks @bosello2022traininaustria.
+Learning approaches have the potential to learn complex behaviours that are difficult to hand-engineer, and can adapt to changing environments @bosello2022traininaustria. However, they often require large amounts of data and computational resources @srinivasan2023reinforcementlearningadvancementslimitations, and can be less interpretable than classical approaches; deep end-to-end learning approaches are often regarded as "black boxes" @samek2017explainableartificialintelligenceunderstanding, which may be undesirable in safety-critical applications @chi2017deepsteeringlearningendtoend like driving. In RoboRacer, learning approaches have shown promise, but were unable to outperform classical approaches in benchmarks @evans2024unifyingf1tenthautonomousracing, and recently the majority of 27th RoboRacer Autonomous Racing Competition entries were classical approaches @mallon2026roboracer, despite learning approaches generalising better to unseen tracks @bosello2022traininaustria.
 
 == Learning Methods Using Privileged Information <sec:learning_methods_privileged_information>
 
 During training in simulation, information that is not available to the agent at inference time is available. This information is referred to as _privileged information_, and is usually unused. There are, however, several methods that use privileged information to improve the performance of an agent.
 
-Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as inputs to a teacher for distillation, and as auxiliary rewards or losses. We provide these examples to illustrate how other methods use privileged information, and to motivate the use of auxiliary losses as an alternative method in this project.
+Common ways to use privileged information include as inputs to training-only components (e.g., an asymmetric critic), as inputs to a teacher for distillation, and as auxiliary rewards or losses. We provide these examples to illustrate how other methods use privileged information, and to motivate the use of auxiliary losses as an alternative method for autonomous racing.
 
 
 === Asymmetric Actor-critic Methods
@@ -1627,7 +1630,7 @@ $
   ),
   caption: [The auxiliary targets to be predicted by the agent #footnote([In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy (i.e. without auxiliary losses/heads) as data to estimate $sigma$ and $mu$.])],
 ) <auxiliary_targets>
-=== Choice of Auxiliary Loss Function
+=== Choice of Auxiliary Loss Function <sec:loss_function>
 
 The choice of auxiliary loss functions, $cal(L)_"aux"^((k))$, has the potential to impact the agent's performance. Since we are predicting continuous quantities, it is natural to use a regression loss function such as Squared Error (SE), Absolute Error (AE), or Huber loss @huber1964robust, defined respectively as
 
@@ -2264,7 +2267,10 @@ The project addresses a complex engineering problem because it requires a fundam
 
 AI was not used to generate the training code or the model definition code - that was hand-written.
 
+#pagebreak()
+
 == WheelCollider properties <wheel_collider_properties>
+The values in @fig:wheel_collider_properties are the parameters of the WheelCollider model used in the Unity simulator. These parameters were fit by Samak and Samak @samak2024autonomyorienteddigitaltwins tothe RoboRacer vehicle, and are used in the simulator to model the vehicle's dynamics. The WheelCollider model is a simplified physics model that approximates the behaviour of a real wheel, and is used in Unity to simulate the vehicle's movement and interaction with the environment. Identical parameters are used for all four wheels of the vehicle.
 
 #figure(
   stb-table(
@@ -2303,10 +2309,15 @@ AI was not used to generate the training code or the model definition code - tha
     [0.8 fwd / 1 side],
   ),
   caption: "Relevant parameters of the WheelCollider model. * = forward & sideways",
-)
+) <fig:wheel_collider_properties>
+
+#pagebreak()
+== 
 
 #pagebreak()
 == Distribution of Auxiliary Targets <sec:prop_data_within_sd>
+
+@fig:prop_data_within_sd shows the proportion of auxiliary target values within 1 standard deviation of the mean, and the proportion of values beyond 3 standard deviations of the mean. It is used in @sec:loss_function to justify the choice of the Huber loss function for the auxiliary losses, since it is more robust to outliers than the SE loss.
 
 #{
   let data = csv("../results/prop_data_within_sd.csv").slice(1)
@@ -2329,9 +2340,9 @@ AI was not used to generate the training code or the model definition code - tha
         ))
         .flatten(),
     ),
-    caption: [Proportion of the normalised auxiliary target data that lies within 1 standard deviation of the mean in a baseline feedforward model rollout of 52429 timesteps],
+    caption: [Proportion of auxiliary target values within 1 standard deviation of the mean, and proportion of values beyond 3 standard deviations of the mean. The last column shows the ratio of the proportion of values beyond 3 standard deviations to the expected proportion for a normal distribution (0.27%).],
   )
-}
+} <fig:prop_data_within_sd>
 
 #pagebreak()
 == Baseline $R^2$ Scores <baseline_r2_scores>
@@ -2370,18 +2381,11 @@ The below table shows the out-of-sample $R^2$ scores of linear regression probin
 }
 #pagebreak()
 == Mean Reward Per Timestep of a Baseline FF Model <baseline_reward_per_timestep>
-The below figure shows the mean reward per timestep of a test baseline feedforward model that was executed before the hyperparameter grid search. We use this figure in @sec:results to justify the choice of 600 training iterations for each configuration.
+The below figure shows the mean reward per timestep of a test baseline feedforward model that was executed before the hyperparameter grid search. We use this figure in @sec:results to justify the choice of 600 training iterations for each configuration, since it converges after 400-600 iterations.
 
 #figure(
   image("../results/figures/baseline_reward.pdf"),
   caption: [Mean reward per timestep of a baseline feedforward model over 600 training iterations, averaged across the timesteps in each iteration. Qualitatvely, the model converges after 400-600 iterations],
-)
-
-#pagebreak()
-== Performance of Models with Auxiliary Heads ($alpha = 0.05$) <last_50_means_heatmap_alpha_05>
-#figure(
-  image("../results/figures/last_50_means_heatmap_alpha_05.pdf"),
-  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, mean progress per timestep, mean forward velocity, mean number of collisions per metre of progress, mean number of collisions per episode, and mean number of collisions per timestep) vs the baseline model. Bold = statistically significant ($alpha = 5%$), using a two-sided t-test for the null hypothesis that the means are equal.],
 )
 
 #pagebreak()
