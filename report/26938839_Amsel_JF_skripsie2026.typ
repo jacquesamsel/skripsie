@@ -77,7 +77,7 @@
 // --- Paragraphs: justified, \onehalfspacing, \parindent, \parskip=0
 // The title page itself stays centred and unindented, so justification
 // and the paragraph indent are switched on where the front matter starts.
-#set par(leading: 0.7em, spacing: 1.05em, justify: true)
+#set par(leading: 0.65em, spacing: 1.05em, justify: true)
 
 // --- Page: \usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
 // with the fancyhdr header (centred running mark + rule) and the
@@ -1850,8 +1850,16 @@ $ "AUC" approx sum_(i=1)^N frac(y(t_(i-1)) + y(t_i), 2) (t_i - t_(i-1)) $
 
 A higher AUC for a measure like reward or progress indicates faster learning and superior performance throughout the entire training process rather than merely achieving high final performance.
 
+=== $R^2$ score <sec:r2_score>
+
+The _coefficient of determination_, $R^2$, measures how much of the variation in a quantity a model can explain, compared to simply guessing the average value every time. It is used in @sec:baseline_model_features to judge how well privileged quantities such as velocity or curvature can be predicted from the network's internal representations.
+
+A score of 1 means the predictions are perfect, a score of 0 means the model does no better than predicting the average, and a negative score means it does worse. We report the _out-of-sample_ $R^2$, computed on data the model was not fitted to, so it reflects how well the model generalises rather than how well it memorised its training data.
+
+$R^2$ is used instead of error measures such as RMSE because it is unit-free. The quantities we predict have different units and scales (m/s, rad/s, 1/m and unitless slip), so their raw errors cannot be compared, whereas $R^2$ puts all of them on one scale.
+
 == Trainer Performance Tuning
-Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
+Training was performed on a single machine with an 64 cores and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
 We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), PyTorch threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (128 or more concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
 
@@ -1881,25 +1889,25 @@ Total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 1
 
 = Experiments & results <sec:results>
 
-In order to evaluate the effect of auxiliary losses on the agent's performance, each configuration of active auxiliary losses $times$ auxiliary loss weights $times$ model architecture was trained for 600 PPO iterations with 256 frames per iteration on each of 48 concurrent environments, for a total of 7.3 million timesteps ($approx 82 "hours"$ of sim-time) per training run. 600 iterations were performed because, qualitatively, this was found to be more than sufficient for the baseline feedforward (FF) model to converge, based on a test run's reward shown in @baseline_reward_per_timestep. Each configuration was trained on 6 different seeds.
+To evaluate how auxiliary losses affect agent performance, we trained every combination of active auxiliary losses, auxiliary loss weight and model architecture for 600 PPO iterations. Each iteration collected 256 frames from each of 48 concurrent environments, so each run totals about 7.4 million timesteps ($approx 82 "hours"$ of simulated time). We chose 600 iterations because a test run showed the baseline feedforward (FF) model's reward plateauing well before this point (@baseline_reward_per_timestep). Each configuration was trained with 6 different seeds.
 
-Then, using the checkpoint at each of the last 50 iterations per run, we evaluated the performance on 12288 timesteps (\~8 mins) of held-out test tracks. This produced $6 times 50$
+To evaluate a run, we took the checkpoints from its last 50 iterations and ran each one for 12288 timesteps (\~9 hours), randomly generated test tracks. We then averaged each statistic over these 50 checkpoints to get one value per run. Averaging reduces checkpoint-to-checkpoint noise. Because consecutive checkpoints are strongly correlated, we treat this average as a single observation, since doing otherwise would lead to an overestimation of the sample size. Therefore, each configuration has $N = 6$ samples (one per seed) rather than $6 times 50$.
 
 == Baseline Model Performance
 
-The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean CPMP across 6 seeds of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 metres. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
+The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ seeds. It achieved a mean CPMP across 6 seeds of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 metres. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
 The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the performance of the feedforward model.
 
 Before we consider the effect of auxiliary losses, we first establish what the baseline models' internal representations encode in @sec:baseline_model_features.
 
-== Learned features of Baseline Model <sec:baseline_model_features>
+== Learned Features of the Baseline Models <sec:baseline_model_features>
 
 Consider the network in @network_architecture. Once trained, each layer $l$
 maps an input $bold(x)$ to an intermediate representation
-$bold(h)^((l)) = f_l (bold(x); theta)$, which becomes the input to the following layer. We would like to know what
+$bold(h)^((l))$, which becomes the input to the following layer. We would like to know what
 information these intermediate representations encode, and in particular whether they encode
-privileged state variables (e.g. velocity, slip, upcoming curvature).
+privileged state variables (e.g. velocity, slip, upcoming curvature) so we can better understand the model.
 
 Alain and Bengio @alain2018understandingintermediatelayersusing introduced
 _linear probes_ for this purpose; the trunk network's weights are frozen, and a
@@ -1911,17 +1919,9 @@ class information is _linearly_ available at that layer. Anand et al.
 reinforcement learning, probing an encoder's representations for ground-truth
 state variables of Atari games.
 
-The choice of a _linear_ probe is deliberate; a sufficiently expressive probe may compute the target from almost any input, including the
-raw network input (LiDAR in our case), so high probe accuracy would say more about the probe than
-about the representation @belinkov2021probingclassifierspromisesshortcomings.
-Restricting the probe to a linear map means that it can only succeed if the
-network has already done the work of encoding the target along some direction in the representation space.
+The probe deliberately linear; a sufficiently expressive probe could compute the target even from the raw LiDAR, so its accuracy would say more about the probe than about the representation @belinkov2021probingclassifierspromisesshortcomings. Since our targets are continuous, we use linear _regression_ probes, as McGrath et al. @mcgrath2022alphazero and Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace do.
 
-Many of the privileged variables of interest are continuous rather than
-categorical, so we use a linear _regression_ probe instead of a classifier, as
-done by McGrath et al. @mcgrath2022alphazero to probe AlphaZero for chess
-concepts and by Gurnee and Tegmark @gurnee2024languagemodelsrepresentspace to probe language
-models for spatial and temporal encodings.
+A linear probe has the same form as our auxiliary heads: a single dense layer on the same 64-dimensional trunk output. The difference is that the probe is fitted by ordinary least squares (OLS) to a frozen trunk, while an auxiliary head is trained jointly with the policy, and its gradients reshape the trunk. A baseline probe's $R^2$ therefore approximates what an auxiliary head could achieve without changing the representation.
 
 To establish what the baseline represents without auxiliary supervision, linear probes were fit to the output of the final trunk layer to predict each auxiliary target at various points during the model's training. Each probe is an OLS regression model trained on intermediate representations from a \~35-minute rollout (52429 timesteps) and evaluated on a separate \~9-minute rollout (13107 timesteps). @baseline_lr_model_dumbell reports out-of-sample $R^2$ at initialisation and after 600 PPO iterations.
 
@@ -1938,22 +1938,30 @@ Second, track curvature becomes more decodable with training at most horizons in
 
 Third, wheel slip behaves differently in its forward and lateral components. Forward slip shows the largest difference between the models. It is only weakly decodable from the untrained FF model, but highly decodable from the untrained RNN. Training moves the two models towards each other: FF rises to $0.28$–$0.31$, while the RNN falls to $0.51$–$0.54$. Lateral slip is highly decodable at initialisation in both models ($0.83$–$0.88$) and decreases with training. The decrease is consistently larger for the rear wheels of the FF model ($0.79$/$0.78$) than for the front wheels ($0.87$/$0.86$).
 
-Overall, training in both models trades away linearly decodable instantaneous dynamics and slip in favour of more decodable track curvature beyond the immediate vicinity of the vehicle. The RNN starts with a richer representation of time-dependent quantities, but loses much of it during training. We hypothesise that forcing earlier learning of these quantities through auxiliary losses may improve the agent's performance, and we investigate this in @sec:agent_performance_after_auxiliary_learning and @sec:learned_features_after_auxiliary_learning.
+Overall, training of both models trades away linearly decodable instantaneous dynamics and slip in favour of more decodable track curvature beyond the immediate vicinity of the vehicle. The RNN starts with a richer representation of time-dependent quantities, but loses much of it during training. We hypothesise that forcing earlier learning of these quantities through auxiliary losses may improve the agent's performance, and we investigate this in @sec:agent_performance_after_auxiliary_learning and @sec:learned_features_after_auxiliary_learning.
 
 
 == Agent Performance After Auxiliary Learning <sec:agent_performance_after_auxiliary_learning>
 
-The models are now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads and their associated auxiliary losses.
+The models are now trained with the same reward function as the baseline model (@sec:reward_function), but with the addition of one or more auxiliary heads and their associated auxiliary losses, as described in @sec:weighting_scheme.
 
-@fig:auc_comparison and @fig:last_50_means_heatmap compare the performance of the models trained with different auxiliary losses loss weights against the baseline models. @fig:auc_comparison shows some auxiliary losses improve the agent's training speed, while others degrade it. Notably, close-ahead curvature losses improve the AUC for both the feedforward and recurrent models, especially at higher weights, and these models also show some of the lowest variance across seeds. The baseline RNN model performed poorly, with a mean AUC well below the feedforward baseline. However, adding losses for forward wheel slip (at a weight of 0.1), curvature (especially at weights 0.3 and 1), and all heads combined (with weight 0.1) improved it substantially. With the close-ahead curvature loss at weights of 0.3 and 1, the recurrent models exceed the feedforward baseline and nearly match the best feedforward model, closing the gap between the two architectures.
+Comparing the top-performing configurations of each architecture vs their respective baselines, we find that the feedforward model with the close-ahead curvature auxiliary losses at weight 1.0 achieved much more stable training performance than the baseline model, as qualitatively visualised in @fig:training_perf (a). The model also consistently outperformed its baseline in both PPS (@fig:training_perf (b)) and CPMP (@fig:training_perf (c)). The recurrent model had much more variable training performance, but the close-ahead curvature auxiliary loss at weight 0.3 also consistently outperformed its baseline, and brought the recurrent model's performance closer to the level of the feedforward model.
 
+#figure(
+  image("../results/figures/training_perf.pdf"),
+  caption: [Training performance comparison of the baseline model and the best-performing auxiliary loss configurations for each architecture. The shaded area indicates the 95% confidence interval of the mean using bootstrapping @diciccio1996bootstrapconfidenceintervals],
+) <fig:training_perf>
+
+
+@fig:auc_comparison compares the reward AUC of models trained with different auxiliary loss weights against the two baseline models. Some auxiliary losses improve the agent's training speed, while others degrade it. Notably, close-ahead curvature losses improve the AUC for both the feedforward and recurrent models, especially at higher weights, and these models also show some of the lowest variability across seeds. The baseline RNN model performed poorly, with a mean AUC well below the feedforward baseline. However, adding losses for forward wheel slip (at a weight of 0.1), close-ahead curvature (especially at weights 0.3 and 1), and all heads combined (with weight 0.1) improved it substantially. With the close-ahead curvature loss at weights of 0.3 and 1, the recurrent models exceed the feedforward baseline and nearly match the best feedforward model, closing the gap between the two architectures.
+
+@fig:last_50_means_heatmap shows the effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the worst-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task.
 
 #figure(
   image("../results/figures/auc_comparison.pdf"),
-  caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model (red). The standard deviation bars indicate the standard error of the mean across 6 different seeds each],
+  caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model (red). The standard deviation bars indicate the standard error of the mean across 6 different seeds each. (a) Shows only selected runs for clarity, while (b) shows all runs.],
 ) <fig:auc_comparison>
 
-The effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a non-significant decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the worst-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task.
 
 The auxiliary losses also affect the two architectures very differently. Relative to its own baseline, 26 of the 33 recurrent configurations improve the reward per timestep, compared to only 4 of the 33 feedforward configurations. Of those 4, only the close-ahead curvature loss at a weight of 1.0 is a significant improvement. The same target often has an opposite effect on the two architectures; for example, the forward velocity loss reduces the reward for every weight for the feedforward model, but increases it at every weight for the recurrent model. This suggests that the auxiliary losses mainly compensate for difficulties in training the recurrent model, rather than improving agents in general.
 
@@ -1988,16 +1996,6 @@ When losses were introduced for the wheel slip quantities, the decodability of t
 Lateral slip supervision had mixed effects, with the decodability of the corresponding quantities improving significantly only for a larger loss weight ($w_"aux" = 1$), and also resulted in no improvement in the agent's performance.
 
 When all auxiliary losses were enabled, the decodability of almost all quantities improved significantly, but the agent's performance only improved in terms of safety with a low auxiliary loss weight ($w_"aux" = 0.1$). This suggests that the auxiliary losses may be competing for the model's capacity when they are all enabled.
-
-== Training Performance Comparison
-
-Comparing the top-performing configurations of each architecture vs their respective baselines, we find that the feedforward model with the close-ahead curvature auxiliary losses at weight 1.0 achieved much more stable training performance than the baseline model, as qualitatively visualised in @fig:training_perf (a). The model also consistently outperformed its baseline in both PPS (@fig:training_perf (b)) and CPMP (@fig:training_perf (c)). The recurrent model had much more variable training performance, but the close-ahead curvature auxiliary loss at weight 0.3 consistently outperformed its baseline, and brought the recurrent model's performance closer to the level of the feedforward model, with a slight improvement in in PPS and CPMP for the majority of training iterations.
-
-#figure(
-  image("../results/figures/training_perf.pdf"),
-  caption: [Training performance comparison of the baseline model and the best-performing auxiliary loss configurations for each architecture. The shaded area indicates the 95% confidence interval of the mean using bootstrapping @diciccio1996bootstrapconfidenceintervals],
-) <fig:training_perf>
-
 
 
 = Conclusions and recommendations <sec:conclusion>
