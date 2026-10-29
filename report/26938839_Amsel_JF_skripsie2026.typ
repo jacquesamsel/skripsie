@@ -1179,9 +1179,9 @@ $
 
 = The Agent <sec:training>
 
-In this chapter, we describe the architecture of the agent and the auxiliary losses used to improve its performance. Because we are comparing the effect of auxiliary losses, we train multiple agents with the same architecture, but with different auxiliary losses enabled each time.
+In this chapter, we describe the agent architecture and the auxiliary losses used to improve its performance. To compare the effect of each auxiliary loss, we train two agent architectures and run a leave-one-in experiment on each. For each architecture, we train a baseline with no auxiliary losses, plus one run per group of auxiliary losses in which only that group is enabled, so each group’s contribution can be measured against the baseline.
 
-We shall first formalise the problem of autonomous racing as a partially observable Markov decision process (POMDP) in @sec:pomdp, then describe the process of reinforcement learning in @sec:rl, describe the architecture of the agent in @sec:agent, and discuss how the weights of the auxiliary losses are chosen in @sec:finding_optimal_weights. Finally, @sec:metrics describes the metrics used to evaluate the performance of the agent.
+We shall first formalise the problem of autonomous racing as a partially observable Markov decision process (POMDP) in @sec:pomdp, then describe the process of reinforcement learning in @sec:rl, describe the architectures of the agent in @sec:agent, and discuss how the weights of the auxiliary losses are chosen in @sec:finding_optimal_weights. Finally, @sec:metrics describes the metrics used to evaluate the performance of the agent.
 
 
 == Partially Observable Markov Decision Processes (POMDPs) <sec:pomdp>
@@ -1197,7 +1197,7 @@ environment at that time. The first state $s_0$ is sampled from an initial state
 $o_t ~ cal(Z)(dot | s_t)$: the observation function is a stochastic mapping from the true state to the observation, deciding what the agent observes given the true state. The information in $s_t$ that is missing from
 $o_t$ is called _privileged information_. For example, the car may observe its lidar measurements, but not the road curvature ahead directly, which is privileged information.
 
-Based on its observation, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
+Based on its observations, the agent uses its policy $pi$ to choose an action $a_t in cal(A)$, where
 $cal(A)$ is the action space. The policy therefore maps the history of observations#footnote([Should the policy be defined using a single observation as input, it may perform arbitrarily worse than when using a full history of observations @kaelbling1998. The observations are not markov, only the states are.]) to a probability distribution over actions; we write#footnote([Some formulations may define the policy as a mapping from the true state estimate to actions instead, but this is not an end-to-end approach, since there must then exist a state estimator, $e: cal(O)^m -> cal(S)$. In that case: $hat(s)_t = e(o_0, ..., o_t), a_t ~ pi(dot | hat(s)_t)$])
 $a_t ~ pi(dot | o_0, ..., o_t)$. The policy is what we want to find: it describes the
 agent's behaviour. After the agent has taken action $a_t$, the environment moves
@@ -1254,7 +1254,7 @@ the next observation $o_(t+1)$. This interaction loop is illustrated in @mdp_ite
     msg((1, 5), (0, 6), $r_1 = R(s_1, a_1, s_2), o_2 ~ cal(Z)(dot | s_2)$),
   )),
   caption: [
-    Interaction between the agent and the environment over time ($t$).
+    Interaction between the agent and the environment over time ($t$), which flows downwards.
   ],
 ) <mdp_iteration_diagram>
 
@@ -1277,7 +1277,7 @@ The state-value function,
 $
   V^pi (s) = EE_pi [G_t | S_t = s]
 $ <state_value_function>
-is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter, and is what the critic estimates in PPO (@sec:ppo). The action-value function,
+is the expected discounted return starting in state $s$ and then following policy $pi$ thereafter, and is what the critic estimates in the PPO training algorithm (@sec:ppo). The action-value function,
 $
   Q^pi (s, a) = EE_pi [G_t | S_t = s, A_t = a]
 $ <action_value_function>
@@ -1289,12 +1289,12 @@ which measures how much better action $a$ is than the policy's average action in
 
 == Reinforcement Learning (RL) <sec:rl>
 
-In order to find the optimal policy, $pi^*$ that maximises the expected discounted return, $J(theta) = EE_pi [G_0]$, we use reinforcement learning (RL) as introduced by Sutton and Barto @sutton2018. In RL, the agent learns to maximise its expected discounted return by interacting with the environment and receiving feedback in the form of rewards. The agent updates its policy based on the observed rewards and transitions, gradually improving its performance over time. We use RL instead of supervised learning due to lack of labelled data for the optimal policy.
+In order to find the optimal policy, $pi^*$ that maximises the expected discounted return, $J(theta) = EE_pi_theta [G_0]$, we use reinforcement learning (RL) as introduced by Sutton and Barto @sutton2018. In RL, the agent learns to maximise its expected discounted return by interacting with the environment and receiving feedback in the form of rewards. The agent updates its policy based on the observed rewards and transitions, gradually improving its performance over time. We use RL instead of supervised learning due to lack of labelled data from expert demonstrations.
 
 So-called model-free RL algorithms fall into three broad classes: _Value-based_ methods learn the
 optimal action-value function
 $Q^*(s, a) = max_pi Q^pi (s, a)$
-and act greedily with respect to it, choosing the action with the highest value in the current state: $pi(s) = argmax_(a in cal(A)) Q^pi (s, a)$.
+and act greedily with respect to it, choosing the action with the highest value in the current state at each timestep: $pi(s) = argmax_(a in cal(A)) Q^pi (s, a)$.
 _Policy-based_ methods, on the other hand,
 learn a parameterised policy $pi_theta$ directly by ascending the estimated gradient of
 $J(theta)$ with respect to $theta$, and do not need the Markov property of the observations or an
@@ -1306,24 +1306,24 @@ methods in this report.
 
 === Policy gradient theorem <sec:policy_gradient>
 
-Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$:
+Policy gradient methods are a class of RL training algorithms that learn a policy $pi_theta$ with parameters $theta$ directly by maximising the expected return $EE[G_0]$ with respect to the policy parameters $theta$. Given a trajectory $tau = (s_0, o_0, a_0, r_0, s_1, o_1, a_1, r_1, dots, s_(T-1), o_(T-1), a_(T-1), r_(T-1)) ~ p_theta$, where $p_theta$ is the probability of the trajectory when following the policy $pi_theta$, we intend to maximise the expected return with respect to the policy parameters $theta$, so the objective function is
 $
   J(theta) = EE_(tau tilde p_theta) [G_0]
   = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
   = integral p_theta (tau) G(tau) dif tau
 $
 
-Taking the gradient of $J(theta)$ with respect to $theta$ and applying the log-derivative trick @williams1992, we obtain the policy gradient theorem @sutton2018:
+Taking the gradient of $J(theta)$ with respect to $theta$ and applying the log-derivative trick#footnote([The derivation of the policy gradient theorem is stated in #todo("INSERT").]) @williams1992, we obtain the policy gradient theorem @sutton2018:
 $
   nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
 $ <eq:policy_gradient_theorem>
 
-@eq:policy_gradient_theorem shows in what direction to update the policy parameters in order to increase the expected return. Of course, we cannot compute the expectation exactly without simulating all possible trajectories, and instead have to rely on estimates such as those detailed in @sec:reinforce and @sec:ppo.
+@eq:policy_gradient_theorem shows in what direction to update the policy parameters in order to increase the expected return. Of course, the expectation cannot be computed exactly without formulating a probability distribution over all possible trajectories, which is intractable, so we instead rely on estimates such as those detailed in @sec:reinforce and @sec:ppo.
 
 
 === REINFORCE <sec:reinforce>
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories $tau^((i)) ~ pi_theta$ of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
+The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories, ${tau^((1)), ..., tau^((N))} ~ p_theta$, of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
   hat(nabla_theta J)(theta) = 1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) nabla_theta log pi_theta (a^((i))_t | o^((i))_t) dot G^((i))_t
