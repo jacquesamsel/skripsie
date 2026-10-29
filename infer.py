@@ -46,7 +46,7 @@ def do_rollout(
 
 
 if __name__ == "__main__":
-    model, model_config, _, _ = load_model("checkpoints/baseline_w0_s0/iteration_00600.pt")
+    model, model_config, _, _ = load_model("checkpoints/curvature_close_w1_s1/iteration_00600.pt")
 
     is_mac = platform.system() == "Darwin"
     env = RoboRacerEnv(
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         num_stacked_frames=model_config["num_stacked_lidar_frames"],
         no_graphics=False,
         time_scale=1.0,
-        num_areas=2,
+        num_areas=1,
         seed=45,
     )
     try:

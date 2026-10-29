@@ -12,9 +12,13 @@
 #show: style-algorithm
 #show: latex-lookalike.style-outline
 
+
+#let in-appendix = state("in-appendix", false)
+
 #set ref(supplement: it => {
   if it.func() == heading {
-    if it.supplement == none { none } else if it.level == 1 { "Chapter" } else { "Section" }
+    if it.supplement == none { none } else if in-appendix.at(it.location()) { none } // <- new
+    else if it.level == 1 { "Chapter" } else { "Section" }
   } else if it.func() == figure {
     if it.kind == image { "Figure" } else if it.kind == table { "Table" } else { "Figure" }
   } else if it.func() == table {
@@ -37,7 +41,6 @@
 // Colours from imports.tex
 // Switched on where the appendix starts: its level-1 heading is
 // typeset without the "Chapter N" line above the title.
-#let in-appendix = state("in-appendix", false)
 
 #let oracle-colour = rgb("#8B8589") // running header text
 #let rule-colour = rgb("#DCDCDC") // rule below the running header
@@ -74,7 +77,7 @@
 // --- Paragraphs: justified, \onehalfspacing, \parindent, \parskip=0
 // The title page itself stays centred and unindented, so justification
 // and the paragraph indent are switched on where the front matter starts.
-#set par(leading: 0.7em, spacing: 1.05em)
+#set par(leading: 0.7em, spacing: 1.05em, justify: true)
 
 // --- Page: \usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
 // with the fancyhdr header (centred running mark + rule) and the
@@ -142,7 +145,7 @@
   set text(size: 11pt)
   set par(justify: false, leading: 0.65em, first-line-indent: 0pt)
   pad(x: 1.5em)[
-    #align(center)[
+    #align(left)[
       #strong[#it.supplement~#it.counter.display(it.numbering)#it.separator]#it.body
     ]
   ]
@@ -237,7 +240,7 @@
 #pagebreak()
 #set page(numbering: "i")
 #counter(page).update(1)
-#set par(justify: true, first-line-indent: (amount: 1.5em, all: false))
+#set par(justify: true, first-line-indent: (amount: 1.5em, all: true))
 
 = Acknowledgements
 
@@ -554,7 +557,7 @@ Auxiliary losses avoid all three: they leave the RL objective unchanged, supply 
 
 The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from as input LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
 
-At each timestep $t$, the simulator sends a subset of the complete state, $b_t in s_t$, to the training script. Only the essential information is sent to keep the communication overhead low. The training script then computes the observation $o_t$ using the partial state information $b_t$ and performs a forward pass through the policy using $o_t$ as input, computing the next action $a_t$. This action is sent to the simulator, and is applied to the vehicle, stepping the environment forward to the next timestep $t+1$.
+At each timestep $t$, the simulator sends the current environment state $s_t$ to the training script. The training script then computes the observation $o_t$ using the state information $s_t$ and performs a forward pass through the policy using $o_t$ as input, computing the next action $a_t$. This action is sent to the simulator, and is applied to the vehicle, stepping the environment forward to the next timestep $t+1$.
 
 To speed up training, multiple instances of the simulator are run in parallel, each with its own set of agents running in separate sandboxed simulation environments within the same simulator process.
 
@@ -1306,7 +1309,7 @@ The REINFORCE algorithm for policy learning was introduced by Williams in 1992 i
 $
   hat(nabla_theta J)(theta) = 1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) nabla_theta log pi_theta (a^((i))_t | o^((i))_t) dot G^((i))_t
 $
-Although REINFORCE is simple to implement, it has several drawbacks, including having high variance in its gradient estimates, which can lead to slow convergence and instability during training @santana2026introductiondeepreinforcementimitation. 
+Although REINFORCE is simple to implement, it has several drawbacks, including having high variance in its gradient estimates, which can lead to slow convergence and instability during training @santana2026introductiondeepreinforcementimitation.
 
 === Proximal Policy Optimisation (PPO) <sec:ppo>
 PPO is a modern actor-critic algorithm for policy learning introduced in 2017 by researchers at OpenAI @schulman2017ppo. It improves on REINFORCE in two ways. First, being an actor-critic method, it learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate, $hat(nabla_theta J)(theta)$. Second, it optimises a _clipped surrogate objective_, $cal(L)_"PPO"$, that limits how far each update can move the policy. This prevents large, destructive steps and makes several epochs of updates on the same rollout possible.
@@ -1950,11 +1953,11 @@ As shown in @training_performance_results, total throughput peaks at 8 trainers 
 
 = Experiments & results <sec:results>
 
-Each configuration of (auxiliary targets, auxiliary loss weights), as well as the baseline model, was trained for 600 PPO iterations with 256 frames per iteration on each of 48 concurrent environments, for a total of 7.3 million timesteps ($approx 82 "hours"$ of sim-time). Each configuration was trained on 6 different seeds, and various statistics were recorded for each iteration of each run of each configuration.
+Each configuration of auxiliary targets $times$ auxiliary loss weights $times$ model architecture, as well as the baseline model, was trained for 600 PPO iterations with 256 frames per iteration on each of 48 concurrent environments, for a total of 7.3 million timesteps ($approx 82 "hours"$ of sim-time) per training run. 600 iterations were performed because, qualitatively, this was found to be more than sufficient for the baseline feedforward (FF) model to converge, based on a test run's reward shown in @baseline_reward_per_timestep. Each configuration was trained on 6 different seeds, and various statistics were recorded for each iteration of each run of each configuration. 
 
 == Baseline Model Performance
 
-The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean CPMP of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 metres. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
+The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ runs. It achieved a mean CPMP across 6 seeds of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 metres. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
 The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the performance of the feedforward model.
 
@@ -2020,7 +2023,7 @@ The models are now trained with the same reward function as the baseline model (
   caption: [Reward AUC of the models trained with different auxiliary losses and loss weights over their 600 training iterations, compared to the baseline model (red). The standard deviation bars indicate the standard error of the mean across 6 different seeds each],
 ) <fig:auc_comparison>
 
-The effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a non-significant decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the worst-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task. 
+The effect of the loss weight strongly depends on the auxiliary target. For close-ahead curvature, higher weights perform better: the feedforward close-ahead model goes from a non-significant decline of -11% reward per timestep at $w = 0.1$ to a significant reward improvement of +13%, and a safety improvement of 62% at $w = 1.0$. On the other hand, at a weight of 0.1, the recurrent front and rear forward wheel slip models are among the best-performing models in the study (+91% and +95% reward relative to the RNN baseline), but at a weight of 1, they are the worst-performing  models. One possible explanation is that at higher weights, the auxiliary loss dominates the PPO loss, and the agent learns to predict the privileged information at the expense of the main task.
 
 The auxiliary losses also affect the two architectures very differently. Relative to its own baseline, 26 of the 33 recurrent configurations improve the reward per timestep, compared to only 4 of the 33 feedforward configurations. Of those 4, only the close-ahead curvature loss at a weight of 1.0 is a significant improvement. The same target often has an opposite effect on the two architectures; for example, the forward velocity loss reduces the reward for every weight for the feedforward model, but increases it at every weight for the recurrent model. This suggests that the auxiliary losses mainly compensate for difficulties in training the recurrent model, rather than improving agents in general.
 
@@ -2345,6 +2348,12 @@ AI was not used to generate the training code or the model definition code - tha
     caption: [Out-of-sample $R^2$ scores for linear regression probing of the final layer of the trunk on the recurrent and feedforward baseline models. $R^2$ scores are reported at initialisation and after 600 PPO iterations.],
   )
 }
+#pagebreak()
+== Mean Reward Per Timestep of a Baseline FF Model <baseline_reward_per_timestep>
+#figure(
+  image("../results/figures/baseline_reward.pdf"),
+  caption: [Mean reward per timestep of a baseline feedforward model over 600 training iterations, averaged across the timesteps in each iteration. Qualitatvely, the model converges after 400-600 iterations]
+)
 
 #pagebreak()
 == Performance of Models with Auxiliary Heads ($alpha = 0.05$) <last_50_means_heatmap_alpha_05>
