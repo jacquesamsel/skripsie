@@ -1313,17 +1313,17 @@ $
   = integral p_theta (tau) G(tau) dif tau
 $
 
-Taking the gradient of $J(theta)$ with respect to $theta$ and applying the log-derivative trick#footnote([The derivation of the policy gradient theorem is stated in #todo("INSERT").]) @williams1992, we obtain the policy gradient theorem @sutton2018:
+Taking the gradient of $J(theta)$ with respect to $theta$ and applying the log-derivative trick @williams1992, we obtain the policy gradient theorem#footnote([The derivation of the policy gradient theorem is stated in @sec:policy_gradient_theorem_proof.]) @sutton1999policygradient:
 $
   nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
 $ <eq:policy_gradient_theorem>
 
-@eq:policy_gradient_theorem shows in what direction to update the policy parameters in order to increase the expected return. Of course, the expectation cannot be computed exactly without formulating a probability distribution over all possible trajectories, which is intractable, so we instead rely on estimates such as those detailed in @sec:reinforce and @sec:ppo.
+@eq:policy_gradient_theorem shows in what direction to update the policy parameters in order to increase the expected return. Of course, the expectation cannot be computed exactly without formulating the probabiltiy distribution over all possible trajectories, which is intractable, so we instead rely on estimates such as those detailed in @sec:reinforce and @sec:ppo.
 
 
 === REINFORCE <sec:reinforce>
 
-The REINFORCE algorithm for policy learning was introduced by Williams in 1992 in the journal _Machine Learning_ @williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories, ${tau^((1)), ..., tau^((N))} ~ p_theta$, of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
+The REINFORCE algorithm for policy learning was introduced by Williams~@williams1992. It is one of the simplest policy gradient methods: by sampling $N$ trajectories, ${tau^((1)), ..., tau^((N))} ~ p_theta$, of length $T_i$ timesteps each, the policy gradient can be estimated in a Monte-Carlo fashion:
 
 $
   hat(nabla_theta J)(theta) = 1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) nabla_theta log pi_theta (a^((i))_t | o^((i))_t) dot G^((i))_t
@@ -1339,9 +1339,9 @@ $
   cal(L)_"actor" = -1/(sum_(i=1)^N T_i) sum_(i=1)^N sum_(t=0)^(T_i-1) min(rho_t (theta) dot hat(A)_t, "clip"(rho_t (theta), 1 - epsilon, 1 + epsilon) dot hat(A)_t)
 $
 
-where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function, on the other hand, ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from penalties if an update makes a bad action ($A_t < 0$) more likely. These two mechanisms together ensure that the policy is updated in a way that improves performance while avoiding large, destabilising changes that are common in other policy gradient methods @schulman2017ppo.
+where $rho_t (theta) = (pi_theta (a_t | o_t)) / (pi_theta_"old" (a_t | o_t))$ is the ratio of the new policy's probability of taking action $a_t$ given observation $o_t$ to the old policy's, and $epsilon$ is a hyperparameter that controls how much the policy is allowed to change in a single update. The $"clip"$ function ensures that a policy update that would make $r_t (theta)$ fall outside of the interval $[1 - epsilon, 1 + epsilon]$ is clipped to the nearest endpoint of that interval. This prevents large policy updates that could destabilise training. The $min$ function, on the other hand, ensures that, while the policy's update is capped when an update makes a good action ($A_t > 0$) more likely, it is not protected from large updates if an update makes a bad action ($A_t < 0$) more likely. These two mechanisms together ensure that the policy is updated in a way that improves performance while avoiding large, destabilising changes that are common in other policy gradient methods @schulman2017ppo.
 
-Since PPO is an actor-critic method, it also learns a value function $V^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate, $hat(nabla_theta J)(theta)$. The value function is learned by minimising the mean squared error between the predicted value and the observed return. The full PPO loss function is therefore a combination of the clipped surrogate objective and the value function loss, along with an entropy bonus to encourage exploration. The final loss function is given by
+Since PPO is an actor-critic method, it also learns a value function estimate, $hat(V)^pi (s)$, which is used to compute an advantage estimate $hat(A)_t$ and so reduces the variance of the policy gradient estimate, $hat(nabla_theta J)(theta)$. The value function is learned by minimising the mean squared error between the predicted value and the observed return. The full PPO loss function is therefore a combination of the clipped surrogate objective and the value function loss, along with an entropy bonus to encourage exploration. The final loss function is given by
 
 $
   cal(L)_"PPO" = cal(L)_"actor" + w_"value" dot cal(L)_"value" - w_"entropy" dot cal(H)[pi_theta]
@@ -1351,15 +1351,20 @@ where $cal(L)_"value" = (1/2) (hat(V)^pi (s_t) - R_t)^2$ is the value-head loss 
 
 == Neural Network Architecture <sec:agent>
 
-The agent is a feedforward actor-critic network implemented in PyTorch @paszke2019pytorch, with the TorchRL library @bou2023torchrldatadrivendecisionmakinglibrary.
+As discussed in @sec:related_literature, Lample et al. @lample2017fps found that auxiliary losses were more effective in a recurrent neural network (RNN), compared to a feedforward (FF) network in a first-person shooter game. Since it is not clear that this finding carries over to autonomous racing, we implement both a feedforward and a recurrent agent. Both model architectures are PPO actor-critic networks implemented in PyTorch @paszke2019pytorch, with the TorchRL library @bou2023torchrldatadrivendecisionmakinglibrary.
 
-It has no recurrent state, so the stack of past scans is its only source of temporal information. It consists of a shared _trunk_ followed by three independent heads, each of which takes as input the same 64-dimensional feature vector output from the trunk, as visualised in @network_architecture:
+Each network consists of a shared _trunk_ that produces a 64-dimensional feature vector, followed by three independent heads that all take this vector as input (@network_architecture):
 
 - the _policy head_ outputs the parameters of the action distribution,
 - the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
 - the _auxiliary head_ outputs predictions of the privileged targets
 
-The trunk (@network_architecture) has a convolutional part followed by a dense part. The input is a tensor of shape $50 times 101$ (time steps by rays). Three 1D convolutions with ReLU activations slide along the ray axis and treat the time steps as input channels, so the first layer mixes the whole history at each angular position. They have 32, 16, and 16 output channels respectively; all have the same kernel size of 8 (roughly $21 degree$ of FOV). The output is flattened and concatenated with the current steering angle and throttle, and passed through fully connected layers of 128, 72 and 64 units with ReLU activations, followed by layer normalisation of the 64-dimensional output to prevent gradient explosion when the car is under heavy acceleration, pointing the LiDAR above the track walls and resulting in large normalised ray lengths as input ($approx 1$).
+The trunk's input is a $50 times 101$ tensor (or $4 times 101$ in the RNN) containing the 50 (or 4 in the RNN) most recent LiDAR scans of 101 rays each. Four 1D convolutions slide along the ray axis and treat the time steps as input channels, so the first layer combines the full history at every angular position. The convolutions have 16, 32, 16 and 16 output channels, a kernel size of 8 rays (about $21 degree$ of the field of view) and ReLU activations. Their output is flattened, concatenated with the current steering angle and throttle, and passed through dense layers of 128, 72 and 64 units with ReLU activations.
+
+
+The 64-dimensional output is then layer-normalised. Under heavy acceleration the car's body tilts, pointing the LiDAR above the track walls so that many rays return close to the maximum normalised length of 1. Without normalisation, these inputs can cause gradients to explode, which was observed in early tests.
+
+In the recurrent variant, a gated recurrent unit (GRU) @cho2014learningphraserepresentationsusing with a hidden size of 64 follows the layer norm, and its output is passed to the heads instead. The GRU was used instead of a long short-term memory (LSTM) @hochreiter1997longshorttermmemory because it simpler, and because previous work @węgrzynowski2024learningdynamicsmodelsvelocity has shown it to be more effective in predicting velocity state in autonomous racing, which is closely related to our task. The two network variants are otherwise identical, so any difference in performance can be attributed to the recurrence.
 
 #{
   // Box heights grow with layer size, with a minimum so the rotated labels fit.
@@ -1369,7 +1374,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
   // Generic layer box: tall, narrow, tinted fill, rotated label.
   // The label is laid out in a block as wide as the box is tall *before*
   // rotating, so it doesn't wrap to the box's narrow width.
-  let layer = (pos, name, label, color, height, width: 0.9cm) => node(
+  let layer = (pos, name, label, color, height, width: 0.9cm, stroke: none) => node(
     pos,
     rotate(
       -90deg,
@@ -1378,7 +1383,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
     ),
     name: name,
     fill: color.transparentize(80%),
-    stroke: (paint: color, thickness: 1.5pt),
+    stroke: if stroke == none { (paint: color, thickness: 1.5pt) } else { stroke },
     width: width,
     height: height,
     inset: 2pt,
@@ -1449,6 +1454,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
     <fc2>,
     <fc3>,
     <ln>,
+    <rnn>,
     <out>,
   )
 
@@ -1469,16 +1475,16 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
         (0, 0),
         [
           #place(bottom + center, dy: 10pt)[#text(size: 0.6em, "101 rays")]
-          #place(horizon + left, dx: -10pt)[#rotate(-90deg, text(size: 0.6em, "50 frames"), reflow: true)]
+          #place(horizon + left, dx: -10pt)[#rotate(-90deg, text(size: 0.6em, "4 or 50 frames"), reflow: true)]
           #image("figures/lidar_input.png", width: 2cm, height: 2cm)
         ],
         name: <lidar>,
       ),
 
       // Four 1D convolutions
-      conv((1, 0), <c1>, 50),
+      conv((1, 0), <c1>, 16),
       conv((2, 0), <c2>, 32),
-      conv((3, 0), <c3>, 16),
+      conv((3, 0), <c3>, 32),
       conv((4, 0), <c4>, 16),
 
       // Flatten + concat with the current action
@@ -1503,6 +1509,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
       fc((8, 0), <fc2>, 72),
       fc((9, 0), <fc3>, 64),
       layer((10, 0), <ln>, [LayerNorm], red, 2.5cm),
+      layer((11, 0), <rnn>, [GRU\ (only RNN)], gray, 3cm, stroke: (paint: gray, dash: "dashed", thickness: 1.5pt)),
 
       node(
         enclose: (<lidar>, <c1>, <c2>, <c3>, <c4>, <flat>, <cat>, <fc1>, <fc2>, <fc3>, <ln>, <out>),
@@ -1515,7 +1522,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
       ),
 
       // Output
-      node((11, 0), align(center, text(size: 0.7em)[64-d \ feature]), name: <out>, stroke: none),
+      node((12, 0), align(center, text(size: 0.7em)[64-d \ feature]), name: <out>, stroke: none),
 
       // Arrows along the main chain
       ..chain.zip(chain.slice(1)).map(((a, b)) => edge(a, b, "-|>")),
@@ -1534,7 +1541,7 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
 
             // down from <out>, across at y = 1, then down into the head
             // (the middle head sits at x = 11, so skip the duplicate vertex there)
-            edge(..(<out>, (11, 1), (x, 1), n).dedup(), "-|>"),
+            edge(..(<out>, (12, 1), (x, 1), n).dedup(), "-|>"),
 
             edge(n, out_n, "-|>"),
 
@@ -1555,44 +1562,36 @@ The trunk (@network_architecture) has a convolutional part followed by a dense p
         .flatten(),
     )),
     caption: [
-      The agent's neural network. A 50-frame LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm to give a 64-dimensional feature vector. This shared feature vector is then passed to three independent heads: the policy head outputs the parameters of the action distribution, the value head outputs the state-value estimate, and the auxiliary head outputs predictions of privileged targets.
+      The agent's neural network. A LiDAR stack passes through four 1D convolutions; the flattened output is concatenated with the current steering and throttle and passed through three dense layers and a layer norm. After the GRU layer in the case of the RNN, a 64-dimensional feature vector is generated. This feature vector is then passed to three independent heads: the policy head outputs the parameters of the action distribution, the value head outputs the state-value estimate, and the auxiliary head outputs predictions of privileged targets.
     ],
   )
 } <network_architecture>
 
 
-As discussed in @sec:related_literature, Lample et al. @lample2017fps found that auxiliary losses were more effective in a recurrent neural network, compared to a feedforward CNN.
-We therefore also implement a recurrent version of the agent, which uses a gated recurrent unit (GRU) @cho2014learningphraserepresentationsusing on the 64-d feature vector output from the trunk, before passing it to the three heads. The RNN network takes a reduced frame stack of 4 frames as input. The GRU allows the model to maintain a hidden memory that it can choose to update at each timestep, which can help it learn temporal dependencies in the data.
-
-
-=== Action Distributions
+=== Policy Head
 The policy head outputs a location $mu$ and a raw scale value $x$ for each of
 throttle and steering. Each action is sampled independently from a
 tanh-squashed Gaussian,
 $ a = tanh(u), quad u tilde cal(N)(5 * tanh(mu / 5), sigma^2), $
 so that $a in (-1, 1)$, where 1 corresponds to full throttle or full right steering, and -1 corresponds to full reverse or full left steering.
 
-The mean is transformed with a tanh to soft-clamp it to the range $(-5, 5)$ using `tanh_loc=True` in the TorchRL `TanhNormal` distribution. This prevents the mean from growing too large, which would push samples into the saturated region of the squashing function and make it difficult for the policy to recover since gradients vanish there. The constant factor of 5 is the heuristically chosen default factor configured in TorchRL @bou2023torchrldatadrivendecisionmakinglibrary.
+The mean is transformed with a tanh to soft-clamp it to the range $(-5, 5)$. This prevents the mean from growing too large, which would push samples into the saturated region of the squashing function and make it difficult for the policy to recover since gradients vanish there. The constant factor of 5 is chosen heuristically since it allows the model to use most of the action range ($tanh(5) = 0.9999$), while being at the limit of a useful gradient ($tanh'(5) = 1 - tanh^2(5) approx 1.8 times 10^(-4)$).
 
 The standard deviation is made positive with a softplus, with a small floor to ensure that the distribution is never degenerate:
-$sigma = op("softplus")(x) + 10^(-3).$
-
-The policy head's linear layer uses a weight initialisation with
+$sigma = op("softplus")(x) + 10^(-3).$ Further, policy head's linear layer uses a weight initialisation with
 gain $0.01$ and zero bias, so every output is close to $0$ at the start. Hence
 $mu approx 0$, and both actions are centred near the middle of their range.
 
-This is important because the derivative of the squashing $tanh$ function is
-$ (dif a) / (dif u) = 1 - tanh^2(u), $
-which goes to $0$ as $|u|$ grows. If the head's outputs start large, samples
+This is important because the derivative of the squashing $tanh(u)$ function goes to $0$ as $|u|$ grows. If the head's outputs start large, samples
 land in the saturated region, the gradient of the policy loss with respect to
-$mu$ is almost zero, and the policy cannot recover. In early experiments this
+$mu$ is almost zero, and the policy cannot recover. In early tests this
 is exactly what happened: the car locked at full throttle and full steering in either the positive or negative direction.
 
 === Auxiliary heads
 
-Using privileged information during training has the potential to improve the agent's performance, as discussed in @sec:learning_methods_privileged_information. We opt to use privileged information in the form of auxiliary losses, which are additional loss terms that encourage the agent to learn useful representations of the environment. These auxiliary losses are computed using privileged information that is not available to the agent during testing, but can be used during training to improve the agent's performance.
+Using privileged information during training can improve the agent’s performance, as discussed in @sec:learning_methods_privileged_information. We incorporate it through _auxiliary losses_: additional loss terms that encourage the network to learn useful representations of the environment. These losses are computed from quantities that are available during training but withheld from the agent at test time. They therefore shape what the network learns without the agent relying on them at deployment.
+At every frame, the environment passes a set of privileged quantities to the trainer, which serve as auxiliary targets. After normalisation#footnote([In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy (i.e. without auxiliary losses/heads) as data to estimate $sigma$ and $mu$.]), one or more _auxiliary heads_ learn to predict these targets, supervised by corresponding auxiliary losses. The auxiliary targets we consider are listed in @auxiliary_targets. During training, the auxiliary losses are added to the PPO loss, and the gradients of the combined objective are backpropagated through the shared network:
 
-Each frame, the environment emits a set of privileged quantities to the trainer, which are used as _auxiliary targets_. The auxiliary head(s) predict these targets during the training process. The auxiliary targets we consider are listed in @auxiliary_targets. During training, the auxiliary losses are added to the PPO loss so that their gradients are combined and backpropagated through the network graph:
 
 $
   cal(L)_"total" = underbrace(cal(L)_"actor" + w_"value" cal(L)_V - w_"entropy" H[pi_theta], cal(L)_"PPO") + sum_(k=1)^K w^((k)) cal(L)_"aux"^((k)),
@@ -1628,7 +1627,7 @@ $
     [unitless],
     [The lateral slip of wheel $x in {"FR", "FL", "BR", "BL"}$],
   ),
-  caption: [The auxiliary targets to be predicted by the agent #footnote([In order to ensure the targets are on a similar scale, the targets are normalised to $sigma = 1, mu = 0$ using a rollout generated from a pure PPO policy (i.e. without auxiliary losses/heads) as data to estimate $sigma$ and $mu$.])],
+  caption: [The auxiliary targets to be predicted by the agent],
 ) <auxiliary_targets>
 === Choice of Auxiliary Loss Function <sec:loss_function>
 
@@ -1674,7 +1673,7 @@ The Huber loss is a robust alternative to the SE loss that is far less sensitive
   )
 } <huber_vs_mse_diagram>
 
-The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep. The majority of the auxiliary targets are heavy-tailed, with some having more than 27x the number of extreme extreme values ($|X| > 3 sigma$) compared to a normal distribution, as shown in @sec:prop_data_within_sd.
+The Huber loss's bounded gradient is particularly useful when the target values have a heavy-tailed, non-normal distribution, since the loss is then far less sensitive to extreme values than the SE loss @terven2025lossfunctionsmetricsdeep. The majority of the auxiliary targets are heavy-tailed, with some having more than 27x the number of extreme extreme values ($|X| > 3 sigma$) compared to a normal distribution. A table with the statistics for each individual target is available in @sec:prop_data_within_sd.
 
 For this reason, we use the Huber loss for all auxiliary targets. With $beta = 1$, since the targets are normalised to zero mean and unit variance, this makes the loss quadratic for errors within one standard deviation of the mean - where most#footnote([Proportions of the data within 1 standard deviation of the mean are listed in @sec:prop_data_within_sd]) of the fitting takes place - and linear, with a gradient of magnitude $1$, beyond it, so that the extreme target values cannot dominate the gradient.
 
@@ -1762,95 +1761,10 @@ Random search @bergstra2012random is another hyperparameter tuning method, where
   )
 }
 
-So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run, so they are not ideal for our scenario.
+So-called "smart" hyperparameter tuning methods, such as Bayesian optimisation @snoek2012practical and the tree-structured Parzen estimator (TPE) @bergstra2011algorithms, build a model of the relationship between the weights and the agent's performance. This model is then used to guide the search for optimal weights, allowing for more efficient exploration of the search space. These methods can be more effective than grid or random search, but they can also be more complex to implement and still require multiple training runs. Methods such as Hyperband @li2018hyperband and its asynchronous variant ASHA @li2020asha mitigate this cost by giving each trial a small budget and only continuing the best-performing ones. However, such early-stopping methods may prematurely terminate RL trials that perform more exploration early on, despite performing better in the long run @hertel2020quantityvsqualityhyperparameter, so they are not ideal for our scenario.
 
 === Adaptive Weighting
 Adaptive weighting is an alternative approach that dynamically adjusts the weights of the auxiliary losses during training based on factors like the magnitude of the gradients or the error of the auxiliary predictions. Various methods have been introduced in the literature, such as GradNorm @chen2017gradnorm, which weights tasks that are learning slower more heavily, and Uncertainty Weighting @kendall2018multitask-cvpr, which uses the model's uncertainty in each task to determine the weights. These methods are useful in multi-task learning scenarios, where the performance of all tasks is important, but they are not ideal for our scenario, where the main task (driving) is the only one that matters. In this case, we want to combine auxiliary losses in such a way that improves the main task's performance, not to balance the performance of all tasks.
-
-=== PCGrad <sec:pcgrad>
-
-PCGrad @yu2020gradientsurgerymultitasklearning is a method that modifies the gradients of auxiliary tasks to prevent them from conflicting with the main task's gradients. It does so by projecting the auxiliary task gradients onto the normal plane of the main task's gradient if they conflict. Let $bold(g)_"aux"^((k))$ be the gradient of the model parameters for the $k$-th auxiliary loss and $bold(g)_"PPO"$ be the gradient of the main task loss. If the dot product $bold(g)_"aux"^((k)) dot bold(g)_"main" < 0$, then the auxiliary gradient is projected onto the normal plane of the main task gradient:
-
-$
-  bold(g) = bold(g)_"PPO" + sum_(k=1)^K cases(
-    bold(g)_"aux"^((k)) - frac(bold(g)_"aux"^((k)) dot bold(g)_"PPO", ||bold(g)_"PPO"||^2) bold(g)_"PPO" "if" bold(g)_"aux"^((k)) dot bold(g)_"PPO" < 0,
-    bold(g)_"aux"^((k)) "otherwise"
-  )
-$
-
-The result is that the auxiliary gradients are modified to avoid conflicting with the main task, as visualised in @pcgrad_diagram.
-
-// --- small vector helpers ---
-#let vdot(a, b) = a.at(0) * b.at(0) + a.at(1) * b.at(1)
-#let vadd(a, b) = (a.at(0) + b.at(0), a.at(1) + b.at(1))
-#let vsub(a, b) = (a.at(0) - b.at(0), a.at(1) - b.at(1))
-#let vscale(a, s) = (a.at(0) * s, a.at(1) * s)
-#let vunit(a) = vscale(a, 1 / calc.sqrt(vdot(a, a)))
-
-#figure(
-  canvas(length: 1cm, {
-    import draw: *
-
-    // ===== PARAMETERS: arrow heads relative to each graph's centre =====
-    let g-ppo = (-4, 0) // main task gradient (shared by both panels)
-    let g-aux-a = (-2.1, 1.8) // panel (a): aux gradient, no conflict (dot > 0)
-    let g-aux-b = (2.3, 1.8) // panel (b): aux gradient, conflict (dot < 0)
-    let centre-a = (4, 0) // tail of the arrows in panel (a)
-    let centre-b = (11, 0) // tail of the arrows in panel (b)
-    // ====================================================================
-
-    let red = rgb("#ee3322")
-    let blue = rgb("#0000ee")
-    let w = 1.6pt
-
-    // arrow from c to c + v, with a label just past its head
-    let arrow(c, v, body, col, dash: none) = {
-      let head = vadd(c, v)
-      line(c, head, stroke: (paint: col, thickness: w, dash: dash), mark: (end: ">"))
-      content(vadd(head, vscale(vunit(v), 0.5)), text(fill: col, body))
-    }
-
-    // one panel: PCGrad applied to g-aux at centre c
-    let panel(c, g-aux, tag) = {
-      let conflict = vdot(g-aux, g-ppo) < 0
-      let coef = vdot(g-aux, g-ppo) / vdot(g-ppo, g-ppo)
-      let g-par = vscale(g-ppo, coef) // component along g-ppo
-      let g-proj = vsub(g-aux, g-par) // normal to g-ppo
-
-      arrow(c, g-ppo, $bold(g)_"PPO"$, red)
-
-      if conflict {
-        // original aux gradient, faded
-        line(
-          c,
-          vadd(c, g-aux),
-          stroke: (paint: blue.lighten(60%), thickness: w),
-          mark: (end: ">"),
-        )
-        // removed component, dotted
-        let foot = vadd(c, g-par)
-        line(c, foot, stroke: (paint: gray, thickness: 1.2pt, dash: "dotted"), mark: (end: ">"))
-        // projected gradient, dashed
-        arrow(c, g-proj, $bold(g)_"aux"^((k)) '$, blue, dash: "dashed")
-        content(
-          (c.at(0) + g-ppo.at(0) / 2, -1.4),
-          [*(#tag)* Conflict: $bold(g)_"aux"^((k)) dot bold(g)_"PPO" < 0$, projected],
-        )
-      } else {
-        arrow(c, g-aux, $bold(g)_"aux"^((k))$, blue)
-        content(
-          (c.at(0) + g-ppo.at(0) / 2, -1.4),
-          [*(#tag)* No conflict: $bold(g)_"aux"^((k)) dot bold(g)_"PPO" >= 0$],
-        )
-      }
-    }
-
-    panel(centre-a, g-aux-a, "a")
-    panel(centre-b, g-aux-b, "b")
-  }),
-  caption: [PCGrad. *(a)* If $bold(g)_"aux"^((k))$ does not conflict with $bold(g)_"PPO"$ it is left unchanged. *(b)* If it conflicts, the component along $bold(g)_"PPO"$, is removed, leaving the gradient orthogonal to $bold(g)_"PPO"$, $bold(g)_"aux"^((k))$],
-) <pcgrad_diagram>
-
 
 === Weighting Scheme Used in This Project <sec:weighting_scheme>
 
@@ -1864,7 +1778,6 @@ $
 $
 In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) in {0.1, 0.3, 1.0}$ and every other weight is zero, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
 
-We also consider the performance of the PCGrad method (@sec:pcgrad) in order to evaluate whether we can achieve better performance without having to tune weights. In this case, all losses are enabled, and the weight for the auxiliary loss is set to $w in {0.03, 0.1, 0.3, 1.0}$.
 
 #figure(
   stb-table(
@@ -1908,49 +1821,45 @@ Let $L$ be the total length of the track centreline. At any time $t$, let $d_t i
 
 $ xi_t = d_t + N_t L $
 
-The _progress per timestep_ (PPT) is then simply the change in this absolute position between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
+The _progress per timestep_ (PPT) is then simply the change in this absolute progress between consecutive timesteps, defined as $xi_t - xi_(t-1)$. Because $xi_t$ tracks the cumulative distance across multiple laps, this raw difference naturally handles crossing the finish line without requiring any wrapping operations or modulo arithmetic.
 
 We also define the _progress per second_ (PPS) as the progress per step divided by the control timestep duration (40 ms), which is a more intuitive measure of speed.
 
-=== Crash rates
-The _crash rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length (45 simulated seconds).
+=== Collision Rates
+The _collision rate per episode_ is the fraction of total episodes that terminate in a collision rather than reaching the maximum length (45 simulated seconds).
 
-The _crash rate per timestep_ is the total number of collisions divided by the total number of timesteps executed across all episodes. This can be interpreted as an estimate of the  probability of a collision occurring at any given timestep, and is useful for evaluating the agent's safety in a time-normalised manner.
+The _collision rate per timestep_ is the total number of collisions divided by the total number of timesteps executed across all episodes. This can be interpreted as an estimate of the  probability of a collision occurring at any given timestep, and is useful for evaluating the agent's safety in a time-normalised manner.
 
-The _collisions per metre of progress_ (CPMP) is the total number of crashes divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against progression rather than time, providing a balanced measure of the agent's driving competence.
+The _collisions per metre of progress_ (CPMP) is the total number of collisions divided by the total distance the agent successfully advances along the track centerline. This metric normalizes failures against progress rather than time, providing a balanced measure of the agent's driving competence.
 
 === Reward function <sec:reward_function>
 The agent receives a dense reward at each timestep that encourages fast, collision-free progress along the centerline:
 
 $ r_t = w_p dot (xi_t - xi_(t-1)) - w_c dot c_t $
 
-The first term rewards forward progress, using the progress per step defined in @sec:progress. The second term penalizes collisions: the indicator variable $c_t$ equals 1 if a collision occurs with an obstacle at time $t$, and 0 otherwise.
-
-The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) balance speed against safety based on the risk tolerance of the application. We set $w_p = 1.0$ and $w_c = 1.0$. Because an episode terminates immediately upon collision, there is already a strong implicit penalty for crashing, allowing $w_c$ to remain relatively low.
-
-Using the progress per step as a reward signal is approximately equivalent to a potential-based reward shaping function @ng1999policy. In this context, the absolute progress $xi_t$ serves as the potential function $Phi(s_t)$ of the current state. Because the reward is defined as (nearly) the difference in potential, $Phi(s_t) - gamma Phi(s_(t-1))$, it heavily incentivises continuous forward movement along the track while theoretically being close to preserving the optimal policy and preventing the agent from exploiting positive-reward cycles.
+The first term encourages forward motion, using the per-step progress measure defined in @sec:progress. The second term discourages collisions through the indicator $c_t$, which is 1 if the agent collides with an obstacle at time $t$ and 0 otherwise. The weights $w_p$ (reward per metre of progress) and $w_c$ (penalty per collision) set the trade-off between speed and safety, and can be tuned to suit the application's risk tolerance. We use $w_p = 1.0$ and $w_c = 1.0$. A relatively small collision penalty is sufficient here because episodes end immediately on collision: the agent loses all future reward, which already acts as a strong implicit penalty for crashing.
 
 === Area Under the Curve (AUC)
 The _area under the curve_ (AUC) evaluates sample efficiency and learning stability by calculating the definite integral of a performance metric $y(t)$ (e.g., return or progress per step) over the total training time or timesteps $T$:
 
 $ "AUC" = integral_0^T y(t) dif t $
 
-In practice, evaluation metrics are recorded at discrete interval checkpoints $t_0, t_1, ..., t_N$, and the AUC is computed using the trapezoidal rule:
+In practice, evaluation metrics are recorded at discrete time intervals $t_0, t_1, ..., t_N$, so the AUC is computed using the trapezoidal rule:
 
 $ "AUC" approx sum_(i=1)^N frac(y(t_(i-1)) + y(t_i), 2) (t_i - t_(i-1)) $
 
-A higher AUC indicates faster learning and superior performance throughout the entire training process rather than merely achieving high final performance.
+A higher AUC for a measure like reward or progress indicates faster learning and superior performance throughout the entire training process rather than merely achieving high final performance.
 
 == Trainer Performance Tuning
 Training was performed on a single machine with an AMD Ryzen Threadripper PRO 3995WX CPU (64 cores, 128 hardware threads) and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
-We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), Python threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (128 or more concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
+We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), PyTorch threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (128 or more concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
 
 $ "throughput" = ("rollout length" times "parallel envs" times "areas per env") / "seconds per iteration" $
 
 We report the throughput per trainer, showing how much each model slows as the machine gets busier, and summed across trainers, showing where adding trainers stops paying off.
 
-As shown in @training_performance_results, total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ python threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `num_inst`, `python_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s).
+Total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 16 threads) and falls at 12 (at most 3853 timesteps/s), while per-trainer throughput roughly halves from 2 to 8 trainers. The best settings use $8 times 16 = 128$ PyTorch threads in total, matching the hardware thread count; at 12 trainers the 16-thread configurations are oversubscribed and fall behind the 8-thread ones. We therefore chose (`concurrent_trainers`, `num_inst`, `pytorch_threads`) = (8, 8, 16), though its margin over the next-best configurations (4020 and 3962 timesteps/s) is within likely run-to-run variation. Using `num_areas` $in {8, 12}$ per environment in this configuration did not help (3844 and 3999 timesteps/s). The performance of each configuration is available in @training_performance_results.
 
 #figure(
   stb-table(
@@ -1960,9 +1869,9 @@ As shown in @training_performance_results, total throughput peaks at 8 trainers 
     [`concurrent_trainers`],
     [${2, 4, 8, 12}$],
     [Number of independent models training simultaneously, each in its own process.],
-    [`python_threads`],
+    [`pytorch_threads`],
     [${8, 16}$],
-    [Threads available to each trainer's PyTorch, OpenMP, and OpenBLAS thread pools.],
+    [Threads available to each trainer's PyTorch thread pools.],
     [`num_inst`],
     [${4, 8, 10, 16}$],
     [Number of Unity environment instances per trainer. Each contains 6 training areas, so each instance steps 6 agents in parallel.],
@@ -2312,7 +2221,7 @@ The values in @fig:wheel_collider_properties are the parameters of the WheelColl
 ) <fig:wheel_collider_properties>
 
 #pagebreak()
-== Proof of the Policy Gradient Theorem <sec:policy_gradient_theorem_proof>
+== Derivation of the Policy Gradient Theorem <sec:policy_gradient_theorem_proof>
 
 This appendix provides a proof of the policy gradient theorem, where, given a policy $pi_theta$ parameterised by $theta$, the gradient of the expected return $J(theta)$ with respect to $theta$ can be expressed as an expectation over trajectories $tau$ sampled from the policy:
 
@@ -2455,6 +2364,45 @@ The below figure shows the mean reward per timestep of a test baseline feedforwa
   caption: [Mean reward per timestep of a baseline feedforward model over 600 training iterations, averaged across the timesteps in each iteration. Qualitatvely, the model converges after 400-600 iterations],
 )
 
+
+#pagebreak()
+== Training Performance Benchmark Results <training_performance_results>
+
+@fig:training_performance_results shows the benchmark results of training performance with various number of concurrent trainers, trainer threads, and parallel environments. Trainer threads indicates the number of parallel PyTorch processes per trainer.
+
+#[
+  #let training_performance_results = (
+    csv("../results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
+  )
+  #set par(justify: false)
+
+  #let row-to-content = row => (
+    (
+      row.at(1),
+      row.at(2),
+      row.at(3),
+      [#calc.round(float(row.at(8)), digits: 2)],
+      [#calc.round(float(row.at(8)) / 25, digits: 2)x],
+    )
+  )
+  #figure(
+    scale(90%, reflow: true, stb-table(
+      columns: 5,
+      align: (center, center, center, right, right),
+      header: (
+        "Concurrent trainers",
+        "Trainer threads",
+        [Parallel envs#footnote("It was not possible to run 16 parallel envs on 12 trainers, because the machine ran out of memory.")],
+        "Throughput (timesteps/sec)",
+        [Speedup vs realtime#footnote("Assuming 25 Hz decision frequency")],
+      ),
+      ..training_performance_results.map(row-to-content).flatten(),
+    )),
+    caption: "Training performance results, sorted by throughput.",
+  ) <fig:training_performance_results>
+]
+
+
 #pagebreak()
 == $R^2$ Scores After Training with Auxiliary Heads <aux_head_regression_results>
 
@@ -2472,37 +2420,3 @@ In most configurations, the decodability of the forward wheel slip quantities de
   image("../results/figures/probe_heatmap_aux_rnn.pdf", height: 85%),
   caption: [Difference in mean out-of-sample $R^2$ vs the baseline recurrent PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.1$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
 ) <fig:aux_head_regression_results_rnn>
-
-#pagebreak()
-== Training Performance Benchmark Results <training_performance_results>
-
-#[
-  #let training_performance_results = (
-    csv("../results/bench_perf.csv").slice(1).sorted(key: row => float(row.at(8)), by: (a, b) => a > b)
-  )
-
-  #let row-to-content = row => (
-    (
-      row.at(1),
-      row.at(2),
-      row.at(3),
-      [#calc.round(float(row.at(8)), digits: 2)],
-      [#calc.round(float(row.at(8)) / 25, digits: 2)x],
-    )
-  )
-  #figure(
-    stb-table(
-      columns: 5,
-      align: (center, center, center, right, right),
-      header: (
-        "Concurrent trainers",
-        "Python threads",
-        [Parallel envs#footnote("It was not possible to run 16 parallel envs on 12 trainers, because the machine ran out of memory.")],
-        "Throughput (timesteps/sec)",
-        [Speedup vs realtime#footnote("Assuming 25 Hz decision frequency")],
-      ),
-      ..training_performance_results.map(row-to-content).flatten(),
-    ),
-    caption: "Training performance results, sorted by throughput.",
-  )
-]

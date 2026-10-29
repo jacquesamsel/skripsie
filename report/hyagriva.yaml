@@ -773,6 +773,56 @@ lample2017fps:
     arxiv: "1609.05521"
   url: https://arxiv.org/abs/1609.05521
 
+hertel2020quantityvsqualityhyperparameter:
+  type: misc
+  title: 'Quantity vs. Quality: On Hyperparameter Optimization for Deep Reinforcement Learning'
+  author:
+  - Hertel, Lars
+  - Baldi, Pierre
+  - Gillen, Daniel L.
+  date: 2020
+  url: https://arxiv.org/abs/2007.14604
+  serial-number:
+    arxiv: '2007.14604'
+
+
+węgrzynowski2024learningdynamicsmodelsvelocity:
+  type: misc
+  title: Learning dynamics models for velocity estimation in autonomous racing
+  author:
+  - Węgrzynowski, Jan
+  - Czechmanowski, Grzegorz
+  - Kicki, Piotr
+  - Walas, Krzysztof
+  date: 2024
+  url: https://arxiv.org/abs/2408.15610
+  serial-number:
+    arxiv: '2408.15610'
+
+
+hochreiter1997longshorttermmemory:
+  type: article
+  title: Long Short-Term Memory
+  author:
+  - Hochreiter, Sepp
+  - Schmidhuber, Jürgen
+  date: 1997-11
+  page-range: 1735-1780
+  url: https://doi.org/10.1162/neco.1997.9.8.1735
+  serial-number:
+    doi: 10.1162/neco.1997.9.8.1735
+    issn: 0899-7667
+  abstract: Learning to store information over extended time intervals by recurrent backpropagation takes a very long time, mostly because of insufficient, decaying error backflow. We briefly review Hochreiter's (1991) analysis of this problem, then address it by introducing a novel, efficient, gradient based method called long short-term memory (LSTM). Truncating the gradient where this does not do harm, LSTM can learn to bridge minimal time lags in excess of 1000 discrete-time steps by enforcing constant error flow through constant error carousels within special units. Multiplicative gate units learn to open and close access to the constant error flow. LSTM is local in space and time; its computational complexity per time step and weight is O. 1. Our experiments with artificial data involve local, distributed, real-valued, and noisy pattern representations. In comparisons with real-time recurrent learning, back propagation through time, recurrent cascade correlation, Elman nets, and neural sequence chunking, LSTM leads to many more successful runs, and learns much faster. LSTM also solves complex, artificial long-time-lag tasks that have never been solved by previous recurrent network algorithms.
+  parent:
+    type: periodical
+    title: Neural Comput.
+    publisher:
+      name: MIT Press
+      location: Cambridge, MA, USA
+    issue: 8
+    volume: 9
+
+
 williams1992:
   type: article
   title: Simple statistical gradient-following algorithms for connectionist reinforcement learning
