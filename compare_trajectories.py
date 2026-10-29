@@ -1,57 +1,102 @@
+import os
+from itertools import groupby
+
 import torch
 from tqdm import tqdm
-from environment import RoboRacerEnv
+
+from environment import RoboRacerParallelEnvs
 from model import advance_recurrent_state, initial_recurrent_state, load_model, step_operator
 
+MODELS = sorted(os.listdir("checkpoints"))
+ITERATIONS = [560, 570, 580, 590, 600]
+NUM_STEPS = 1000
+NUM_ENVS = 4  # Unity processes run side by side
+NUM_AREAS = 4  # separate sims inside each Unity process
+NUM_SLOTS = NUM_ENVS * NUM_AREAS  # each (env, area) slot runs its own checkpoint
+OUT_DIR = "results/trajectories"
 
-MODELS = ["curvature_close_w1_s1", "baseline_w0_s2"]
-models = [load_model(
-    f"checkpoints/{model}/iteration_00600.pt")[0] for model in MODELS]
+# Lidar is dropped to keep the saved files small. rnn_h/rnn_h_out are the
+# recurrent state, which isn't part of the trajectory either.
+EXCLUDE_KEYS = [
+    ("agents", "lidar"), ("agents", "stacked_lidar"),
+    ("next", "agents", "lidar"), ("next", "agents", "stacked_lidar"),
+    "rnn_h", "rnn_h_out", "is_init",
+]
 
-env = RoboRacerEnv(
-    file_name=None,
-    num_stacked_frames=50,
-    num_areas=len(models),
-    no_graphics=False,
-    time_scale=10.0,
-)
 
-tensordict = env.reset()
-# One area per model, so each gets its own (batch_size=1) recurrent state to carry
-# across steps.
-recurrent_states = [
-    initial_recurrent_state(model, torch.Size([1])) for model in models]
+def checkpoint_path(model_name: str, iteration: int) -> str:
+    return f"checkpoints/{model_name}/iteration_{iteration:05d}.pt"
 
-trajectories = [[] for model in models]
 
-with torch.no_grad(), torch.inference_mode():
-    for i in tqdm(range(1000)):
-        # Step each model on its own area slice, then stitch the per-agent
-        # actions back into one batch before stepping the shared env.
-        agent_steps = [
-            step_operator(
-                model.get_policy_operator(),
-                tensordict[agent_idx:agent_idx + 1],
-                recurrent_states[agent_idx],
-            )
-            for agent_idx, model in enumerate(models)
-        ]
-        tensordict = torch.cat(agent_steps, dim=0)
-        tensordict = env.step(tensordict)
-        for agent_idx in range(len(models)):
-            trajectories[agent_idx].append(
-                tensordict[agent_idx:agent_idx + 1].exclude(
-                    ("agents", "lidar"), ("agents", "stacked_lidar"),
-                    ("next", "agents", "lidar"), ("next", "agents", "stacked_lidar"),
-                )
-            )
-        recurrent_states = [
-            advance_recurrent_state(
-                recurrent_states[agent_idx], tensordict[agent_idx:agent_idx + 1])
-            for agent_idx in range(len(models))
-        ]
-        tensordict = env.step_mdp(tensordict)
+def out_path(model_name: str, iteration: int) -> str:
+    return f"{OUT_DIR}/{model_name}_{iteration:05d}.pt"
 
-for i, trajectory in enumerate(trajectories):
-    trajectory = torch.cat(trajectory, dim=0)
-    torch.save(trajectory, f"results/trajectory_{MODELS[i]}.pt")
+
+def rollout(env: RoboRacerParallelEnvs, models: list) -> list:
+    """Runs models[k] in slot k (env k // NUM_AREAS, area k % NUM_AREAS) and
+    returns one (NUM_STEPS, 1) trajectory per model."""
+    tensordict = env.reset()  # (NUM_ENVS, NUM_AREAS)
+    states = [initial_recurrent_state(model, torch.Size([1])) for model in models]
+    policies = [model.get_policy_operator() for model in models]
+    trajectories = [[] for _ in models]
+    with torch.no_grad():
+        for _ in range(NUM_STEPS):
+            # Flatten (env, area) into slots, so slot k is just row k
+            flat = tensordict.reshape(-1)
+            # Each model acts on its own slot. The models can output different
+            # extra keys (rnn state, hidden sizes), so only the actions are
+            # stitched back into the batch the env steps on.
+            outputs = [step_operator(policy, flat[k:k + 1], states[k])
+                       for k, policy in enumerate(policies)]
+            actions = torch.cat([o["action"] for o in outputs])
+            tensordict.set("action", actions.reshape(NUM_ENVS, NUM_AREAS))
+            tensordict = env.step(tensordict)
+            next_flat = tensordict["next"].reshape(-1)
+            for k, output in enumerate(outputs):
+                output.set("next", next_flat[k:k + 1])
+                states[k] = advance_recurrent_state(states[k], output)
+                trajectories[k].append(output.exclude(*EXCLUDE_KEYS))
+            tensordict = env.step_mdp(tensordict)
+    return [torch.stack(steps, dim=0) for steps in trajectories]
+
+
+def main():
+    checkpoints = [(m, i) for m in MODELS for i in ITERATIONS]
+    missing = [checkpoint_path(*c) for c in checkpoints if not os.path.exists(checkpoint_path(*c))]
+    if missing:
+        raise FileNotFoundError(f"Missing checkpoints: {missing}")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    # Skip finished ones, so the script resumes after a crash
+    todo = [c for c in checkpoints if not os.path.exists(out_path(*c))]
+
+    # Every slot shares one lidar frame-stack size, so group checkpoints by it
+    loaded = []
+    for c in tqdm(todo, desc="loading"):
+        model, config, _, _ = load_model(checkpoint_path(*c))
+        loaded.append((c, model.eval(), config["num_stacked_lidar_frames"]))
+    loaded.sort(key=lambda x: x[2])
+
+    for frames, group in groupby(loaded, key=lambda x: x[2]):
+        group = list(group)
+        env = RoboRacerParallelEnvs(
+            num_envs=NUM_ENVS,
+            file_name="linux_build/linux_build.x86_64",
+            num_stacked_frames=frames,
+            num_areas=NUM_AREAS,
+            no_graphics=True,
+            time_scale=10.0,
+        )
+        try:
+            for start in tqdm(range(0, len(group), NUM_SLOTS), desc=f"{frames} frames"):
+                chunk = group[start:start + NUM_SLOTS]
+                # Pad the last chunk so every slot has a model; padding isn't saved
+                models = [m for _, m, _ in chunk]
+                models += [models[-1]] * (NUM_SLOTS - len(models))
+                for (c, _, _), trajectory in zip(chunk, rollout(env, models)):
+                    torch.save(trajectory, out_path(*c))
+        finally:
+            env.close()
+
+
+if __name__ == "__main__":
+    main()

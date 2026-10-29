@@ -15,3 +15,4 @@ results/baseline_rollout_test.pt
 results/baseline_rollout_train.pt
 results/baseline_rollout_test_old.pt
 results/baseline_rollout_train_old.pt
+results/trajectories/
