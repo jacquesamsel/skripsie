@@ -2312,7 +2312,74 @@ The values in @fig:wheel_collider_properties are the parameters of the WheelColl
 ) <fig:wheel_collider_properties>
 
 #pagebreak()
-== 
+== Proof of the Policy Gradient Theorem <sec:policy_gradient_theorem_proof>
+
+This appendix provides a proof of the policy gradient theorem, where, given a policy $pi_theta$ parameterised by $theta$, the gradient of the expected return $J(theta)$ with respect to $theta$ can be expressed as an expectation over trajectories $tau$ sampled from the policy:
+
+$
+  J(theta) = EE_(tau tilde p_theta) [G_0]
+  = EE_(tau tilde p_theta) [sum_(t=0)^T gamma^t r_t]
+  = integral p_theta (tau) G(tau) dif tau
+$
+
+Using the _log-derivative_ trick, $nabla_theta p_theta (tau) = p_theta (tau) nabla_theta log p_theta (tau)$, and assuming that the integral and derivative can be interchanged#footnote([This can be done only under certain regularity conditions not explored in this report, but generally if the functions are continuous and differentiable everywhere, and the integral is finite.]),
+the gradient of the expected return with respect to $theta$ is then
+$
+  nabla_theta J(theta)
+  = nabla_theta integral p_theta (tau) G(tau) dif tau
+  = integral nabla_theta p_theta (tau) G(tau) dif tau
+  = integral p_theta (tau) nabla_theta log p_theta (tau) G(tau) dif tau
+  #linebreak()
+  = EE_(tau tilde p_theta) [nabla_theta log p_theta (tau) G(tau)]
+$ <policy_gradient_theorem>
+
+Considering that the probability of a trajectory can be factorised as
+$
+  p_theta (tau) = p(s_0) product_(t=0)^(T-1)
+  underbrace(p(o_t | s_t), cal(Z)) dot pi_theta (a_t | o_t) dot
+  underbrace(p(r_t | s_t, a_t, s_(t+1), o_t), cal(R)) dot
+  underbrace(p(s_(t+1) | s_t, a_t), cal(P))
+$
+
+and since $p(s_0)$, $cal(P)$, $cal(Z)$ and $cal(R)$ do not depend on $theta$, their factors vanish, so
+
+$
+  nabla_theta log p_theta (tau) = sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t)
+$
+
+Then, the _policy gradient_ can be expressed as
+
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) G(tau)]
+$
+
+Write $G(tau) = G_0$. Splitting the return at time $t$,
+$
+  G_0 = sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t,
+  quad G_t = sum_(k=t)^(T-1) gamma^(k-t) r_k,
+$
+where $G_t$ is the discounted _reward-to-go_,
+
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) nabla_theta log pi_theta (a_t | o_t) (sum_(k=0)^(t-1) gamma^k r_k + gamma^t G_t)]
+$
+
+However, since the expectation of the fixed past-reward terms is zero, they can be removed from the policy gradient without introducing bias. This can be seen by conditioning on the history $h_t = (s_0, o_0, a_0, r_0, dots, s_(t-1), o_(t-1), a_(t-1), r_(t-1), s_t, o_t)$:
+
+$
+  EE_(a_t tilde pi_theta) [nabla_theta log pi_theta (a_t | o_t) | h_t]
+  = integral_a nabla_theta pi_theta (a | o_t)
+  = nabla_theta integral_a pi_theta (a | o_t)
+  = nabla_theta 1 = 0,
+$
+The past-reward terms therefore vanish in expectation, leaving
+$
+  nabla_theta J(theta) = EE_(tau tilde p_theta) [sum_(t=0)^(T-1) gamma^t nabla_theta log pi_theta (a_t | o_t) G_t].
+$
+Removing these zero-mean terms typically reduces the variance of the
+Monte Carlo estimate. In practice the factor $gamma^t$ is usually dropped.
+This yields a biased estimate of $nabla_theta J(theta)$ for $gamma < 1$
+@thomas2014bias however.
 
 #pagebreak()
 == Distribution of Auxiliary Targets <sec:prop_data_within_sd>
