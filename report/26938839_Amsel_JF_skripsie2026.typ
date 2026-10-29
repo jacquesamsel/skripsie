@@ -1858,7 +1858,7 @@ A score of 1 means the predictions are perfect, a score of 0 means the model doe
 
 $R^2$ is used instead of error measures such as RMSE because it is unit-free. The quantities we predict have different units and scales (m/s, rad/s, 1/m and unitless slip), so their raw errors cannot be compared, whereas $R^2$ puts all of them on one scale.
 
-== Trainer Performance Tuning
+== Trainer Performance Tuning <sec:trainer_performance_tuning>
 Training was performed on a single machine with an 64 cores and 128 GB of RAM. To ensure experiments finish in a practical time, we first measured how best to use this hardware, aiming to maximise _aggregate_ throughput: environment timesteps collected and learned from per second, summed across all models training simultaneously.
 
 We ran a grid search over the parameters in @training_performance_variables: concurrent trainers (2, 4, 8, 12), PyTorch threads per trainer (8, 16) and parallel environments per trainer (4, 8, 10, 16). For each configuration, `concurrent_trainers` identical processes were launched at once, each running five PPO iterations (a 256-frame rollout plus four epochs of minibatch updates each iteration) with checkpointing and TensorBoard logging disabled. Configurations with more than 8 trainers and 16 environments (128 or more concurrent Unity instances) exhausted memory and were excluded, leaving 28 single-run configurations. Throughput per trainer was computed from the mean wall-clock time per iteration:
@@ -1887,7 +1887,7 @@ Total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 1
   caption: "Parameters varied in the training performance grid search.",
 ) <training_performance_variables>
 
-= Experiments & results <sec:results>
+= Experiments and Results <sec:results>
 
 To evaluate how auxiliary losses affect agent performance, we trained every combination of active auxiliary losses, auxiliary loss weight and model architecture for 600 PPO iterations. Each iteration collected 256 frames from each of 48 concurrent environments, so each run totals about 7.4 million timesteps ($approx 82 "hours"$ of simulated time). We chose 600 iterations because a test run showed the baseline feedforward (FF) model's reward plateauing well before this point (@baseline_reward_per_timestep). Each configuration was trained with 6 different seeds.
 
@@ -2050,15 +2050,15 @@ The results of this project suggest that more work is needed to determine _a pri
             subtasks: (
               (
                 name: [Reinforcement learning],
-                intervals: ((start: "2026-06-05", end: "2026-07-17"),),
+                intervals: ((start: "2026-06-05", end: "2026-07-17"), (start: "2026-09-30", end: "2026-10-30")),
               ),
               (
                 name: [Auxiliary learning and privileged information],
-                intervals: ((start: "2026-06-22", end: "2026-07-31"),),
+                intervals: ((start: "2026-06-22", end: "2026-07-31"), (start: "2026-09-30", end: "2026-10-30")),
               ),
               (
                 name: [Autonomous racing and RoboRacer],
-                intervals: ((start: "2026-07-06", end: "2026-08-14"),),
+                intervals: ((start: "2026-07-06", end: "2026-08-14"), (start: "2026-09-30", end: "2026-10-30")),
               ),
             ),
           ),
@@ -2154,44 +2154,141 @@ The results of this project suggest that more work is needed to determine _a pri
 #set page(flipped: false)
 
 == Graduate Attributes
-
 === Complex Engineering Problem
 
-The project addresses a complex engineering problem because it requires a fundamentals-based formulation of autonomous racing as a POMDP and first-principles-based design of vehicle dynamic models. It draws on specialist knowledge of RL and autonomous racing, and engages with current research literature on privileged information, auxiliary learning, and representation probing. The problem has no obvious solution: a LiDAR-only agent must learn quantities it cannot observe, and it is not clear which privileged targets or loss weights would help. It involves conflicting requirements (speed vs. safety), balancing the loss weights of the primary task vs. auxiliary tasks, and considering the trade-offs between simulation fidelity and training speed. It also involves coupled systems, namely the trainer and simulator, which must be tuned together to maximise throughput since they may compete for the same hardware resources.
+The project requires a first-principles formulation of autonomous racing as a POMDP and of the vehicle dynamics, specialist RL knowledge, and engagement with current research on privileged information, auxiliary learning and probing. It has no obvious solution: a LiDAR-only agent must learn quantities it cannot observe, and it is unclear which privileged targets or loss weights will help. It involves conflicting requirements (speed vs. safety, primary vs. auxiliary losses, fidelity vs. training speed) and coupled subsystems, since the trainer and simulator compete for the same hardware and must be tuned together.
 
 === Problem Solving (GA1)
 
-*Identification and literature:* Starting from the societal problem of road crashes caused by human error, which is a public health issue, addressing a SDG (Chapter 1), I narrowed the project to a specific engineering problem. A LiDAR-only reinforcement learning agent must learn quantities it cannot observe, such as velocity, tyre slip and upcoming curvature, from a sparse, noisy reward. The literature review (@sec:related_literature) found that existing uses of privileged information each have a limitation, and that auxiliary losses had not been studied for LiDAR-only racing. I turned this gap into objectives (@sec:problem_statement_and_objectives).
+- *Identification and literature:* Starting from road crashes caused by human error, a public health issue (SDG 3.6), I narrowed the project to a LiDAR-only RL agent that must learn unobservable quantities such as velocity, slip and upcoming curvature. The literature showed auxiliary losses had not been studied for LiDAR-only racing (@sec:related_literature), and I turned this gap into objectives (@sec:problem_statement_and_objectives).
 
-*Systematic fformulation from first principles:* I formulated racing as a POMDP (in @sec:pomdp). This defines privileged information precisely and has motivated comparing feedforward and recurrent agents. I derived the policy gradient theorem (@sec:policy_gradient_theorem_proof) as the basis for PPO (@sec:rl). I modelled the vehicle from rigid-body mechanics, kinematic slip definitions and a least-squares Pacejka fit (@sec_wheelcollider), and I computed the curvature targets from differential geometry (@sec:simulator).
+- *Formulation from first principles:* I formulated racing as a POMDP (@sec:pomdp), derived the policy gradient theorem underlying PPO (@sec:policy_gradient_theorem_proof), modelled the vehicle from rigid-body mechanics, slip kinematics and a Pacejka fit (@sec_wheelcollider), and derived curvature targets from differential geometry (@sec:simulator).
 
-*Analysis and method selection:* I based design choices on evidence. Benchmarking justified the higher-fidelity simulator (@sim_benchmarks), and measured heavy-tailed target distributions justified the Huber loss (@sec:loss_function). I compared weighting strategies against the project's aim before choosing a leave-one-in design (@sec:finding_optimal_weights). I diagnosed failures from their causes: tanh saturation explained the policy locking at full throttle and steering, and chassis pitch tilting the LiDAR explained exploding gradients (@sec:agent). I also quantified the failure rates of the track generator with binomial confidence intervals, finding that they were low enough to be acceptable (@sec:track).
+- *Analysis and method selection:* Benchmarks used to justify the simulator (@sim_benchmarks), heavy-tailed targets justify the Huber loss (@sec:loss_function). I traced failures to their causes, such as tanh saturation and LiDAR tilt from chassis pitch (@sec:agent).
 
-*Substantiated conclusions:* Each configuration was trained with 6 seeds. I averaged correlated checkpoints into one observation per seed to avoid pseudo-replication, and I compared configurations using bootstrapped confidence intervals, t-tests with Benjamini–Hochberg correction, and out-of-sample $R^2$ (@sec:metrics, @sec:results). The conclusions follow from this evidence: close-ahead curvature is the only target that helps both architectures, and decodability does not guarantee better driving. I stated where results fall short of significance, labelled untested explanations as hypotheses, and set out the limitations of the scope (@sec:conclusion).
+- *Substantiated conclusions:* With 6 seeds per configuration, one observation per seed, bootstrapped confidence intervals, Benjamini–Hochberg-corrected t-tests and out-of-sample $R^2$ (@sec:metrics, @sec:results), I showed that close-ahead curvature is the primary target that helps both architectures and that decodability does not guarantee better driving, flagging non-significant results and hypotheses (@sec:conclusion).
 
-*Sustainable development:* The work addresses road safety (SDG 3.6) and the interpretability needed before end-to-end learning can be trusted in safety-critical systems. Working in simulation avoided hardware damage and the risks of testing on real vehicles. Tuning the trainer for throughput reduced the compute time, and hence the energy, needed for the training runs.
-
+- *Sustainable development:* The work supports road safety and the interpretability needed for safety-critical learning systems. Simulation avoided hardware damage and real-vehicle risk, and throughput tuning cut compute energy.
 
 === Application of Scientific and Engineering Knowledge (GA2)
 
+- *Mathematics:* Track curvature comes from the osculating circle, and closed tracks from a mean-reverting random walk, Catmull-Rom splines and polygon offsetting (@sec:track). Numerical methods included a least-squares Pacejka fit (@wheel_friction_curve) and trapezoidal AUC integration; statistics included normalisation, binomial and bootstrapped confidence intervals, OLS probes and corrected t-tests (@sec:metrics, @sec:results).
+
+- *Natural sciences:* The RoboRacer is modelled as a rigid body on four suspended wheels with slip-dependent friction and a rate-limited servo, using a published calibration (@sec:simulator, @wheel_collider_properties). The same physics explained an observed failure: weight transfer pitches the chassis, the LiDAR scans over the walls and gradients explode, which layer normalisation fixed (@sec:agent).
+
+- *Computing:* A C\# Unity simulator and a PyTorch/TorchRL trainer communicate over gRPC via ML-Agents (@sec:system_overview). 1D convolutions along the ray axis match the network to the sensor (@network_architecture), and a grid search, informed by OS and threading knowledge, maximised throughput on 64 cores (@system_diagram, @training_performance_results).
+
+- *Specialisation:* As an Electrical & Electronic student specialising in Data Engineering, I applied deep RL (@sec:pomdp, @sec:ppo), multi-task learning with a Huber loss (@sec:loss_function), linear probing (@sec:baseline_model_features) and statistical testing (@sec:results).
+
+=== Engineering Design (GA3)
+The major design problem was a complete system for training and evaluating LiDAR-only racing agents with auxiliary losses, designed against requirements from the objectives (@sec:problem_statement_and_objectives).
+
+- *Identifying needs:* The simulator had to model slip meaningfully, report privileged information every step, generate unlimited tracks and run fast. The F1Tenth gym linearises slip, and AutoDrive lacks track generation and privileged information (@sec:simulator).
+
+- *Simulator:* My Unity simulator reuses AutoDrive's `VehicleController` and `IMU` and adds four `WheelCollider`s, wall colliders and a feature extractor (@system_diagram, @sec_wheelcollider). It is only 19% slower than the F1Tenth gym (@sim_benchmarks).
+
+- *Track generator:* An original random walk with a restoring strength that ramps up over the lap lets tracks wander yet close (@sec:track, @fig:walk-step). Polygon offsetting avoids narrow sections (@trackgen_inset_outset), and rejecting the rare degenerate tracks (0.05% and 1.35%) costs little.
+
+- *Agent:* A shared convolutional trunk feeds policy, value and auxiliary heads, so auxiliary gradients shape the policy's representation (@sec:agent, @network_architecture). A clamped linear output fixed tanh saturation, layer normalisation fixed pitch-induced gradient explosions, and the two variants differ only in the GRU.
+
+- *Loss and experiments:* Testing ten categories alone at three weights needs 34 configurations instead of $3^10 = 59049$, at the cost of ignoring interactions (@sec:weighting_scheme). Normalisation and the Huber loss stop heavy-tailed targets dominating (@sec:loss_function), and reward weights can be tuned to an application's risk tolerance (@sec:reward_function).
+
+=== Investigations, Experiments and Data Analysis (GA4)
+
+The investigation asked which privileged targets, as auxiliary losses, help a LiDAR-only racing agent and how they change its representation, a question the literature had not answered (@sec:related_literature).
+
+- *Research-based method:* Since Lample et al. @lample2017fps found auxiliary losses helped only recurrent agents, I tested both architectures. I adopted linear probing @alain2018understandingintermediatelayersusing @anand2020unsupervisedstaterepresentationlearning, keeping probes linear so $R^2$ reflects the representation rather than the probe @belinkov2021probingclassifierspromisesshortcomings (@sec:baseline_model_features).
+
+- *Design of experiments:* Each category was enabled alone at three weights against a no-auxiliary baseline, with six seeds and a fixed reward, hyperparameters and 600-iteration budget from a pilot run (@sec:weighting_scheme, @baseline_reward_per_timestep). Agents were evaluated on unseen tracks, and preliminary benchmarks made the runs feasible (@sim_benchmarks, @sec:trainer_performance_tuning).
+
+- *Analysis of data:* The last 50 checkpoints of each run were averaged into one observation per seed to avoid inflating the sample size, then compared with Benjamini–Hochberg-corrected t-tests @benjamini1995controlling and reward AUC (@sec:metrics). Probes were scored on a separate rollout, and collisions per metre replaced collisions per episode, which favours slow agents.
+
+- *Critical interpretation:* Velocities and yaw rate are decodable even in untrained networks, so I did not credit this to learning, and greater decodability did not guarantee better driving (@sec:learned_features_after_auxiliary_learning).
+
+- *Conclusions and recommendations:* Close-ahead curvature helps both architectures, effects depend strongly on weight, and auxiliary losses mainly ease recurrent training (@sec:agent_performance_after_auxiliary_learning). I reported where differences miss $alpha = 0.05$, labelled hypotheses as such, and recommended adaptive weighting, richer environments and work on predicting *a priori* which losses and weights help (@sec:conclusion).
+
+=== Use of Engineering Tools (GA5)
+
+- *Simulation:* I chose Unity with PhysX over the F1Tenth gym after benchmarking (@sim_benchmarks). PhysX uses Euler rather than RK4 integration, and the `WheelCollider` lacks servo rate limits and wheel-wall collisions, so I added AutoDrive's `VehicleController` and box colliders (@sec:simulator). I used Clipper2 for wall offsetting and rejected the \~1.35% of tracks where it produced "islands" (@sec:track).
+
+- *Machine learning:* PyTorch and TorchRL connect to Unity via ML-Agents (@system_diagram). I fixed tanh-squashed Gaussian saturation and unbounded trunk activations in the architecture (@sec:agent), and rejected Hyperband and ASHA, which can kill RL runs that improve late (@sec:finding_optimal_weights).
+
+- *Analysis:* I used NumPy, Pandas, Matplotlib and Seaborn, recognising their limits: linear probes measure only _linearly_ decodable information (@sec:baseline_model_features), $R^2$ suits targets with different units (@sec:r2_score), and $N = 6$ seeds leaves many differences non-significant (@sec:results).
+
+- *Compute and documentation:* A 28-configuration grid search tuned the trainer, with the top configurations within run-to-run variation (@sec:trainer_performance_tuning). The report was written in Typst, with figures in CeTZ, Fletcher and Lilaq.
+
+=== Professional and Technical Communication (GA6)
+
+The report targets engineers who need not be RL specialists.
+
+- *Structure:* The report moves from road safety, understanable to lay-readers, to the technical gap (@sec:related_literature), and introduces concepts intuitively before formally, e.g. the "pulled-back random walk" (@sec:track).
+
+- *Conventions:* A notation chapter and acronym list define every symbol, only referenced equations are numbered, tables use booktabs style, and the layout follows the Stellenbosch University thesis class.
+
+- *Figures:* I drew the key diagrams by hand rather than with AI so each shows exactly the textual point (@system_diagram, @network_architecture, @fig:walk-step), with self-contained captions.
+
+- *Honest reporting:* Non-significant results, hypotheses and misleading metrics are flagged (@sec:agent_performance_after_auxiliary_learning).
+
+- *Oral communication:* I met my supervisor regularly and presented to the research group every second week.
+
+=== Individual Work (GA8)
+
+I designed and implemented the simulator, track generator, agent, training pipeline and analysis individually, writing the training and model code by hand (see the AI declaration).
+
+- *Planning:* I planned in phases (Gantt chart) and adapted, switching to a custom simulator when AutoDrive proved unsuitable.
+
+- *Resources:* About 400 runs, roughly $3 times 10^9$ timesteps, were feasible only through throughput tuning (@sec:trainer_performance_tuning) and the leave-one-in design (@sec:weighting_scheme).
+
+- *Ethics:* I acknowledged all sources and software, declared all AI use, and reported negative results.
+
+- *Supervision:* I met my supervisor weekly and incorporated their feedback.
+
+=== Independent Learning Ability (GA9)
+
+Most of the required knowledge was outside my coursework.
+
+- *Reinforcement learning:* I learned RL from Sutton and Barto, David Silver's lectures and primary sources, deriving the policy gradient theorem myself (@sec:policy_gradient_theorem_proof).
+
+- *Tools and literature:* I learned Unity, C\#, TorchRL, ML-Agents and Typst, and adapted probing from interpretability research to regression targets (@sec:baseline_model_features).
+
+- *Self-evaluation:* I diagnosed failures instead of tuning them away, recognised the limited power of 6 seeds and my untested hypotheses (@sec:results), and identified how to resolve them (@sec:conclusion).
 
 
+=== Sustainable Development
 
+The long-term motivation is road safety (SDG 3.6). Autonomous driving could reduce crashes caused by human error and lower emissions through smoother traffic flow, but only if learned driving policies become reliable and interpretable. This project contributes a small step towards both.
 
+*Efficient resource use and re-use:* Rather than building a simulator from scratch, I re-used AutoDrive's components, a published vehicle calibration and an existing polygon library. Working entirely in simulation avoided damage to physical vehicles and the material cost of crash testing. The leave-one-in design and the throughput tuning both reduced the compute, and hence the energy, needed for the experiments.
+
+*Whole-life cost:* Auxiliary heads exist only during training and are discarded at deployment. Any improvement they bring therefore adds no onboard computation or energy use over the vehicle's operating life, unlike approaches that add sensors or larger networks.
+
+*Net zero carbon:* Training hundreds of RL agents is energy-intensive, and South Africa's electricity is predominantly generated from coal. A natural improvement would be to measure and report the energy use of the experiments, and to prefer methods, like auxiliary losses, that improve sample efficiency so that fewer training timesteps are needed.
+
+=== Critical Thinking
+
+Critical thinking effected the project in several places. I chose a less common simulator because the literature's default linearises the very slip dynamics I wanted to predict. I rejected adaptive weighting methods because they balance all tasks, while only the driving task matters here (@sec:finding_optimal_weights). When probes showed high $R^2$ at initialisation, I did not take this as learned knowledge, but attributed it to random projections of near-linear inputs. I treated the 50 correlated checkpoints of each run as a single observation to avoid inflating the sample size. I corrected for multiple comparisons, and stated when results did not meet the significance threshold. Finally, the central finding is itself a caution against a tempting assumption: making a quantity more decodable does not necessarily make the agent drive better (@sec:learned_features_after_auxiliary_learning). I applied the same scrutiny to AI tools, checking their suggestions against sources and discarding outputs, such as generated diagrams, that did not meet the standard I wanted.
+
+=== Emerging Technologies
+
+The project is built on emerging technologies. End-to-end deep RL for driving is still an active research area that has not yet matched classical pipelines on the RoboRacer platform (@sec:related_literature). I evaluated game engines as physics simulators against a purpose-built research simulator, and I used recent libraries (TorchRL, ML-Agents) to train with them. Linear probing comes from current interpretability research, much of it on large language models, and I applied it to an RL driving agent. Generative AI tools (Claude, Gemini, DeepSeek and Google Scholar Labs) supported literature search and debugging. I treated their outputs as suggestions to be verified, as detailed in the AI declaration. A natural next step would be to transfer the trained agents to a physical RoboRacer, testing whether the representations shaped in simulation survive the reality gap.
 
 
 #pagebreak()
 
 == AI Declaration
 
+=== AI Work Declaration
+
 - #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain to me why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me, and I understand the process.
 
 - #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way. Gemini was used to do spelling & grammar checking.
 
 - #link("https://scholar.google.co.za/scholar_labs/search")[Google Scholar Labs] was used extensively in searching for literature.
-- #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality.
+- #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality. Deepseek was also used to provide advice on how to make charts look better, although the implementation was done by hand.
 
-AI was not used to generate the training code or the model definition code - that was hand-written.
+
+=== Own Work Declaration
+AI was not used to generate the training code or the model definition code - that was hand-coded. Furthermore, the statistical analysis code was hand-written, and the report was written by hand, with AI used for checking grammar and spelling, and for advice on the writing. The graphs and diagrams were hand-coded. Creation of the simulator was done by hand, although AI was regularly consulted on how Unity works.
 
 #pagebreak()
 
