@@ -8,11 +8,11 @@ import platform
 from environment import RoboRacerParallelEnvs
 from model import advance_recurrent_state, initial_recurrent_state, load_model, step_operator
 
-MODELS = sorted(["curvature_close_w1_s1"])
-ITERATIONS = [600]
+MODELS = sorted([f for f in os.listdir("checkpoints") if any(map(lambda x: x in f, ["baseline", "curvature_close"]))])
+ITERATIONS = [560, 570, 580, 590, 600]
 NUM_STEPS = 1500
-NUM_ENVS = 1  # Unity processes run side by side
-NUM_AREAS = 1  # separate sims inside each Unity process
+NUM_ENVS = 6  # Unity processes run side by side
+NUM_AREAS = 6  # separate sims inside each Unity process
 NUM_SLOTS = NUM_ENVS * NUM_AREAS  # each (env, area) slot runs its own checkpoint
 OUT_DIR = "results/trajectories"
 
@@ -81,12 +81,11 @@ def main():
         group = list(group)
         env = RoboRacerParallelEnvs(
             num_envs=NUM_ENVS,
-            file_name=None,
-            #file_name="linux_build/linux_build.x86_64" if platform.system() != "Darwin" else "TestUnityProject/Test speed/build.app",
+            file_name="linux_build/linux_build.x86_64" if platform.system() != "Darwin" else "TestUnityProject/Test speed/build.app",
             num_stacked_frames=frames,
             num_areas=NUM_AREAS,
             no_graphics=True,
-            time_scale=2.0,
+            time_scale=20.0,
         )
         try:
             for start in tqdm(range(0, len(group), NUM_SLOTS), desc=f"{frames} frames"):

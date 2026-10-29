@@ -215,6 +215,7 @@ class RoboRacerEnv(TransformedEnv):
                         # positional, so this order has to match Car.CollectObservations'
                         # AddObservation order, where it is the final entry.
                         (("agents", "progress"), torch.Size([1])),
+                        (("agents", "progress_abs"), torch.Size([1])),
                     ],
                     in_key=("agents", "vector"),
                     delete_vector=True
