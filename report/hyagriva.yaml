@@ -773,6 +773,31 @@ lample2017fps:
     arxiv: "1609.05521"
   url: https://arxiv.org/abs/1609.05521
 
+althoff2017commonroad:
+  type: article
+  title: 'CommonRoad: Composable benchmarks for motion planning on roads'
+  author:
+  - Althoff, Matthias
+  - Koschi, Markus
+  - Manzinger, Stefanie
+  date: 2017
+  parent:
+    type: proceedings
+    title: Proc. of the IEEE Intelligent Vehicles Symposium
+
+
+jaeger2001echo:
+  type: article
+  title: The" echo state" approach to analysing and training recurrent neural networks-with an erratum note'
+  author: Jaeger, Herbert
+  date: 2001-01
+  page-range: ''
+  parent:
+    type: periodical
+    title: 'Bonn, Germany: German National Research Center for Information Technology GMD Technical Report'
+    volume: 148
+
+
 hertel2020quantityvsqualityhyperparameter:
   type: misc
   title: 'Quantity vs. Quality: On Hyperparameter Optimization for Deep Reinforcement Learning'
