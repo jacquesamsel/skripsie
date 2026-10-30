@@ -526,7 +526,7 @@ santana2026introductiondeepreinforcementimitation:
 bou2023torchrldatadrivendecisionmakinglibrary:
   type: misc
   title: 'TorchRL: A data-driven decision-making library for PyTorch'
-  author:
+  authors:
   - Bou, Albert
   - Bettini, Matteo
   - Dittert, Sebastian
@@ -539,6 +539,7 @@ bou2023torchrldatadrivendecisionmakinglibrary:
   url: https://arxiv.org/abs/2306.00577
   serial-number:
     arxiv: '2306.00577'
+
 
 
 paszke2019pytorch:
@@ -772,6 +773,7 @@ lample2017fps:
   serial-number:
     arxiv: "1609.05521"
   url: https://arxiv.org/abs/1609.05521
+
 
 althoff2017commonroad:
   type: article
