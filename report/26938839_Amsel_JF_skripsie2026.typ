@@ -1776,7 +1776,6 @@ $
   quad
   cal(L)_"total" = cal(L)_"PPO" + sum_(c=1)^C w_c cal(L)_c .
 $
-In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) in {0.1, 0.3, 1.0}$ and every other weight is zero, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
 
 
 #figure(
@@ -1813,6 +1812,11 @@ In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) i
   caption: [The auxiliary targets are grouped into categories, each of which is weighted by a single hyperparameter.
   ],
 ) <aux_categories>
+
+
+In a leave-one-in experiment, a single category $c^*$ is enabled with $w_(c^*) in {0.1, 0.3, 1.0}$ and every other weight is zero, giving 30 configurations, each compared against the baseline ($w_c = 0$ for all $c$). The "All" configuration enables every category at the same $w$. All weights are constant throughout training, and since the targets are normalised to zero mean and unit variance, the per-target losses are of comparable magnitude. The limitation is that this approach does not explore interactions _between_ categories.
+
+
 
 == Metrics <sec:metrics>
 In order to evaluate the agent's performance, we define a set of metrics that capture different aspects of its driving behaviour. These metrics are designed to provide insight into the agent's ability to navigate the track both (a) quickly and (b) safely.
@@ -1969,12 +1973,12 @@ Importantly, @fig:last_50_means_heatmap and @fig:progress_vs_collision indicate 
 
 #figure(
   image("../results/figures/progress_vs_collision.pdf"),
-  caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline. For readability, some run categories are cropped off the chart.],
+  caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline. For readability, some run configurations are cropped off the chart.],
 ) <fig:progress_vs_collision>
 
-To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Since we are only comparing four configurations, the multiple-comparison corrections have less effect, allowing us to more effectively detect differences.
+To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Comparing only four configurations allows us to more effectively detect statistical differences.
 
-Training with the close-ahead curvature auxiliary loss improves the feedforward model's training speed, stability, and performance, as shown in @fig:training_perf. It achieves a significantly higher PPS ($p_"adj"$=0.036) of +30% compared to the baseline, and a significantly lower CPMP ($p_"adj"$=0.036), 93% better than the baseline on average across the 6 seeds. These statistics were recorded using the mean of the last 50 training iterations.
+Training with the close-ahead curvature auxiliary loss improves the feedforward model's training speed, stability, and performance, as shown in @fig:training_perf. It achieves a significantly higher PPS (adjusted p-value = 0.036) of +30% compared to the baseline, and a significantly lower CPMP (adjusted p-value = 0.036), 93% better than the baseline on average across the 6 seeds. Importantly, the follow-up experiment drew worse-performing seeds for the baseline compared to the screening, so the unusually good results are partly influenced by the baseline's underperformance.
 
 #figure(
   image("../results/figures/training_perf.pdf"),
@@ -1985,15 +1989,30 @@ Training with the close-ahead curvature auxiliary loss improves the feedforward 
 
 Applying the same probing technique from @sec:baseline_model_features after training with auxiliary losses enabled, we find that the decodability of privileged quantities improved significantly when auxiliary losses were used, but that an increase in decodability does not always translate to an improvement in performance.
 
-The decodability of the close-ahead curvature targets improved significantly in both architectures when the close-ahead curvature auxiliary loss was used, as shown in @fig:r2score_diff_curvature_close. The mean out-of-sample $R^2$ for the close-ahead curvature targets increased by up to 0.45 in the feedforward model and up to 0.49 on average in the recurrent model on average across 6 seeds, indicating that the internal representations of these models now encode this information in a more decodable fashion. When close-ahead curvature losses were applied to the FF model, the decodability of the medium-ahead curvature targets also improved, though may be confounded by the fact that the medium-ahead curvature targets are highly correlated with the close-ahead curvature targets.
+The decodability of the close-ahead curvature targets improved significantly in both architectures when the close-ahead curvature auxiliary loss was used, as shown in @fig:r2score_diff_curvature_close. The mean out-of-sample $R^2$ for the close-ahead curvature targets increased by up to 0.45 in the feedforward model and up to 0.49 in the recurrent model on average across 6 seeds, indicating that the internal representations of these models now encode this information in a more decodable fashion. When close-ahead curvature losses were applied to the FF model, the decodability of the medium-ahead curvature targets also improved, though may be confounded by the fact that the medium-ahead curvature targets are highly correlated with the close-ahead curvature targets.
 
 Particularly with highly-weighted close-ahead curvature losses in the FF model, the decodability of the forward wheel slip decreased.
 
 #figure(
   image("../results/figures/probe_heatmap_aux_curvature_close.pdf", width: 110%),
-  caption: [Absolute difference in mean out-of-sample $R^2$ between the baseline and the model with close-ahead curvature auxiliary losses in (a) the FF network and (b) the recurrent network. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.05$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling within each model across all auxiliary targets. The results for all auxiliary heads are available in @aux_head_regression_results.],
+  caption: [Absolute difference in mean out-of-sample $R^2$ between the baseline and the model with close-ahead curvature auxiliary losses in (a) the FF network and (b) the recurrent network. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.05$), corrected for false discovery using the Benjamini-Hochberg procedure @benjamini1995controlling within each architecture across all auxiliary losses and targets. The results for all auxiliary heads are available in @aux_head_regression_results.],
 ) <fig:r2score_diff_curvature_close>
 
+== Summary of Findings
+
+The experiments address three questions: what a baseline agent's representation encodes, whether auxiliary losses improve driving, and how they reshape the representation.
+
+*What the baseline encodes:* Lateral velocity, yaw rate and lateral slip are already linearly decodable in untrained networks, since they are close to linear in the steering input. PPO training trades this information away in favour of upcoming track curvature in both architectures, and forward slip in the feedforward model (@sec:baseline_model_features).
+
+*Effect on driving:* Close-ahead curvature is the only target that improved both architectures in the screening experiment (up to +13% PPS and -64% CPMP for the feedforward model, and +125% PPS and -96% CPMP for the recurrent model). A follow-up with fresh seeds confirmed the feedforward result: +30% PPS and -93% CPMP (adjusted p-value = 0.036).
+
+Beyond curvature, the two architectures respond very differently: auxiliary losses improved the reward AUC in 26 of 33 recurrent configurations but only 4 of 33 feedforward ones, consistent with the findings of Lample et al. @lample2017fps. Because the recurrent baseline is underperforms compared to the FF model, this suggests that auxiliary losses mainly ease the training of a struggling agent. Part of this benefit may be independent of the target itself. Every effect depends strongly on the loss weight: for example, enabling all targets at $w = 0.1$ raised the recurrent model's AUC to \~73, but at $w = 1$ it remained near the baseline \~42.
+
+*Effect on representations:* Auxiliary losses made their targets more decodable (close-ahead curvature $R^2$ rose by up to 0.45 in the feedforward model and 0.49 in the recurrent model), sometimes at the expense of other quantities, such as forward slip in the feedforward model. Greater decodability does not, however, imply better driving: enabling all targets at $w = 1$ significantly increased decodability, yet produced one of the worst feedforward agents.
+
+*Interpretation:* We hypothesise that close-ahead curvature helps because (a) the auxiliary loss provides a low-variance signal for a quantity the policy learns anyway, so it is learned earlier, which is consistent with the faster rise in @fig:training_perf; and (b) curvature describes what the car must do next, whereas velocity and slip describe what it has already done.
+
+*Probing as a guide:* In the feedforward model, the quantities that became more decodable under plain PPO (close-ahead curvature in both and forward slip) are also those that helped as auxiliary targets. This does not hold for the recurrent model, which benefits from forward velocity and forward slip even though their decodability did not rise during training. Probing may therefore be a useful heuristic for choosing targets, but this relationship is untested.
 
 
 = Conclusions and recommendations <sec:conclusion>
