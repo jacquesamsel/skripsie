@@ -31,17 +31,20 @@ HYPERPARAMETER_GROUPS = {
 #     "all": AUX_HEAD_KEYS
 # }
 
-WEIGHT_VALUES = [0.1, 0.3, 1.0]
+WEIGHT_VALUES = [0.3]
 SEEDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 RUNS_DIR = Path("run_done_flags")
 
 NUM_ENVS = 8
-MAX_WORKERS = 5
+MAX_WORKERS = 2
 NUM_PYTHON_THREADS = 16
 NUM_AREAS=6
-# Lidar frames the encoder sees each step; the GRU carries the longer history
-NUM_STACKED_FRAMES = 50
+# "recurrent" (GRU over a short lidar stack) or "stacked" (long lidar stack, no memory)
+TRUNK = "recurrent"
+# Lidar frames the encoder sees each step; for the recurrent trunk the GRU
+# carries the longer history
+NUM_STACKED_FRAMES = 2 if TRUNK == "recurrent" else 50
 SEQ_LEN = 32
 
 _SLOT = None
@@ -57,9 +60,10 @@ class Trial:
 
     @property
     def name(self):
-        # pcgrad_ prefix keeps these apart from the plain runs' checkpoints,
-        # tensorboard logs and done markers
-        prefix = "pcgrad_" if self.pc_grad else ""
+        # rnn_/pcgrad_ prefixes keep these apart from the plain stacked runs'
+        # checkpoints, tensorboard logs and done markers
+        prefix = "rnn_" if TRUNK == "recurrent" else ""
+        prefix += "pcgrad_" if self.pc_grad else ""
         return f"{prefix}{self.group}_w{self.weight:g}_s{self.seed}"
 
     @property
@@ -122,7 +126,7 @@ def worker(trial: Trial):
         params=TrainParams(
             aux_weights=gen_aux_weights_default_zero(trial.params),
             num_stacked_lidar_frames=NUM_STACKED_FRAMES,
-            trunk="stacked",
+            trunk=TRUNK,
             seq_len=SEQ_LEN,
             name=trial.name,
             n_rays=101,
