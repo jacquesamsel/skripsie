@@ -383,6 +383,7 @@ The symbols in this thesis follow a small set of conventions, so a new expressio
   [$nabla_theta f(theta)$], [Gradient of the function $f(theta)$ with respect to parameters $theta$],
 
   table.cell(colspan: 2)[*Probability and statistics*],
+  [$x plus.minus y$], [The mean $x$ with sample standard deviation $y$],
   [$Delta_cal(Y)$], [Set of all probability distributions with support $cal(Y)$],
   [$X ~ Y$], [$X$ is distributed according to $Y$],
   [$X dot(~) Y$], [$X$ is approximately distributed according to $Y$],
@@ -834,7 +835,7 @@ therefore gives less force, not more, which is a regime a racing agent must
 learn to avoid. The curve is defined separately for the forward direction
 (accelerating and braking) and the sideways direction (cornering). Note that in real life, at low slip values, the rubber stretches instead of actually sliding on the road. This is modelled by the rising part of the curve at low slip values.
 
-@wheel_friction_curve shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve. The values used for our simulations are detailed in @wheel_collider_properties and are the values calibrated by Samak and Samak @samak2024autonomyorienteddigitaltwins for the RoboRacer platform, ported to our custom Unity simulator.
+ shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve. The values used for our simulations are detailed in @wheel_collider_properties and are the values calibrated by Samak and Samak @samak2024autonomyorienteddigitaltwins for the RoboRacer platform, ported to our custom Unity simulator.
 
 #[
   #let asymptote-slip = 0.25
@@ -1895,13 +1896,13 @@ Total throughput peaks at 8 trainers (4172 timesteps/s with 8 environments and 1
 
 To evaluate how auxiliary losses affect agent performance, we trained every combination of active auxiliary losses, auxiliary loss weight and model architecture for 600 PPO iterations. Each iteration collected 256 frames from each of 48 concurrent environments, so each run totals about 7.4 million timesteps ($approx 82 "hours"$ of simulated time). We chose 600 iterations because a test run showed the baseline feedforward (FF) model's reward plateauing well before this point (@baseline_reward_per_timestep). Each configuration was trained with 6 different seeds.
 
-To evaluate a run, we took measurements of its performance during the following training rollout at each step on the randomly generated test tracks. We then averaged each statistic over these 50 checkpoints to get one value per run. Averaging reduces checkpoint-to-checkpoint noise. However, because consecutive checkpoints are strongly correlated, we treat each average as a single observation, since doing otherwise would lead to an overestimation of the sample size. Therefore, each configuration has $N = 6$ samples (one per seed) rather than $6 times 50$.
+To evaluate a run, we took measurements of its performance during the rollout at each training step on the unseen, randomly generated test tracks. We then averaged each statistic over these 50 checkpoints to get one value per run. Averaging reduces checkpoint-to-checkpoint noise. Because consecutive checkpoints are strongly correlated, we treat each average as a single observation, since doing otherwise would lead to an overestimation of the sample size. Therefore, each configuration has $N = 6$ samples (one per seed) rather than $6 times 50$.
 
 == Baseline Model Performance
 
 The baseline feedforward model trained with the PPO loss and no auxiliary targets performed well in the primary task across $N=6$ seeds. It achieved a mean CPMP across 6 seeds of $0.0034 plus.minus 0.0028 "crashes/m"$, indicating approximately one crash every 297 metres. It achieved a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$.
 
-The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$, almost 10x higher than the feedforward model. It achieved a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the performance of the feedforward model.
+The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$, about 11x higher than the feedforward model. It achieved a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$, approximately half the performance of the feedforward model.
 
 Before we consider the effect of auxiliary losses, we first establish what the baseline models' internal representations encode in @sec:baseline_model_features.
 
@@ -2182,7 +2183,7 @@ Practitioners should probe a baseline before choosing auxiliary targets, favour 
 == Graduate Attributes
 === Complex Engineering Problem
 
-The project requires a first-principles formulation of autonomous racing as a POMDP and of the vehicle dynamics, specialist RL knowledge, and engagement with current research on privileged information, auxiliary learning and probing. It has no obvious solution: a LiDAR-only agent must learn quantities it cannot observe, and it is unclear which privileged targets or loss weights will help. It involves conflicting requirements (speed vs. safety, primary vs. auxiliary losses, fidelity vs. training speed) and coupled subsystems, since the trainer and simulator compete for the same hardware and must be tuned together.
+The project features a first-principles formulation of autonomous racing as a POMDP and of the vehicle dynamics (@sec:pomdp), specialist RL knowledge (@sec:rl), and engagement with current research on privileged information, auxiliary learning and probing (@sec:related_literature, @sec:baseline_model_features). It has no obvious solution: a LiDAR-only agent must learn quantities it cannot observe, and it is unclear which privileged targets or loss weights will help. It involves conflicting requirements (speed vs. safety (@sec:agent_performance_after_auxiliary_learning), primary vs. auxiliary losses, fidelity vs. training speed (@sec:simulator)) and coupled subsystems, since the trainer and simulator compete for the same hardware and must be tuned together.
 
 === Problem Solving (GA1)
 
@@ -2217,7 +2218,7 @@ The major design problem was a complete system for training and evaluating LiDAR
 
 - *Agent:* A shared convolutional trunk feeds policy, value and auxiliary heads, so auxiliary gradients shape the policy's representation (@sec:agent, @network_architecture). A clamped linear output fixed tanh saturation, layer normalisation fixed pitch-induced gradient explosions, and the two variants differ only in the GRU.
 
-- *Loss and experiments:* Testing ten categories alone at three weights needs 34 configurations instead of $3^10 = 59049$, at the cost of ignoring interactions (@sec:weighting_scheme). Normalisation and the Huber loss stop heavy-tailed targets dominating (@sec:loss_function), and reward weights can be tuned to an application's risk tolerance (@sec:reward_function).
+- *Loss and experiments:* Testing ten categories alone at three weights needs 34 configurations instead of $4^10 approx 1.05 "million"$, at the cost of ignoring interactions (@sec:weighting_scheme). Normalisation and the Huber loss stop heavy-tailed targets dominating (@sec:loss_function), and reward weights can be tuned to an application's risk tolerance (@sec:reward_function).
 
 === Investigations, Experiments and Data Analysis (GA4)
 
