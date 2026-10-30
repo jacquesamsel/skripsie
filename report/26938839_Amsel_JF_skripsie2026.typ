@@ -835,7 +835,7 @@ therefore gives less force, not more, which is a regime a racing agent must
 learn to avoid. The curve is defined separately for the forward direction
 (accelerating and braking) and the sideways direction (cornering). Note that in real life, at low slip values, the rubber stretches instead of actually sliding on the road. This is modelled by the rising part of the curve at low slip values.
 
- shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve. The values used for our simulations are detailed in @wheel_collider_properties and are the values calibrated by Samak and Samak @samak2024autonomyorienteddigitaltwins for the RoboRacer platform, ported to our custom Unity simulator.
+shows the difference between a Unity-style piecewise friction curve and a Pacejka "magic formula" curve that was fit using least-squares to approximate Unity's friction curve. The values used for our simulations are detailed in @wheel_collider_properties and are the values calibrated by Samak and Samak @samak2024autonomyorienteddigitaltwins for the RoboRacer platform, ported to our custom Unity simulator.
 
 #[
   #let asymptote-slip = 0.25
@@ -1358,7 +1358,7 @@ Each network consists of a shared _trunk_ that produces a 64-dimensional feature
 - the _value head_ outputs the state-value estimate $hat(V)^pi (s)$, and
 - the _auxiliary head_ outputs predictions of the privileged targets
 
-The trunk's input is a $50 times 101$ tensor (or $4 times 101$ in the RNN) containing the 50 (or 2 in the RNN) most recent LiDAR scans of 101 rays each. We use two in the RNN so that temporal information must be primarily captured through the recurrent connections. Four 1D convolutions slide along the ray axis and treat the time steps as input channels, so the first layer combines the full history at every angular position. The convolutions have 16, 32, 32 and 16 output channels, a kernel size of 8 rays (about $21 degree$ of the field of view) and ReLU activations. Their output is flattened, concatenated with the current steering angle and throttle, and passed through dense layers of 128, 72 and 64 units with ReLU activations.
+The trunk's input is a $50 times 101$ tensor (or $2 times 101$ in the RNN) containing the 50 (or 2 in the RNN) most recent LiDAR scans of 101 rays each. We use two in the RNN so that temporal information must be primarily captured through the recurrent connections. Four 1D convolutions slide along the ray axis and treat the time steps as input channels, so the first layer combines the full history at every angular position. The convolutions have 16, 32, 32 and 16 output channels, a kernel size of 8 rays (about $21 degree$ of the field of view) and ReLU activations. Their output is flattened, concatenated with the current steering angle and throttle, and passed through dense layers of 128, 72 and 64 units with ReLU activations.
 
 The 64-dimensional output is then layer-normalised. Under heavy acceleration the car's body tilts, pointing the LiDAR above the track walls so that many rays return close to the maximum normalised length of 1. Without normalisation, these inputs can cause gradients to explode, which was observed in early tests.
 In the recurrent variant, a gated recurrent unit (GRU) @cho2014learningphraserepresentationsusing with a hidden size of 64 follows the layer norm, and its output is passed to the heads instead. The GRU was used instead of a long short-term memory (LSTM) @hochreiter1997longshorttermmemory because it is simpler, and because previous work @węgrzynowski2024learningdynamicsmodelsvelocity has shown it to be more effective in predicting velocity state in autonomous racing, which is closely related to our task.
@@ -1965,7 +1965,7 @@ The findings in @fig:last_50_means_heatmap must be interpreted with caution, how
 
 #figure(
   image("../results/figures/last_50_means_heatmap.pdf", width: 108%),
-  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, progress per second, and CPMP) vs the baseline model. The model name consists of the active auxiliary loss group and weight. The $p_"adj"$-value is reported in brackets beneath the value in each cell, using a two-sided t-test for the null hypothesis that the means is equal to the baseline model's mean. Adjusted for multiple comparisons in each pane using the Benjamini-Hochberg procedure @benjamini1995controlling],
+  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, progress per second, and CPMP) vs the baseline model. The model name consists of the active auxiliary loss group and weight. The $p_"adj"$-value is reported in brackets beneath the value in each cell, using a two-sided t-test for the null hypothesis that the mean is equal to the baseline model's mean. Adjusted for multiple comparisons in each pane using the Benjamini-Hochberg procedure @benjamini1995controlling],
 ) <fig:last_50_means_heatmap>
 
 @fig:progress_vs_collision shows the mean PPS vs CPMP for each model configuration, with the baseline FF model marked with the dotted lines. The trend is clear that the close-ahead curvature losses at high weights improve both speed and safety for both architectures.
@@ -2007,7 +2007,7 @@ The experiments address three questions: what a baseline agent's representation 
 
 *Effect on driving:* Close-ahead curvature is the only target that improved both architectures in the screening experiment (up to +13% PPS and -64% CPMP for the feedforward model, and +125% PPS and -96% CPMP for the recurrent model). A follow-up with fresh seeds confirmed the feedforward result: +30% PPS and -93% CPMP (adjusted p-value = 0.036).
 
-Beyond curvature, the two architectures respond very differently: auxiliary losses improved the reward AUC in 26 of 33 recurrent configurations but only 4 of 33 feedforward ones, consistent with the findings of Lample et al. @lample2017fps. Because the recurrent baseline is underperforms compared to the FF model, this suggests that auxiliary losses mainly ease the training of a struggling agent. Part of this benefit may be independent of the target itself. Every effect depends strongly on the loss weight: for example, enabling all targets at $w = 0.1$ raised the recurrent model's AUC to \~73, but at $w = 1$ it remained near the baseline \~42.
+Beyond curvature, the two architectures respond very differently: auxiliary losses improved the reward AUC in 26 of 33 recurrent configurations but only 4 of 33 feedforward ones, consistent with the findings of Lample et al. @lample2017fps. Because the recurrent baseline underperforms compared to the FF model, this suggests that auxiliary losses mainly ease the training of a struggling agent. Part of this benefit may be independent of the target itself. Every effect depends strongly on the loss weight: for example, enabling all targets at $w = 0.1$ raised the recurrent model's AUC to \~73, but at $w = 1$ it remained near the baseline \~42.
 
 *Effect on representations:* Auxiliary losses made their targets more decodable (close-ahead curvature $R^2$ rose by up to 0.45 in the feedforward model and 0.49 in the recurrent model), sometimes at the expense of other quantities, such as forward slip in the feedforward model. Greater decodability does not, however, imply better driving: enabling all targets at $w = 1$ significantly increased decodability, yet produced one of the worst feedforward agents.
 
@@ -2033,7 +2033,7 @@ Apart from the feedforward curvature result, these comparisons were not signific
 
 == Limitations
 
-The feedforward agent receives 50 LiDAR frames and the recurrent agent 4, so their differences are not due to recurrence alone. The 600-iteration budget came from a feedforward pilot, so the recurrent baseline may have been undertrained. The leave-one-in design ignores interactions between targets, linear probes miss nonlinearly encoded information, and all work was in simulation. Furthermore, our work achieved improved performance, but it was only possible by evaluating many different auxiliary loss configurations. We do not provide a method in general to _a priori_ determine which auxiliary losses will improve the agent's performance, or to select loss weights. Although we ran many training runs to explore the effect of auxiliary losses, we did not consider whether this compute budget would be better spent on other avenues, such as tuning of the PPO agent.
+The feedforward agent receives 50 LiDAR frames and the recurrent agent 2, so their differences are not due to recurrence alone. The 600-iteration budget came from a feedforward pilot, so the recurrent baseline may have been undertrained. The leave-one-in design ignores interactions between targets, linear probes miss nonlinearly encoded information, and all work was in simulation. Furthermore, our work achieved improved performance, but it was only possible by evaluating many different auxiliary loss configurations. We do not provide a method in general to _a priori_ determine which auxiliary losses will improve the agent's performance, or to select loss weights. Although we ran many training runs to explore the effect of auxiliary losses, we did not consider whether this compute budget would be better spent on other avenues, such as tuning of the PPO agent.
 
 == Recommendations and future work
 
@@ -2046,7 +2046,9 @@ Practitioners should probe a baseline before choosing auxiliary targets, favour 
 #in-appendix.update(true)
 #set heading(supplement: none, numbering: none)
 
+#set page(flipped: true)
 = Appendix
+
 
 #counter(heading).update(1)
 #set heading(numbering: (..n) => {
@@ -2062,13 +2064,12 @@ Practitioners should probe a baseline before choosing auxiliary targets, favour 
 
 //#counter(heading).update(ar => (ar.at(1), 0))
 
-#set page(flipped: true)
 == Project Timeline
 #[
   #set text(size: 0.9em)
 
   #figure(
-    gantty.gantt(
+    scale(80%, reflow: true, gantty.gantt(
       (
         tasks: (
           (
@@ -2174,7 +2175,7 @@ Practitioners should probe a baseline before choosing auxiliary targets, favour 
           )),
           milestones: gantty.milestones.default-milestones-drawer.with(today-content: none),
         ),
-    ),
+    )),
     caption: [Timeline of the project, showing the main tasks and their durations.],
   )
 ]
@@ -2216,7 +2217,7 @@ The major design problem was a complete system for training and evaluating LiDAR
 
 - *Track generator:* An original random walk with a restoring strength that ramps up over the lap lets tracks wander yet close (@sec:track, @fig:walk-step). Polygon offsetting avoids narrow sections (@trackgen_inset_outset), and rejecting the rare degenerate tracks (0.05% and 1.35%) costs little.
 
-- *Agent:* A shared convolutional trunk feeds policy, value and auxiliary heads, so auxiliary gradients shape the policy's representation (@sec:agent, @network_architecture). A clamped linear output fixed tanh saturation, layer normalisation fixed pitch-induced gradient explosions, and the two variants differ only in the GRU.
+- *Agent:* A shared convolutional trunk feeds policy, value and auxiliary heads, so auxiliary gradients shape the policy's representation (@sec:agent, @network_architecture). A clamped linear output fixed tanh saturation, layer normalisation fixed pitch-induced gradient explosions, and the two variants differ in the GRU and the length of the LiDAR history (2 frames instead of 50).
 
 - *Loss and experiments:* Testing ten categories alone at three weights needs 34 configurations instead of $4^10 approx 1.05 "million"$, at the cost of ignoring interactions (@sec:weighting_scheme). Normalisation and the Huber loss stop heavy-tailed targets dominating (@sec:loss_function), and reward weights can be tuned to an application's risk tolerance (@sec:reward_function).
 
@@ -2306,16 +2307,25 @@ The project is built on emerging technologies. End-to-end deep RL for driving is
 
 === AI Work Declaration
 
-- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain to me why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me, and I understand the process. Clause was also used in the formulation of the track curvature calculations in @sec:track_curvature, as well as implementation in code.
+- #link("http://claude.ai")[Claude] was used for searching literature, checking the report for errors, advice on clarity of writing, and changing the format of references from BibTex to Hayagriva. Furthermore, Claude was used to explain various tensor shape bugs in PyTorch code, but the final implementation was always done manually, as well as to explain how TorchRL works. Initially, Claude was used to generate diagrams, but I did not like how little control I had over the diagrams, so re-implemented them manually from scratch. Claude was used to generate parts of @fig:walk-step based on a handmade diagram. Claude was used to explain to me why certain training setups may perform badly on the hardware available. Claude was used to explain how to perform the FDR analysis on @aux_head_regression_results, but the code was written by me, and I understand the process. Claude was also used in the formulation of the track curvature calculations in @sec:track_curvature, as well as implementation in code.
 
 - #link("https://gemini.google.com")[Google Gemini] was used to a lesser extent for searching literature, and, before starting the project, for assistance in understanding RL in conjunction with the #link("https://www.youtube.com/watch?v=2pWv7GOvuf0")[David Silver videos]. Gemini was instrumental in explaining potential-based reward shaping in an easy-to-understand way. Gemini was used to do spelling & grammar checking. Google Gemini was used to translate the GA statements more understandable, less flowery form. Gemini was also used to read the report and provide advice on what information could be included in the GA appendix.
 
 - #link("https://scholar.google.co.za/scholar_labs/search")[Google Scholar Labs] was used extensively in searching for literature.
+
 - #link("http://chat.deepseek.com")[DeepSeek] was used to search for literature, and to provide input on the structure and content of the report. For example, it advised which sections could be reduced in length without sacrificing report quality. Deepseek was also used to provide advice on how to make charts look better, although the implementation was done by hand.
 
 
 === Own Work Declaration
-AI was not used to generate the training code or the model definition code - that was hand-coded. Furthermore, the statistical analysis code was hand-written, and the report was written by hand, with AI used for checking grammar and spelling, and for advice on the writing. The graphs and diagrams were hand-coded. Creation of the simulator was done by hand, although AI was regularly consulted on how Unity works.
+AI was not used to generate the training code or the model definition code - that was hand-coded. AI was used to explain library behaviour and debug concepts; all final training code was written by me.
+
+Furthermore, the statistical analysis code was written by me, and the report was written by me as well, with AI used for checking grammar and spelling, and for advice on the writing. Most graphs and diagrams were hand-coded, though AI was used to assist in the creation of some visual elements (e.g. font sizing, adding legends etc.). Creation of the simulator was done by hand, although AI was regularly consulted on how Unity works.
+
+Sources and references were verified and cited by myself, although reference conversions were done using AI to convert from BibTex to Hayagriva format.
+
+The track generation code was written by me in python, and then AI was used to translate it into C\# for Unity.
+
+This AI declaration is also made by me.
 
 #pagebreak()
 
@@ -2364,7 +2374,7 @@ The values in @fig:wheel_collider_properties are the parameters of the WheelColl
 #pagebreak()
 == Derivation of the Policy Gradient Theorem <sec:policy_gradient_theorem_proof>
 
-This appendix provides a proof of the policy gradient theorem based on Sutton et al. @@sutton1999policygradient, where, given a policy $pi_theta$ parameterised by $theta$, the gradient of the expected return $J(theta)$ with respect to $theta$ can be expressed as an expectation over trajectories $tau$ sampled from the policy:
+This appendix provides a proof of the policy gradient theorem based on Sutton et al. @sutton1999policygradient, where, given a policy $pi_theta$ parameterised by $theta$, the gradient of the expected return $J(theta)$ with respect to $theta$ can be expressed as an expectation over trajectories $tau$ sampled from the policy:
 
 $
   J(theta) = EE_(tau tilde p_theta) [G_0]
