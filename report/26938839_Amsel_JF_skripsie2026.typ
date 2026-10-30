@@ -682,7 +682,7 @@ The following chapters shall outline the design and implementation of the two su
 
 = Simulator <sec:simulator>
 
-Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among methods surveyed in the survey by Evans et al. @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
+Previous work on end-to-end driving has largely made use of the F1Tenth gym, with the F1Tenth gym being the most common simulator among studies surveyed by Evans et al. @evans2024unifyingf1tenthautonomousracing. The F1Tenth gym is a Python-based 2D simulator for the F1Tenth (now RoboRacer) vehicle. This simulator is easy to use, and runs in Numba-compiled Python, but features a simplified bicycle model of the vehicle, which approximates slip dynamics using a linear function  @okelly2020f1tenthgym.
 
 The AutoDrive simulator @AutoDRIVESimulator2021, which uses the Unity game engine @unity2023, is a 3D simulator that models the vehicle and its environment using PhysX @nvidia_physx, a physics engine developed by NVIDIA. PhysX simulates rigid-body dynamics, including collisions, friction and gravity, and allows for higher-fidelity simulations, including weight transfer dynamics, and suspension deformation in Unity.
 
@@ -1956,7 +1956,7 @@ The auxiliary losses also affect the two architectures very differently. Relativ
 Considering AUC alone is not sufficient to evaluate the performance of the models, as it does not allow us to understand the trade-off between speed and safety. We therefore also evaluate the mean of the last 50 training iterations of each model's metrics (mean reward, PPS, and CPMP) against the baseline model in
 @fig:last_50_means_heatmap. The curvature close auxiliary loss features as a strong improvement to both model architectures, achieving up to a -96% CPMP when compared to the recurrent baseline, and a -62% CPMP on the feedforward model. These models are not only safer, but also faster than their respective baselines (+125%, +13% PPS respectively). 
 
-The findings in @fig:last_50_means_heatmap must be interpeted with caution, however, as after correcting for multiple comparisons, they are not significant at $alpha = 0.05$. We therefore consider these findings as screening for trends rather than definitive conclusions.
+The findings in @fig:last_50_means_heatmap must be interpeted with caution, however, as after correcting for multiple comparisons using the Benjamini-Hochberg procedure @benjamini1995controlling, they are not significant at $alpha = 0.05$. We therefore consider these findings as screening for trends rather than definitive conclusions.
 
 #figure(
   image("../results/figures/last_50_means_heatmap.pdf", width: 108%),
@@ -1972,22 +1972,24 @@ Importantly, @fig:last_50_means_heatmap and @fig:progress_vs_collision indicate 
   caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline. For readability, some run categories are cropped off the chart.],
 ) <fig:progress_vs_collision>
 
-In order to achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 seeds for each of the close-ahead curvature FF and baseline FF configurations. Since we are only comparing two configurations, we do not need to perform multiple-comparison corrections, allowing us to better detect significant differences.
-// #figure(
-//   image("../results/figures/training_perf_followup.pdf"),
-// )
+To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Since we are only comparing two configurations, we do not need to perform multiple-comparison corrections, allowing us to better detect differences in performance.
+#figure(
+  [fig],
+  caption: [Performance of the feedforward model with and without the close-ahead curvature auxiliary loss, with 6 seeds each. The mean and standard error of the mean are shown by the shaded area.],
+)
 
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
-Applying the same probing technique from @sec:baseline_model_features after auxiliary training, we find that the decodability of privileged quantities improved significantly in configurations that performed well for the FF model, but that an increase in decodability does not always translate to an improvement in performance. The full results are visualised in @aux_head_regression_results, since they are too numerous to include in the main text.
+Applying the same probing technique from @sec:baseline_model_features after training with auxiliary losses enabled, we find that the decodability of privileged quantities improved significantly when auxiliary losses were used, but that an increase in decodability does not always translate to an improvement in performance.
 
-The close-ahead ($<= 3m$) track curvature auxiliary losses were extremely effective in improving the decodability of the trunk's final layer. In both the feedforward and recurrent models, these losses improved the out-of-sample $R^2$ scores in close-ahead curvature quantities by between +10 to +49 percentage points, depending on the weight and distance, and even significantly improved the decodability of quantities that were not directly supervised, such as 3.5-m-ahead curvature (up to +27 percentage points). The medium-ahead ($3m < x <= 6m$) curvature auxiliary loss also improved the decodability of the trunk's final layer, but to a lesser extent.
+The decodability of the close-ahead curvature targets improved significantly in both architectures when the close-ahead curvature auxiliary loss was used, as shown in @fig:r2score_diff_curvature_close. The mean out-of-sample $R^2$ for the close-ahead curvature targets increased by up to 0.45 in the feedforward model and up to 0.49 on average in the recurrent model on average across 6 seeds, indicating that the internal representations of these models now encode this information in a more decodable fashion. When close-ahead curvature losses were applied to the FF model, the decodability of the medium-ahead curvature targets also improved, though may be confounded by the fact that the medium-ahead curvature targets are highly correlated with the close-ahead curvature targets.
 
-When losses were introduced for the wheel slip quantities, the decodability of the corresponding quantities improved significantly for smaller loss weights ($w_"aux" in {0.1, 0.3}$). Interestingly, when forward wheel slip was supervised for the front wheels, the decodability of the back wheel slip also increased. We hypothesise that this is because the car is driven with an all-wheel-drive configuration, so the front and back wheels are coupled, but this was not tested.
+When trained with 
 
-Lateral slip supervision had mixed effects, with the decodability of the corresponding quantities improving significantly only for a larger loss weight ($w_"aux" = 1$), and also resulted in no improvement in the agent's performance.
-
-When all auxiliary losses were enabled, the decodability of almost all quantities improved significantly, but the agent's performance only improved in terms of safety with a low auxiliary loss weight ($w_"aux" = 0.1$). This suggests that the auxiliary losses may be competing for the model's capacity when they are all enabled.
+#figure(
+  image("../results/figures/probe_heatmap_aux_curvature_close.pdf", width: 110%),
+  caption: [Absolute difference in mean out-of-sample $R^2$ between the baseline and the model with close-ahead curvature auxiliary losses in (a) the FF network and (b) the recurrent network. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.05$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling within each model across all auxiliary targets. The results for all auxiliary heads are available in @aux_head_regression_results.]
+) <fig:r2score_diff_curvature_close>
 
 
 = Conclusions and recommendations <sec:conclusion>
@@ -2526,9 +2528,9 @@ In most configurations, the decodability of the forward wheel slip quantities de
 
 #figure(
   image("../results/figures/probe_heatmap_aux.pdf", height: 85%),
-  caption: [Difference in mean out-of-sample $R^2$ vs the baseline feedforward PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.1$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
+  caption: [Difference in mean out-of-sample $R^2$ vs the baseline feedforward PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.05$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
 ) <fig:aux_head_regression_results>
 #figure(
   image("../results/figures/probe_heatmap_aux_rnn.pdf", height: 85%),
-  caption: [Difference in mean out-of-sample $R^2$ vs the baseline recurrent PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.1$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
+  caption: [Difference in mean out-of-sample $R^2$ vs the baseline recurrent PPO model. The X-axis shows the auxiliary target, and the Y-axis shows the auxiliary training configuration. Red boxes indicate the features that are supervised by the auxiliary loss. Bold where the null hypothesis that the means are equal is rejected ($alpha = 0.05$), corrected for false discovery rate using the Benjamini-Hochberg procedure @benjamini1995controlling],
 ) <fig:aux_head_regression_results_rnn>
