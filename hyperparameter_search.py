@@ -14,25 +14,25 @@ def curvature_keys(lo, hi):
 
 
 HYPERPARAMETER_GROUPS = {
-    "velocity_forward": ["velocity_forward"],
-    "velocity_lateral": ["velocity_lateral"],
-    "angular_velocity_y": ["angular_velocity_y"],
+    # "velocity_forward": ["velocity_forward"],
+    # "velocity_lateral": ["velocity_lateral"],
+    # "angular_velocity_y": ["angular_velocity_y"],
     "curvature_close": curvature_keys(0.0, 3.0),
-    "curvature_medium": curvature_keys(3.0, 6.0),
-    "curvature_far": curvature_keys(6.0, 8.0),
-    "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
-    "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
-    "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
-    "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
-    "all": AUX_HEAD_KEYS
+    # "curvature_medium": curvature_keys(3.0, 6.0),
+    # "curvature_far": curvature_keys(6.0, 8.0),
+    # "wheel_slip_front_forward": ["wheel_slip_forward_front_left", "wheel_slip_forward_front_right"],
+    # "wheel_slip_front_lateral": ["wheel_slip_lateral_front_left", "wheel_slip_lateral_front_right"],
+    # "wheel_slip_rear_forward": ["wheel_slip_forward_back_left", "wheel_slip_forward_back_right"],
+    # "wheel_slip_rear_lateral": ["wheel_slip_lateral_back_left", "wheel_slip_lateral_back_right"],
+    # "all": AUX_HEAD_KEYS
 }
 
 # HYPERPARAMETER_GROUPS = {
 #     "all": AUX_HEAD_KEYS
 # }
 
-WEIGHT_VALUES = [0.03, 0.1, 0.3, 1.0]
-SEEDS = [0, 1, 2, 3, 4, 5]
+WEIGHT_VALUES = [0.1, 0.3, 1.0]
+SEEDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 RUNS_DIR = Path("run_done_flags")
 
@@ -76,10 +76,11 @@ def build_trials():
     for g, keys in HYPERPARAMETER_GROUPS.items():
         assert keys, f"Group '{g}' is empty - check your filters"
 
-    # PCGrad sweep: every aux head at the same weight
-    trials = [Trial("all", w, s, pc_grad=True)
-              for w in WEIGHT_VALUES
-              for s in SEEDS]
+    trials = [Trial("baseline", 0.0, s) for s in SEEDS]
+    trials += [Trial(g, w, s)
+               for g in HYPERPARAMETER_GROUPS
+               for w in WEIGHT_VALUES
+               for s in SEEDS]
     # seed-major order: complete seed sets finish first
     trials.sort(key=lambda t: t.seed)
     return trials
