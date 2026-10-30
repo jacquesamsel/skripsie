@@ -916,6 +916,71 @@ navon2021auxiliarylearningimplicitdifferentiation:
   serial-number:
     arxiv: '2007.02693'
 
+du2020adaptingauxiliarylossesusing:
+  type: misc
+  title: Adapting Auxiliary Losses Using Gradient Similarity
+  author:
+  - Du, Yunshu
+  - Czarnecki, Wojciech M.
+  - Jayakumar, Siddhant M.
+  - Farajtabar, Mehrdad
+  - Pascanu, Razvan
+  - Lakshminarayanan, Balaji
+  date: 2020
+  url: https://arxiv.org/abs/1812.02224
+  serial-number:
+    arxiv: '1812.02224'
+
+
+weihs2021bridging:
+  type: article
+  title: Bridging the Imitation Gap by Adaptive Insubordination
+  author:
+  - Weihs, Luca
+  - Jain, Unnat
+  - Liu, Iou-Jen
+  - Salvador, Jordi
+  - Lazebnik, Svetlana
+  - Kembhavi, Aniruddha
+  - Schwing, Alex
+  date: 2021
+  editor:
+  - Ranzato, M.
+  - Beygelzimer, A.
+  - Dauphin, Y.
+  - Liang, P.S.
+  - Vaughan, J. Wortman
+  page-range: 19134-19146
+  url: https://proceedings.neurips.cc/paper_files/paper/2021/file/9fc664916bce863561527f06a96f5ff3-Paper.pdf
+  parent:
+    type: proceedings
+    title: Advances in Neural Information Processing Systems
+    publisher: Curran Associates, Inc.
+    volume: 34
+
+
+baisero2022unbiased:
+  type: article
+  title: Unbiased Asymmetric Reinforcement Learning under Partial Observability
+  author:
+  - Baisero, Andrea
+  - Amato, Christopher
+  date: 2022
+  page-range: 44-52
+  serial-number:
+    isbn: '9781450392136'
+  abstract: In partially observable reinforcement learning, offline training gives access to latent information which is not available during online training and/or execution, such as the system state. Asymmetric actor-critic methods exploit such information by training a history-based policy via a state-based critic. However, many asymmetric methods lack theoretical foundation, and are only evaluated on limited domains. We examine the theory of asymmetric actor-critic methods which use state-based critics, and expose fundamental issues which undermine the validity of a common variant, and limit its ability to address partial observability. We propose an unbiased asymmetric actor-critic variant which is able to exploit state information while remaining theoretically sound, maintaining the validity of the policy gradient theorem, and introducing no bias and relatively low variance into the training process. An empirical evaluation performed on domains which exhibit significant partial observability confirms our analysis, demonstrating that unbiased asymmetric actor-critic converges to better policies and/or faster than symmetric and biased asymmetric baselines.
+  parent:
+    type: proceedings
+    title: Proceedings of the 21st International Conference on Autonomous Agents and Multiagent Systems
+    publisher:
+      name: International Foundation for Autonomous Agents, Multiagent Systems
+      location: Virtual Event, New Zealand
+    parent:
+      type: proceedings
+      title: AAMAS '22
+
+
 
 xu2026visionbasedpolicylearninghighspeedautonomousracing:
   type: article
