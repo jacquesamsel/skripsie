@@ -1977,14 +1977,16 @@ Importantly, @fig:last_50_means_heatmap and @fig:progress_vs_collision indicate 
   caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline. For readability, some run configurations are cropped off the chart.],
 ) <fig:progress_vs_collision>
 
-To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Comparing only four configurations allows us to more effectively detect statistical differences.
+To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for the FF close-ahead curvature at weight 1 vs the baseline and recurrent close-ahead curvature at weight 0.3 vs the baseline RNN configurations. Comparing only four configurations allows us to more effectively detect statistical differences.
 
-Training with the close-ahead curvature auxiliary loss improves the feedforward model's training speed, stability, and performance, as shown in @fig:training_perf. It achieves a significantly higher PPS (adjusted p-value = 0.036) of +30% compared to the baseline, and a significantly lower CPMP (adjusted p-value = 0.036), 93% better than the baseline on average across the 6 seeds. Importantly, the follow-up experiment drew worse-performing seeds for the baseline compared to the screening, so the unusually good results are partly influenced by the baseline's underperformance.
+Training with the close-ahead curvature auxiliary loss improves the feedforward model's training speed, stability, and performance, as shown in @fig:training_perf. It achieves a significantly higher PPS (adjusted p-value = 0.036) of +30% compared to the baseline, and a significantly lower CPMP (adjusted p-value = 0.036), 93% better than the baseline on average across the 6 seeds. Importantly, the follow-up experiment drew worse-performing seeds for the FF baseline compared to the screening, so the unusually good results are partly influenced by the baseline's underperformance.
 
 #figure(
   image("../results/figures/training_perf.pdf"),
   caption: [Training curves for the feedforward model with and without the close-ahead curvature auxiliary loss across 6 seeds. (a) Mean reward per timestep, (b) mean PPS, and (c) smoothed CPMP on a log scale. The solid lines show the mean across 6 seeds, and shaded areas show a 95% confidence interval of the mean.],
 ) <fig:training_perf>
+
+For the recurrent model, the close-ahead curvature auxiliary loss at weight 0.3 shows the same trend: mean PPS is 53% higher and mean CPMP is 95% lower than the baseline RNN. However, neither difference is statistically significant (adjusted p = 0.17 for PPS and p = 0.20 for CPMP) because of high variance across seeds.
 
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
@@ -2015,30 +2017,41 @@ Beyond curvature, the two architectures respond very differently: auxiliary loss
 
 *Probing as a guide:* In the feedforward model, the quantities that became more decodable under plain PPO (close-ahead curvature in both and forward slip) are also those that helped as auxiliary targets. This does not hold for the recurrent model, which benefits from forward velocity and forward slip even though their decodability did not rise during training. Probing may therefore be a useful heuristic for choosing targets, but this relationship is untested.
 
-
 = Conclusions and recommendations <sec:conclusion>
 
 == Summary
+This project investigated whether auxiliary losses that predict privileged information can improve a LiDAR-only, end-to-end racing agent. The results suggest they can, though the benefits depend on the target, loss weight and agent architecture. All five objectives in @sec:problem_statement_and_objectives were met: we developed a RoboRacer-calibrated Unity simulator (@sec:simulator), trained and probed feedforward and recurrent PPO baselines (@sec:baseline_model_features), and evaluated ten categories of auxiliary targets at three loss weights across six seeds (@sec:agent_performance_after_auxiliary_learning).
 
-This project investigated whether auxiliary losses that predict privileged information improve a LiDAR-only end-to-end racing agent. All five objectives in @sec:problem_statement_and_objectives were met: a RoboRacer-calibrated Unity simulator was built (@sec:simulator), feedforward and recurrent PPO baselines were trained and probed (@sec:baseline_model_features), and ten auxiliary target categories were evaluated at three weights over six seeds (@sec:agent_performance_after_auxiliary_learning).
+Several important patterns emerged:
 
-The main findings are:
-+ Untrained networks already linearly encode the vehicle's dynamics; training trades this for upcoming track curvature.
-+ Close-ahead curvature is confirmed to help both architectures. In the follow-up experiment, it reduced the feedforward agent's CPMP from $0.011 plus.minus 0.0081$ to $0.001 plus.minus 0.0003 "crashes/m"$ and raised its PPS from $3.57 plus.minus 0.94$ to $4.66 plus.minus 0.068 "m/s"$ ($p = 0.036$). The recurrent agent improved from a CPMP of $0.0381 plus.minus 0.0499$ to #todo("VALUE") and a PPS of $2.00 plus.minus 0.69$ to #todo("VALUE").
-+ Auxiliary losses mostly help the recurrent agent (26 of 33 configurations improved, versus 4 of 33 feedforward).
-+ Greater decodability does not guarantee better driving, and every effect depends on the loss weight.
-+ There exists a trend that quantities that improve decodability during PPO training are also the ones that improve driving when used as auxiliary targets. We do however, not present a clear, proven relationship.
++ Lateral dynamics were linearly decodable even in untrained networks. After PPO training, however, they became less decodable as the networks learned to instead represent upcoming track curvature.
 
-Apart from the feedforward curvature result, these comparisons were not significant after Benjamini–Hochberg correction, so findings 3 and 4 are trends rather than confirmed effects.
++ Close-ahead curvature (at distances $<= 3 "m"$) was the only auxiliary target to improve driving performance in both architectures. In a follow-up experiment, it reduced the feedforward agent's CPMP from $0.011 plus.minus 0.0081$ to $0.001 plus.minus 0.0003 "crashes/m"$ and raised its PPS from $3.57 plus.minus 0.94$ to $4.66 plus.minus 0.068 "m/s"$ (adjusted $p = 0.036$). Since the follow-up baseline happened to draw weaker seeds, the screening results (+13% PPS and -64% CPMP) may better estimate the improvement.
+
++ The recurrent agent followed a similar trend, with CPMP falling from $0.033$ to $0.001 "crashes/m"$ and PPS rising from $2.89$ to $4.43 "m/s"$, though neither change was statistically significant (adjusted $p = 0.20$ and $0.17$, respectively).
+
++ Auxiliary losses improved reward AUC in 26 of 33 recurrent configurations but only 4 of 33 feedforward ones, suggesting that auxiliary learning may especially help the harder-to-train recurrent architecture learn more efficiently.
+
++ Greater decodability did not necessarily mean better driving. The effects of auxiliary learning were also highly sensitive to the loss weight, so this parameter should be tuned.
+
++ In the feedforward architecture, quantities that became more decodable through ordinary PPO training were also those that proved useful as auxiliary targets. This did not strictly hold for the recurrent architecture, so baseline decodability may be a useful but not universal heuristic for selecting targets.
+
+Of these findings, only the close-ahead curvature improvement in the feedforward follow-up was statistically significant. The recurrent improvement, the differences in training behaviour and the link between decodability and target usefulness should therefore be read as trends rather than confirmed effects.
+
+We hypothesise that curvature is an effective target because it provides a low-variance signal that can be learned early in training. More importantly, it describes what the agent must respond to next, whereas velocity and slip mainly describe the consequences of what the car has already done.
 
 == Limitations
+First, the training budget and PPO hyperparameters were chosen using a feedforward pilot, which may have disadvantaged the recurrent agent. Using only six seeds limited statistical power, and the leave-one-in design ignored potential interactions between auxiliary targets. Linear probes also reveal only linearly encoded information, and because each agent was probed on its own rollouts, differences in $R^2$ partly reflect differences in state distributions.
 
-The feedforward agent receives 50 LiDAR frames and the recurrent agent 2, so their differences are not due to recurrence alone. The 600-iteration budget came from a feedforward pilot, so the recurrent baseline may have been undertrained. The leave-one-in design ignores interactions between targets, linear probes miss nonlinearly encoded information, and all work was in simulation. Furthermore, our work achieved improved performance, but it was only possible by evaluating many different auxiliary loss configurations. We do not provide a method in general to _a priori_ determine which auxiliary losses will improve the agent's performance, or to select loss weights. Although we ran many training runs to explore the effect of auxiliary losses, we did not consider whether this compute budget would be better spent on other avenues, such as tuning of the PPO agent.
+The experiments were confined to simulation and to tracks from a single procedural generator, so generalisation to other environments and real-world racing remains uncertain. Finally, this project offers no principled way to choose auxiliary targets or loss weights _a priori_, nor does it show whether the compute spent on tuning auxiliary loss weights would have been better spent tuning PPO itself.
 
 == Recommendations and future work
 
-Practitioners should probe a baseline before choosing auxiliary targets, favour quantities training already moves towards, and test several weights per target. Future work should confirm the recurrent result with fresh seeds and a matched frame stack, combine close-ahead curvature with other targets, evaluate primary-task-aware weighting such as AuxiLearn @navon2021auxiliarylearningimplicitdifferentiation, and transfer the agents to a physical RoboRacer.
+When building an end-to-end RL racing agent, one should prioritise close-ahead curvature as an auxiliary target, use probes of a baseline agent to identify other promising targets, and evaluate multiple loss weights rather than a single setting. Further work could test how general these recommendations are and clarify why the improvements occur.
 
+First, the recurrent experiment should be repeated with more seeds. Second, the explanation for curvature's effectiveness should be tested directly, for instance by checking whether switching off the curvature loss partway through training preserves its benefits, and whether other forward-looking targets help similarly.
+
+Future work should also explore combining close-ahead curvature with other promising targets, as well as whether adaptive weighting methods could forgo the need to perform expensive tuning. To establish whether auxiliary prediction is the best way to exploit privileged information, it should be compared against asymmetric critics @pinto2017asymmetricactorcriticimagebased and teacher-student distillation @xu2026visionbasedpolicylearninghighspeedautonomousracing using the same privileged information. Finally, the experiments should be extended to head-to-head racing and, ultimately, to a physical RoboRacer.
 
 #pagebreak()
 #bibliography("./hyagriva.yaml", style: "ieee", title: [Bibliography])
