@@ -513,11 +513,11 @@ Teacher-student distillation @hinton2015distillingknowledgeneuralnetwork involve
 
 === Auxiliary learning
 
-Auxiliary learning is a method that falls under the umbrella of multi-task learning, where a model is trained to perform multiple tasks simultaneously. Specifically, in auxiliary learning, the model's performance on the auxiliary task is not an objective in itself, but the model's performance on the auxiliary task is used to improve its performance on the primary task. This occurs because the auxiliary task provides additional information that can be used to improve the model's understanding of the primary task, which can lead to better generalisation and faster learning @ruder2017overviewmultitasklearningdeep.
+Auxiliary learning is a method that falls under the umbrella of multi-task learning, where a model is trained to perform multiple tasks simultaneously. Specifically, in auxiliary learning, the model's performance on the auxiliary task is not an objective in itself, but the model's performance on the auxiliary task is used to improve its performance on the primary task. This occurs when the auxiliary task provides additional information that can be used to improve the model's understanding of the primary task, which can lead to better generalisation and faster learning @ruder2017overviewmultitasklearningdeep. We focus on two ways of using privileged information as auxiliary tasks: auxiliary rewards and auxiliary losses.
 
 ==== Auxiliary Rewards
 
-When privileged information is available, it can be used to construct auxiliary rewards that guide the agent toward desirable behaviors by evaluating performance against sub-goals. For example, in autonomous racing, privileged knowledge of track layout or opponent positions can generate bonuses for staying centered or avoiding near-misses.
+When privileged information is available, it can be used to construct auxiliary rewards that guide the agent toward desirable behaviors by evaluating performance against sub-goals. For example, in autonomous racing, privileged knowledge of track layout or opponent positions can generate bonuses for staying centered @evans2024unifyingf1tenthautonomousracing or avoiding near-misses.
 
 While auxiliary rewards act as a form of reward shaping - supplying denser feedback to accelerate learning - there is a crucial distinction between auxiliary rewards and reward shaping. Traditional potential-based shaping, where the agent is, for example, rewarded for moving towards a target and penalised for moving away from it, guarantees that the underlying task and optimal policy remain unchanged @ng1999policy. Auxiliary rewards, however, act as heuristic bonuses that are rarely potential-based. Consequently, they risk altering the task being solved, which can cause the agent to converge on suboptimal policies for the original objective @ng1999policy.
 
@@ -525,56 +525,21 @@ While auxiliary rewards act as a form of reward shaping - supplying denser feedb
 
 The incorporation of _auxiliary heads_ that predict privileged information into a model, and use of supervised _auxiliary losses_ to train them, has emerged as a promising technique for improving the performance, interpretability, and training time of end-to-end learning approaches. It does so in three ways: it reduces the variance of the learning signal, it allows privileged information to be used even when it is unavailable at inference time, and it improves representation quality @jaderberg2017unreal @navon2021auxiliarylearningimplicitdifferentiation.
 
-Examples of auxiliary learning with privileged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV). They further found that auxiliary losses performed badly on feedforward models, where classification accuracy was limited, but that they were effective on a recurrent model. Mirowski et al. @mirowski2017learningnavigatecomplexenvironments who found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
+Examples of auxiliary learning with privileged information prediction include Lample et al. @lample2017fps who demonstrated outstanding performance in first-person shooter games by training an agent to predict the presence of enemies in the agent's field of view (FOV). They further found that auxiliary losses performed badly on feedforward models, where classification accuracy was limited, but that they were effective on a recurrent model. Mirowski et al. @mirowski2017learningnavigatecomplexenvironments found auxiliary tasks for depth prediction and loop closure detection improved navigation in 3D mazes, even compared to agents trained with depth information directly as input.
 
 In the field of autonomous driving, Chitta et al. @chitta2022transfuserimitationtransformerbasedsensor applied auxiliary losses for depth prediction, semantic segmentation, and vehicle detection, achieving state-of-the-art performance on the CARLA benchmark, and decreasing the crash rate. Chen et al. @chen2020interpretableendtoendurbanautonomous use auxiliary losses for birds-eye-view prediction in urban environments, improving both interpretability, and performance.
 
 == Evaluation of existing approaches
 
-End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting privileged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline; and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient.
+End-to-end RL agents on the RoboRacer platform generalise well to unseen tracks but have yet to match classical pipelines, and their opaque representations make failures hard to diagnose. For example, one may not understand whether an agent chose to accelerate into a wall because it misjudged its current velocity, or because it thought the track was straighter than it actually is. In simulation, privileged state such as velocity, tyre slip and upcoming track geometry is available but cannot be used at deployment, when these quantities are unavailable. Existing ways of exploiting privileged information during training each have a limitation: An asymmetric critic improves value estimation but doesn't directly shape the policy’s own representation; teacher-student distillation is complex since it requires a separate teacher and a two-stage pipeline, and and auxiliary rewards alter the optimisation objective and must still pass through the high-variance policy gradient.
 
 Auxiliary losses avoid all three: they leave the RL objective unchanged, supply a lower-variance supervised gradient directly to the shared representation, and are simple to implement. They have improved performance in first-person games, 3D navigation and urban driving. However, to our knowledge, they have not been studied for LiDAR-only racing, nor has it been examined which privileged targets help, or how they change what the policy’s representation encodes. This project addresses that gap.
 
-//Even with these savings, each trial still involves training a model, and the number of trials needed grows with the number of loss terms $N$. For multi-task models that are expensive to train, this motivates methods that learn the weights during training instead.
-
-
-
-// === Uncertainty weighting
-// Two kinds of uncertainty can be modelled in a model's predictions @kendall2017uncertainties:
-// - _Epistemic_ uncertainty: the model is unsure because it hasn't been trained on enough data. More data reduces epistemic uncertainty.
-// - _Aleatoric_ uncertainty: the data itself is noisy or incomplete, so even a perfect model can't predict exactly. In this case, more training data doesn't help.
-
-// Aleatoric uncertainty has two forms:
-// - _Data-dependent_ or _Heteroscedastic_: the noise changes from input to input (e.g. a blurry image is harder to make inference from than a clear one).
-// - _Task-dependent_ or _Homoscedastic_: the noise is the same for every input and depends only on the task
-
-// Kendall et al. propose a solution to determining the weights ${w_1, ..., w_N}$ problem by modelling the homoscedastic (task-dependent) uncertainty only @kendall2018multitask-cvpr.
-
-// Instead of formulating the prediction for task i, $hat(y_i) = f_i (bold(x))$, as a point estimate, it is modelled as a Gaussian with mean $f_i (x)$ and variance $sigma_i^2$:
-// $
-//   hat(Y)_i tilde.dot p(y_i | f_i (x)) = N(y_i; f_i (x); f_i^2)
-// $
-
-// The negative log-likelihood of this Gaussian probability density function evaluated at the true value $y_i$ is then the loss value for task i:
-
-// $
-//   L_i = -log p(y_i | f_i (x)) = 1/(2 sigma_i^2) ||y_i - f_i (x)||_2^2 + log sigma_i
-// $
-
-
-// A similar derivation can be made for L1 loss functions by assuming the predictions are $Y_i dot(~) "Laplace"(f_i (x), b_i)$:
-
-// $
-//   L_i = -log p(y_i | f_i (x)) = 1/(b_i) ||y_i - f_i (x)||_1 + log b_i
-// $
-
-// Then, assuming the tasks are independent, the total loss is the sum of the individual losses. The log-variance $log sigma_i$ or log-scale parameter $log b_i$ is a learnable parameter that is updated during training, allowing the model to learn the optimal weights for each loss term.
-
-// Of course, in reality, the tasks are not independent, but this method has empirically been shown to work well in practice @kendall2018multitask-cvpr. With some caveats like the fact that it produces a bias towards easy tasks, since they result in smaller $sigma_i$ values. This has led to the development of other methods not explored in this project, such as so-called Optimal Uncertainty Weighting @kirchdorfer2026investigatingoptimaluw.
-
 = System overview <sec:system_overview>
 
-The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from as input LiDAR. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
+In this chapter, we introduce the system architecture we use to train and evaluate the LiDAR-only end-to-end racing agent. We describe the simulator, the training script, and how they communicate. We also explain how observations, actions, and rewards flow between them.
+
+The system trains an end-to-end RL agent to drive a simulated RoboRacer vehicle from LiDAR input. It runs entirely in simulation and has two subsystems, shown in @system_diagram: a simulator, which models the vehicle, track and physics interactions, and a Python training script, which computes rewards given the state communicated by the simulator, and updates the policy. The two communicate over gRPC through the ML-Agents toolkit @ml-agents @juliani2018unity.
 
 At each timestep $t$, the simulator sends the current environment state $s_t$ to the training script. The training script then computes the observation $o_t$ using the state information $s_t$ and performs a forward pass through the policy using $o_t$ as input, computing the next action $a_t$. This action is sent to the simulator, and is applied to the vehicle, stepping the environment forward to the next timestep $t+1$.
 
@@ -1960,7 +1925,7 @@ The findings in @fig:last_50_means_heatmap must be interpeted with caution, howe
 
 #figure(
   image("../results/figures/last_50_means_heatmap.pdf", width: 108%),
-  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, progress per second, and CPMP) vs the baseline model. The model name consists of the active auxiliary loss group and weight. The p-value is reported in brackets beneath the value in each cell, using a two-sided t-test for the null hypothesis that the means is equal to the baseline model's mean. Corrected for multiple comparisons in each pane using the Benjamini-Hochberg procedure @benjamini1995controlling],
+  caption: [Mean of the last 50 training iterations of each model's metrics (mean reward, progress per second, and CPMP) vs the baseline model. The model name consists of the active auxiliary loss group and weight. The $p_"adj"$-value is reported in brackets beneath the value in each cell, using a two-sided t-test for the null hypothesis that the means is equal to the baseline model's mean. Adjusted for multiple comparisons in each pane using the Benjamini-Hochberg procedure @benjamini1995controlling],
 ) <fig:last_50_means_heatmap>
 
 @fig:progress_vs_collision shows the mean PPS vs CPMP for each model configuration, with the baseline FF model marked with the dotted lines. The trend is is clear that the close-ahead curvature losses at high weights improve both speed and safety for both architectures.
@@ -1972,11 +1937,14 @@ Importantly, @fig:last_50_means_heatmap and @fig:progress_vs_collision indicate 
   caption: [Comparison of different models' mean progress per second vs collisions per metre of progress. Bottom right quadrant = faster and safer than the baseline. Bottom left quadrant = slower but safer than the baseline. For readability, some run categories are cropped off the chart.],
 ) <fig:progress_vs_collision>
 
-To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Since we are only comparing two configurations, we do not need to perform multiple-comparison corrections, allowing us to better detect differences in performance.
+To achieve a higher-power statistical test of the effect of the close-ahead curvature auxiliary loss on the FF network, we run a follow-up experiment with 6 new seeds for each of the close-ahead curvature FF and baseline FF configurations. Since we are only comparing four configurations, the multiple-discovery corrections have less effect, allowing us to more effectively detect differences.
+
+Training with the close-ahead curvature auxiliary loss improves the feedforward model's training speed, stability, and performance, as shown in @fig:training_perf. It achieves a significantly higher PPS ($p_"adj"$=0.036) of +30% compared to the baseline, and a significantly lower CPMP ($p_"adj"$=0.036), 93% better than the baseline on average across the 6 seeds. These statistics were recorded using the mean of the last 50 training iterations.
+
 #figure(
-  [fig],
-  caption: [Performance of the feedforward model with and without the close-ahead curvature auxiliary loss, with 6 seeds each. The mean and standard error of the mean are shown by the shaded area.],
-)
+  image("../results/figures/training_perf.pdf"),
+  caption: [Training curves for the feedforward model with and without the close-ahead curvature auxiliary loss across 6 seeds. (a) Mean reward per timestep, (b) mean PPS, and (c) smoothed CPMP on a log scale. The solid lines show the mean across 6 seeds, and shaded areas show a 95% confidence interval of the mean.],
+) <fig:training_perf>
 
 == Learned Features After Auxiliary Learning <sec:learned_features_after_auxiliary_learning>
 
@@ -1984,7 +1952,7 @@ Applying the same probing technique from @sec:baseline_model_features after trai
 
 The decodability of the close-ahead curvature targets improved significantly in both architectures when the close-ahead curvature auxiliary loss was used, as shown in @fig:r2score_diff_curvature_close. The mean out-of-sample $R^2$ for the close-ahead curvature targets increased by up to 0.45 in the feedforward model and up to 0.49 on average in the recurrent model on average across 6 seeds, indicating that the internal representations of these models now encode this information in a more decodable fashion. When close-ahead curvature losses were applied to the FF model, the decodability of the medium-ahead curvature targets also improved, though may be confounded by the fact that the medium-ahead curvature targets are highly correlated with the close-ahead curvature targets.
 
-When trained with 
+Particularly with highly-weighted close-ahead curvature losses in the FF model, the decodability of the forward wheel slip decreased.
 
 #figure(
   image("../results/figures/probe_heatmap_aux_curvature_close.pdf", width: 110%),
@@ -1992,25 +1960,29 @@ When trained with
 ) <fig:r2score_diff_curvature_close>
 
 
+
 = Conclusions and recommendations <sec:conclusion>
 
 == Summary
-This project set out to determine whether and which auxiliary losses improve the performance, training speed, and internal representations of a LiDAR-only end-to-end racing agent. All five objectives listed in @sec:problem_statement_and_objectives were met. A custom Unity simulator was developed, a baseline PPO agent was trained (@sec:agent), and linear regression probes were used to establish what the agent natively encodes (@baseline_lr_model_dumbell). Then, auxiliary heads were added to predict privileged state information during training (@sec:training), and the resulting agents were evaluated against the baseline model in terms of racing speed and safety, while also probing the internal representations of the trained agents (@sec:learned_features_after_auxiliary_learning). The results show that auxiliary losses can improve both the agent's performance and its internal representations, but that this is not "free lunch": only certain auxiliary losses improve performance, and only at certain loss weights.
 
-The baseline feedforward model performed well in the primary task, achieving a mean CPMP of $0.0034 plus.minus 0.0028 "crashes/m"$ and a mean PPS of $4.13 plus.minus 0.49 "m/s" approx 15 "km/h"$. The recurrent model performed significantly worse, with a mean CPMP of $0.0381 plus.minus 0.0499 "crashes/m"$ and a mean PPS of $2.00 plus.minus 0.692739 "m/s" approx 7.2 "km/h"$. After addition of the curvature close auxiliary loss, the feedforward model improved to a mean CPMP of #todo("VALUE") and a mean PPS of #todo("VALUE"), while the recurrent model improved to a mean CPMP of #todo("VALUE") and a mean PPS of #todo("VALUE").
+This project investigated whether auxiliary losses that predict privileged information improve a LiDAR-only end-to-end racing agent. All five objectives in @sec:problem_statement_and_objectives were met: a RoboRacer-calibrated Unity simulator was built (@sec:simulator), feedforward and recurrent PPO baselines were trained and probed (@sec:baseline_model_features), and ten auxiliary target categories were evaluated at three weights over six seeds (@sec:agent_performance_after_auxiliary_learning).
+
+The main findings are:
++ Untrained networks already linearly encode the vehicle's dynamics; training trades this for upcoming track curvature.
++ Close-ahead curvature is the only target that we find to clearly help both architectures. In the follow-up experiment, it reduced the feedforward agent's CPMP from $0.011 plus.minus 0.0081$ to $0.001 plus.minus 0.0003 "crashes/m"$ and raised its PPS from $3.57 plus.minus 0.94$ to $4.66 plus.minus 0.068 "m/s"$ ($p = 0.036$). The recurrent agent improved from a CPMP of $0.0381 plus.minus 0.0499$ to #todo("VALUE") and a PPS of $2.00 plus.minus 0.69$ to #todo("VALUE").
++ Auxiliary losses mostly help the recurrent agent (26 of 33 configurations improved, versus 4 of 33 feedforward). 
++ Greater decodability does not guarantee better driving, and every effect depends on the loss weight.
++ There exists a trend that quantities improve decodability during PPO training are also the ones that improve driving when used as auxiliary targets. We do however, not present a clear, proven relationship.
+
+Apart from the feedforward curvature result, these comparisons were not significant after Benjamini–Hochberg correction, so findings 3 and 4 are trends rather than confirmed effects.
 
 == Limitations
 
-The power of the significance tests used in this project is limited by the small sample size of $N = 6$ seeds per configuration. The results should therefore be interpreted with caution, and further experiments with more seeds are recommended to confirm the findings.
+The feedforward agent receives 50 LiDAR frames and the recurrent agent 4, so their differences are not due to recurrence alone. The 600-iteration budget came from a feedforward pilot, so the recurrent baseline may have been undertrained. The leave-one-in design ignores interactions between targets, linear probes miss nonlinearly encoded information, and all work was in simulation. Furthermore, our work achieved improved performance, but it was only possible by evaluating many different auxiliary loss configurations. We do not provide a method in general to _a priori_ determine which auxiliary losses will improve the agent's performance, or to select loss weights. Although we ran many training runs to explore the effect of auxiliary losses, we did not consider whether this compute budget would be better spent on other avenues, such as tuning of the PPO agent.
 
-== Future work
+== Recommendations and future work
 
-
-
-The results of this project suggest that more work is needed to determine _a priori_ which auxiliary losses will improve the agent's performance, and at what loss weights, but that auxiliary losses can indeed improve both the agent's performance and its internal representations. Future work could explore the following avenues:
-- Investigate the effect of auxiliary losses on the agent's performance in more complex environments, such as those with dynamic obstacles or varying track conditions.
-- Explore the use of adaptive weighting methods for auxiliary losses, to dynamically adjust the weights during training based on the agent's performance and the difficulty of the auxiliary tasks.
-- Investigate the effect of auxiliary losses on the agent's performance in multi-agent scenarios, where multiple agents are racing against each other
+Practitioners should probe a baseline before choosing auxiliary targets, favour quantities training already moves towards, and test several weights per target. Future work should confirm the recurrent result with fresh seeds and a matched frame stack, combine close-ahead curvature with other targets, evaluate primary-task-aware weighting such as AuxiLearn @navon2021auxiliarylearningimplicitdifferentiation, and transfer the agents to a physical RoboRacer.
 
 
 #pagebreak()
